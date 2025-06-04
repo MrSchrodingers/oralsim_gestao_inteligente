@@ -1,0 +1,291 @@
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL
+  # --------------------------------------------------------------------------
+  db:
+    image: postgres:17
+    container_name: oralsin_db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_EXTERNAL_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -p 5432 -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oralsin_network
+  
+  # --------------------------------------------------------------------------
+  # RabbitMQ
+  # --------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: oralsin_rabbitmq
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin}
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "${RABBITMQ_AMQP_EXTERNAL_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_EXTERNAL_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq-definitions.json:/etc/rabbitmq/definitions.json:ro
+    command: >
+      rabbitmq-server
+      --load-definitions /etc/rabbitmq/definitions.json
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping", "-q"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Redis (cache, canais, Celery result backend)
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: oralsin_redis
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+    command: >
+      sh -c "redis-server --requirepass ${REDIS_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Django / Daphne + Uvicorn (API e métricas)
+  # --------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oralsin_app
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+      - "9108"
+    ports:
+      - "${APP_EXTERNAL_PORT:-8000}:8000"
+      - "${APP_METRICS_EXTERNAL_PORT:-9108}:9108"
+    labels:
+      - "prometheus.enable=true"
+      - "prometheus.port=9108"
+    entrypoint: ./docker-entrypoint.sh
+    networks:
+      - oralsin_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/healthz/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # --------------------------------------------------------------------------
+  # Celery Worker
+  # --------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oralsin_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: cobranca_inteligente_api.settings
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+      PYTHONPATH: /app/src
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    command: >
+      celery -A cobranca_inteligente_api worker
+      --loglevel=INFO
+      --concurrency=4
+      --queues=email,sms,whatsapp,sync_notify,sync_process,payment_reminder,update_metrics
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Celery Beat (scheduler via django-celery-beat)
+  # --------------------------------------------------------------------------
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oralsin_celery_beat
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: cobranca_inteligente_api.settings
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    command: >
+      celery -A cobranca_inteligente_api beat
+      --loglevel=INFO
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Celery Exporter (Prometheus)
+  # --------------------------------------------------------------------------
+  oralsin-celery-exporter:
+    image: ovalmoney/celery-exporter:latest
+    container_name: oralsin_celery_exporter
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CELERY_EXPORTER_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+    expose:
+      - "9500"
+    ports:
+      - "${CELERY_EXPORTER_EXTERNAL_PORT:-9500}:9500"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Rabbit Consumer (Pika)
+  # --------------------------------------------------------------------------
+  rabbit-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oralsin_rabbit_consumer
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: cobranca_inteligente_api.settings
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      REDIS_URL: ${REDIS_URL}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    command: >
+      python src/notification_billing/adapters/message_broker/scripts/rabbit_consumer_entrypoint.py
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Pushgateway (Prometheus)
+  # --------------------------------------------------------------------------
+  pushgateway:
+    image: prom/pushgateway:v1.8.0
+    container_name: oralsin_pushgateway
+    restart: unless-stopped
+    expose:
+      - "9091"
+    ports:
+      - "${PUSHGATEWAY_EXTERNAL_PORT:-9091}:9091"
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Prometheus
+  # --------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: oralsin_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./bin/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    expose:
+      - "9090"
+    ports:
+      - "${PROMETHEUS_EXTERNAL_PORT:-9090}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    depends_on:
+      pushgateway:
+        condition: service_started
+      oralsin-celery-exporter:
+        condition: service_started
+      app:
+        condition: service_healthy
+    networks:
+      - oralsin_network
+
+  # --------------------------------------------------------------------------
+  # Grafana
+  # --------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: oralsin_grafana
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_SERVER_HTTP_PORT: 3000
+    expose:
+      - "3000"
+    ports:
+      - "${GRAFANA_EXTERNAL_PORT:-3000}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - oralsin_network
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  grafana_data:
+  pushgateway_data:
+
+networks:
+  oralsin_network:
+    driver: bridge

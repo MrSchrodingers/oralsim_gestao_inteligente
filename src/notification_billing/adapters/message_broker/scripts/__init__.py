@@ -1,0 +1,1 @@
+from .rabbit_consumer_entrypoint import run # noqa

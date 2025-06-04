@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s         # regra de alerta a cada 15 s
+
+scrape_configs:
+
+  # ── APP – métrica via servidor interno (porta 9108) ─────────────────────────
+  - job_name: 'oralsin-app'
+    metrics_path: '/metrics'
+    scrape_timeout: 5s
+    static_configs:
+      - targets: ['oralsin-app:9108']        # ← 9108 (metrics-server)
+
+  # ── Celery Exporter (RabbitMQ) ───────────────────────────────────────────────
+  - job_name: 'celery'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['oralsin-celery-exporter:9500']   # ← porta real 9500
+    relabel_configs:
+      # adiciona label queue para dashboards
+      - source_labels: [__address__]
+        target_label: instance
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres_exporter:9187']
+
+  # ── Pushgateway (métricas de batch e Celery beat) ────────────────────────────
+  - job_name: 'pushgateway'
+    honor_labels: true               # preserva labels vindas do push
+    static_configs:
+      - targets: ['pushgateway:9091']

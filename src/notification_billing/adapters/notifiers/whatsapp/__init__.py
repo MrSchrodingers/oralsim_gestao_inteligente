@@ -1,0 +1,1 @@
+from .debtapp import DebtAppWhatsapp  # noqa: F401

@@ -1,0 +1,1 @@
+from .composition_root import container  # noqa

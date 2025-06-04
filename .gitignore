@@ -1,0 +1,17 @@
+# Ignorar todos os diretórios __pycache__ e cache
+**/__pycache__/
+/__pycache/
+.ruff_cache
+.mypy_cache
+
+# Ignorar arquivos específicos
+.qodo
+rabbitmq-definitions.json
+grafana/
+dist/
+
+# Ignorar variáveis de ambiente
+.env
+
+# Ignorar documentações de Content e Tree
+/docs/*

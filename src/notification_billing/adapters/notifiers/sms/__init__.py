@@ -1,0 +1,1 @@
+from .assertiva import AssertivaSMS  # noqa: F401
