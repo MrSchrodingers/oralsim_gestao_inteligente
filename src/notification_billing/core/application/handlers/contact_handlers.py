@@ -1,11 +1,17 @@
 from datetime import datetime
 from typing import Any
 
+from oralsin_core.adapters.context.request_context import get_current_request
+
 from notification_billing.core.application.commands.contact_commands import (
     AdvanceContactStepCommand,
     RecordContactSentCommand,
 )
-from notification_billing.core.application.cqrs import CommandHandler, PagedResult, QueryHandler
+from notification_billing.core.application.cqrs import (
+    CommandHandler,
+    PagedResult,
+    QueryHandler,
+)
 from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
 from notification_billing.core.domain.events.events import NotificationScheduledEvent, NotificationSentEvent
 from notification_billing.core.domain.repositories import (
@@ -83,8 +89,13 @@ class ListDueContactsHandler(QueryHandler[ListDueContactsQuery, PagedResult[Any]
 
     def handle(self, query: ListDueContactsQuery) -> PagedResult[Any]:
         filtros = query.filtros or {}
+        clinic_id = filtros.get("clinic_id")
+        req = get_current_request()
+        if not clinic_id and req and getattr(req.user, "role", None) == "clinic":
+            clinic_id = getattr(req.user, "clinic_id", None)
+            
         return self.repo.list_due(
-            clinic_id=filtros.get("clinic_id"),
+            clinic_id=clinic_id,
             now=datetime.utcnow(),
             offset=(query.page - 1) * query.page_size,
             limit=query.page_size,

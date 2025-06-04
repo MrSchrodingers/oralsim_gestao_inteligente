@@ -37,7 +37,7 @@ seed-complete:
 	$(MANAGE) seed_data --clinic-name "Bauru" \
 	                    --admin-email matheus@admin.com \
 	                    --admin-pass  matheus@admin
-	$(MANAGE) seed_test_contatcs --email mrschrodingers@gmail.com \
+	$(MANAGE) seed_test_contacts --email mrschrodingers@gmail.com \
 	                             --phone 5543991938235
 	$(MANAGE) seed_scheduling --clinic-id 47 --min-days 1 --verbosity 2
 	$(TIME_ECHO)

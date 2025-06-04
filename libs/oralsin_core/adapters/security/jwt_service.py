@@ -11,16 +11,24 @@ class JWTService:
     """
 
     @staticmethod
-    def create_token(subject: str, expires_in: int) -> str:
-        """
-        Gera um token JWT com claim 'sub' e expiração.
-        """
+    def create_token(
+        subject: str,
+        expires_in: int,
+        role: str,
+        clinic_id: str | None = None,
+    ) -> str:
+        """Gera um token JWT com claim 'sub', role e expiração."""
+        
         now = datetime.utcnow()
         payload = {
             "sub": subject,
+            "role": role,
             "iat": now,
             "exp": now + timedelta(seconds=expires_in),
         }
+        if clinic_id is not None:
+            payload["clinic_id"] = clinic_id
+            
         token = jwt.encode(
             payload,
             settings.JWT_SECRET,

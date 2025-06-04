@@ -8,12 +8,17 @@ from typing import Any
 import structlog
 
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+from oralsin_core.adapters.context.request_context import get_current_request
 from oralsin_core.core.application.commands.coverage_commands import (
     LinkUserClinicCommand,
     RegisterCoverageClinicCommand,
 )
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
-from oralsin_core.core.application.cqrs import CommandHandler, PaginatedQueryDTO, QueryHandler
+from oralsin_core.core.application.cqrs import (
+    CommandHandler,
+    PaginatedQueryDTO,
+    QueryHandler,
+)
 from oralsin_core.core.application.dtos.oralsin_dtos import ClinicsQueryDTO
 from oralsin_core.core.application.queries.coverage_queries import (
     ListCoveredClinicsQuery,
@@ -173,6 +178,11 @@ class ListCoveredClinicsHandler(
         self.repo = covered_repo
 
     def handle(self, query: ListCoveredClinicsQuery) -> list[CoveredClinicEntity]:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            clinic_id = getattr(req.user, "clinic_id", None)
+            if clinic_id:
+                return [c for c in self.repo.list_all() if str(c.id) == str(clinic_id)]
         return self.repo.list_all()
 
 
@@ -183,4 +193,11 @@ class ListUserClinicsHandler(
         self.repo = user_clinic_repo
 
     def handle(self, query: ListUserClinicsQuery) -> list[UserClinicEntity]:
-        return self.repo.list_by_user(query.filtros["user_id"])
+        clinic_id = query.filtros.get("clinic_id")
+        req = get_current_request()
+        if not clinic_id and req and getattr(req.user, "role", None) == "clinic":
+            clinic_id = getattr(req.user, "clinic_id", None)
+        items = self.repo.find_by_user(query.filtros["user_id"])
+        if clinic_id:
+            items = [i for i in items if str(i.clinic_id) == str(clinic_id)]
+        return items

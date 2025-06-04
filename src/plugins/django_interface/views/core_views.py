@@ -84,6 +84,7 @@ from notification_billing.core.application.queries.contact_history_queries impor
 from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
 from notification_billing.core.application.queries.contact_schedule_queries import GetContactScheduleQuery
 from notification_billing.core.application.queries.message_queries import GetMessageQuery, ListMessagesQuery
+from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
 
 from ..serializers.core_serializers import (
     AddressSerializer,
@@ -123,6 +124,7 @@ RETRIEVE_TTL = 10 * 60   # 10 minutos
 @method_decorator(track_http('PatientViewSet_sync'), name='sync')
 class PatientViewSet(viewsets.ViewSet):
     """CRUD para pacientes."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListPatientsQuery(
             filtros=request.query_params.dict(),
@@ -160,6 +162,7 @@ class PatientViewSet(viewsets.ViewSet):
 @method_decorator(track_http('AddressViewSet_destroy'), name='destroy')
 class AddressViewSet(viewsets.ViewSet):
     """CRUD para endereços."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListAddressesQuery(
             page=int(request.query_params.get("page", 1)),
@@ -195,6 +198,7 @@ class AddressViewSet(viewsets.ViewSet):
 @method_decorator(track_http('ClinicViewSet_destroy'), name='destroy')
 class ClinicViewSet(viewsets.ViewSet):
     """CRUD para clínicas principais."""
+    permission_classes = [IsAdminUser]
     def list(self, request):
         q = ListClinicsQuery(
             page=int(request.query_params.get("page", 1)),
@@ -229,25 +233,37 @@ class ClinicViewSet(viewsets.ViewSet):
 @method_decorator(track_http('ClinicDataViewSet_update'), name='update')
 class ClinicDataViewSet(viewsets.ViewSet):
     """CRUD para dados complementares de clínica."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
+        filtros = {}
+        if getattr(request.user, "role", None) == "clinic":
+            filtros["clinic_id"] = request.user.clinic_id
         q = ListClinicDataQuery(
+            filtros=filtros,
             page=int(request.query_params.get("page", 1)),
             page_size=int(request.query_params.get("page_size", 50)),
         )
         res = core_query_bus.dispatch(q)
         return Response({'results': ClinicDataSerializer(res.items, many=True).data, 'total': res.total})
 
+
     def retrieve(self, request, pk=None):
         cd = core_query_bus.dispatch(GetClinicDataQuery(id=pk))
         return Response(ClinicDataSerializer(cd).data)
 
     def create(self, request):
-        dto = ClinicDataDTO(**request.data)
+        payload = dict(request.data)
+        if getattr(request.user, "role", None) == "clinic":
+            payload["clinic_id"] = str(request.user.clinic_id)
+        dto = ClinicDataDTO(**payload)
         cd = core_command_bus.dispatch(CreateClinicDataCommand(payload=dto))
         return Response(ClinicDataSerializer(cd).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, pk=None):
-        dto = ClinicDataDTO(**request.data)
+        payload = dict(request.data)
+        if getattr(request.user, "role", None) == "clinic":
+            payload["clinic_id"] = str(request.user.clinic_id)
+        dto = ClinicDataDTO(**payload)
         cd = core_command_bus.dispatch(UpdateClinicDataCommand(id=pk, payload=dto))
         return Response(ClinicDataSerializer(cd).data)
 
@@ -260,8 +276,13 @@ class ClinicDataViewSet(viewsets.ViewSet):
 @method_decorator(track_http('ClinicPhoneViewSet_destroy'), name='destroy')
 class ClinicPhoneViewSet(viewsets.ViewSet):
     """CRUD para telefones de clínica."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
+        filtros = {}
+        if getattr(request.user, "role", None) == "clinic":
+            filtros["clinic_id"] = request.user.clinic_id
         q = ListClinicPhonesQuery(
+            filtros=filtros,
             page=int(request.query_params.get("page", 1)),
             page_size=int(request.query_params.get("page_size", 50)),
         )
@@ -273,17 +294,24 @@ class ClinicPhoneViewSet(viewsets.ViewSet):
         return Response(ClinicPhoneSerializer(cp).data)
 
     def create(self, request):
-        dto = ClinicPhoneDTO(**request.data)
+        payload = dict(request.data)
+        if getattr(request.user, "role", None) == "clinic":
+            payload["clinic_id"] = str(request.user.clinic_id)
+        dto = ClinicPhoneDTO(**payload)
         cp = core_command_bus.dispatch(CreateClinicPhoneCommand(payload=dto))
         return Response(ClinicPhoneSerializer(cp).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, pk=None):
-        dto = ClinicPhoneDTO(**request.data)
+        payload = dict(request.data)
+        if getattr(request.user, "role", None) == "clinic":
+            payload["clinic_id"] = str(request.user.clinic_id)
+        dto = ClinicPhoneDTO(**payload)
         cp = core_command_bus.dispatch(UpdateClinicPhoneCommand(id=pk, payload=dto))
         return Response(ClinicPhoneSerializer(cp).data)
 
     def destroy(self, request, pk=None):
-        core_command_bus.dispatch(DeleteClinicPhoneCommand(id=pk))
+        cmd = DeleteClinicPhoneCommand(id=pk)
+        core_command_bus.dispatch(cmd)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 @method_decorator(cache_page(LIST_TTL), name='list')
@@ -293,6 +321,7 @@ class ClinicPhoneViewSet(viewsets.ViewSet):
 @method_decorator(track_http('CoveredClinicViewSet_create'), name='create')
 class CoveredClinicViewSet(viewsets.ViewSet):
     """CRUD para clínicas cobertas."""
+    permission_classes = [IsAdminUser]
     def list(self, request):
         q = ListCoveredClinicsQuery(
             page=int(request.query_params.get("page", 1)),
@@ -319,6 +348,7 @@ class CoveredClinicViewSet(viewsets.ViewSet):
 @method_decorator(track_http('PatientPhoneViewSet_destroy'), name='destroy')
 class PatientPhoneViewSet(viewsets.ViewSet):
     """CRUD para telefones de paciente."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListPatientPhonesQuery(
             page=int(request.query_params.get("page", 1)),
@@ -352,6 +382,7 @@ class PatientPhoneViewSet(viewsets.ViewSet):
 @method_decorator(track_http('ContractViewSet_installments'), name='installments')
 class ContractViewSet(viewsets.ViewSet):
     """CRUD para contratos."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListContractsQuery(
             filtros=request.query_params.dict(),
@@ -381,6 +412,7 @@ class ContractViewSet(viewsets.ViewSet):
 @method_decorator(track_http('InstallmentViewSet_retrieve'), name='retrieve')
 class InstallmentViewSet(viewsets.ViewSet):
     """CRUD para parcelas."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListInstallmentsQuery(
             filtros=request.query_params.dict(),
@@ -400,6 +432,7 @@ class InstallmentViewSet(viewsets.ViewSet):
 @method_decorator(track_http('UserClinicViewSet_retrieve'), name='retrieve')
 class UserClinicViewSet(viewsets.ViewSet):
     """Leitura de vínculo Usuário↔Clínica."""
+    permission_classes = [IsAdminUser]
     def list(self, request):
         q = ListUserClinicsQuery(
             filtros=request.query_params.dict(),
@@ -422,6 +455,7 @@ class UserClinicViewSet(viewsets.ViewSet):
 @method_decorator(track_http('UserViewSet_destroy'), name='destroy')
 class UserViewSet(viewsets.ViewSet):
     """CRUD para usuários."""
+    permission_classes = [IsAdminUser]
     def list(self, request):
         q = ListUsersQuery(
             page=int(request.query_params.get("page", 1)),
@@ -461,6 +495,7 @@ class UserViewSet(viewsets.ViewSet):
 @method_decorator(track_http('ContactScheduleViewSet_destroy'), name='destroy')
 class ContactScheduleViewSet(viewsets.ViewSet):
     """CRUD para agendamento de contatos."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListDueContactsQuery(
             filtros={'clinic_id': request.user.clinic_id},
@@ -495,6 +530,7 @@ class ContactScheduleViewSet(viewsets.ViewSet):
 @method_decorator(track_http('ContactHistoryViewSet_retrieve'), name='retrieve')
 class ContactHistoryViewSet(viewsets.ViewSet):
     """CRUD para histórico de contatos."""
+    permission_classes = [IsClinicUser]
     def list(self, request):
         q = ListContactHistoryQuery(
             filtros=request.query_params.dict(),
@@ -517,6 +553,7 @@ class ContactHistoryViewSet(viewsets.ViewSet):
 @method_decorator(track_http('MessageViewSet_destroy'), name='destroy')
 class MessageViewSet(viewsets.ViewSet):
     """CRUD para templates de mensagem."""
+    permission_classes = [IsAdminUser]
     def list(self, request):
         q = ListMessagesQuery(
             filtros=request.query_params.dict(),

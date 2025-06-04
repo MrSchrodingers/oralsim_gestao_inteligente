@@ -1,6 +1,7 @@
 from typing import Any
 
 from django.utils import timezone
+from oralsin_core.adapters.context.request_context import get_current_request
 
 from notification_billing.core.application.cqrs import PagedResult, QueryHandler
 from notification_billing.core.application.queries.notification_queries import ListPendingSchedulesQuery
@@ -14,9 +15,15 @@ class ListPendingSchedulesHandler(
         self.schedule_repo = schedule_repo
 
     def handle(self, query: ListPendingSchedulesQuery) -> PagedResult[Any]:
+        req = get_current_request()
+        clinic_id = query.filtros.get("clinic_id")
+        if not clinic_id and req and getattr(req.user, "role", None) == "clinic":
+            clinic_id = getattr(req.user, "clinic_id", None)
+
         data = [
-            s for s in self.schedule_repo.filter(
-                clinic_id=query.filtros["clinic_id"],
+            s
+            for s in self.schedule_repo.filter(
+                clinic_id=clinic_id,
                 status=ContactSchedule.Status.PENDING,
             )
             if s.scheduled_date <= timezone.now()

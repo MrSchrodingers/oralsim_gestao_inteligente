@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from config import settings
+from plugins.django_interface.models import UserClinic
 
 
 class LoginView(APIView):
@@ -21,14 +22,22 @@ class LoginView(APIView):
 
         user_repo = UserRepoImpl()
         user = user_repo.find_by_email(email)
-        if not user or not HashService.verify(password, user.password):
+        if not user or not HashService.verify(password, user.password_hash):
             return Response({"detail": "E-mail ou senha inválidos."},
                             status=status.HTTP_401_UNAUTHORIZED)
 
         # Gera JWT
+        clinic_id: str | None = None
+        if user.role == "clinic":
+            link = UserClinic.objects.filter(user_id=user.id).first()
+            if link:
+                clinic_id = str(link.clinic_id)
+                
         jwt = JWTService.create_token(
             subject=str(user.id),
-            expires_in=settings.JWT_EXPIRES_IN
+            expires_in=settings.JWT_EXPIRES_IN,
+            role=user.role,
+            clinic_id=clinic_id,
         )
         resp = Response({"message": "Autenticado com sucesso."}, status=status.HTTP_200_OK)
         # Configura cookie seguro

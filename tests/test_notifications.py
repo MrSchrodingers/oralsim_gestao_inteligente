@@ -16,7 +16,7 @@ Requisitos de ambiente:
 ---------------------------------------------------------------------
 * Todas as migrations aplicadas.
 * Comandos `seed_flow_step_config`, `seed_messages`, `seed_data`,
-  `seed_test_contatcs`   disponíveis no `manage.py`.
+  `seed_test_contacts`   disponíveis no `manage.py`.
 * Variáveis de ambiente para o modo real (gateway SMS, WhatsApp,
   e-mail, etc.) — opcional.
 """
@@ -26,7 +26,10 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 
-import structlog
+try:
+    import structlog
+except ModuleNotFoundError:  # pragma: no cover - fallback for minimal env
+    import logging as structlog
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
@@ -115,7 +118,7 @@ class NotificationFlowTests(TestCase):
             verbosity=0,
         )
         call_command(
-            "seed_test_contatcs",
+            "seed_test_contacts",
             email="mrschrodingers@gmail.com",
             phone="5543991938235",
             verbosity=1,

@@ -33,7 +33,7 @@ class NotificationSentEvent(DomainEvent):
     channel: str
 
 # ╭──────────────────────────────────────────────╮
-# │ 6. Histórico de Contato                     │
+# │ 6. Resultado de Contato                    │
 # ╰──────────────────────────────────────────────╯
 @dataclass(frozen=True)
 class ContactHistoryRecordedEvent(DomainEvent):

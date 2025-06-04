@@ -37,12 +37,12 @@ class RabbitMQ:
             args['x-dead-letter-exchange'] = dlx
         ch.queue_declare(queue=name, durable=True, arguments=args)
 
-    def declare_exchange(self, name: str, type='direct', dlx: str = None):
+    def declare_exchange(self, name: str, exchange_type='direct', dlx: str = None):
         ch = self.channel()
         args = {}
         if dlx:
             args['x-dead-letter-exchange'] = dlx
-        ch.exchange_declare(exchange=name, exchange_type=type, durable=True, arguments=args)
+        ch.exchange_declare(exchange=name, exchange_type=exchange_type, durable=True, arguments=args)
 
     def bind_queue(self, queue: str, exchange: str, routing_key: str):
         ch = self.channel()

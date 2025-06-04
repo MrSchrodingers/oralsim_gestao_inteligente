@@ -37,4 +37,5 @@ class FormatterService:
         """
         Format a ratio or percentage as an integer with '%' symbol.
         """
-        return f"{pct:.0f}%"
+        pct_val = pct * 100 if pct <= 1 else pct
+        return f"{pct_val:.0f}%"

@@ -13,4 +13,14 @@ class FlowStepConfigRepository(ABC):
     @abstractmethod
     def find_by_step(self, step_number: int) -> FlowStepConfigEntity | None:
         """Retorna o FlowStepConfigEntity por step_number."""
-        ... 
+        ...     
+        
+    @abstractmethod
+    def get_active(self, step_number: int) -> FlowStepConfigEntity | None:
+        """Retorna o FlowStepConfigEntity ativo por step_number."""
+        ...
+        
+    @abstractmethod
+    def max_active_step(self) -> int:
+        """Retorna o maior step_number ativo."""
+        ...

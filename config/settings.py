@@ -159,6 +159,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'plugins.django_interface.request_middleware.RequestContextMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]

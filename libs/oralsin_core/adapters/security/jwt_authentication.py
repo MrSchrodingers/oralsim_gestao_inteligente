@@ -31,6 +31,9 @@ class JWTAuthentication(BaseAuthentication):
         except User.DoesNotExist:
             raise exceptions.AuthenticationFailed("Usuário não encontrado.")  # noqa: B904
 
+        user.role = payload.get("role", getattr(user, "role", None))
+        user.clinic_id = payload.get("clinic_id")
+        
         return (user, token)
 
 
@@ -53,4 +56,7 @@ class CookieJWTAuthentication(JWTAuthentication):
         except User.DoesNotExist:
             raise exceptions.AuthenticationFailed("Usuário não encontrado.")  # noqa: B904
 
+        user.role = payload.get("role", getattr(user, "role", None))
+        user.clinic_id = payload.get("clinic_id")
+        
         return (user, token)

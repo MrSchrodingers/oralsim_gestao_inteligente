@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 # Hash service
+from oralsin_core.adapters.context.request_context import get_current_request
 from oralsin_core.adapters.security.hash_service import HashService
 
 # Commands
@@ -43,6 +44,9 @@ class CreateAddressHandler(CommandHandler[CreateAddressCommand]):
 
     def handle(self, command: CreateAddressCommand) -> AddressEntity:
         data = command.payload.dict()
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         data['id'] = uuid.uuid4()
         entity = AddressEntity.from_dict(data)
         return self.repo.save(entity)
@@ -54,6 +58,11 @@ class UpdateAddressHandler(CommandHandler[UpdateAddressCommand]):
     def handle(self, command: UpdateAddressCommand) -> AddressEntity:
         data = command.payload.dict()
         data['id'] = command.id
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.clinic_id) != str(getattr(req.user, "clinic_id", None)):
+                raise PermissionError("Forbidden")
         entity = AddressEntity.from_dict(data)
         return self.repo.save(entity)
 
@@ -62,6 +71,9 @@ class DeleteAddressHandler(CommandHandler[DeleteAddressCommand]):
         self.repo = repo
 
     def handle(self, command: DeleteAddressCommand) -> None:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         self.repo.delete(command.id)
 
 
@@ -72,6 +84,9 @@ class CreateClinicHandler(CommandHandler[CreateClinicCommand]):
         self.repo = repo
 
     def handle(self, command: CreateClinicCommand) -> ClinicEntity:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         data = command.payload.dict()
         data['id'] = uuid.uuid4()
         entity = ClinicEntity.from_dict(data)
@@ -84,6 +99,9 @@ class UpdateClinicHandler(CommandHandler[UpdateClinicCommand]):
     def handle(self, command: UpdateClinicCommand) -> ClinicEntity:
         data = command.payload.dict()
         data['id'] = command.id
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         entity = ClinicEntity.from_dict(data)
         return self.repo.save(entity)
 
@@ -92,6 +110,9 @@ class DeleteClinicHandler(CommandHandler[DeleteClinicCommand]):
         self.repo = repo
 
     def handle(self, command: DeleteClinicCommand) -> None:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         self.repo.delete(command.id)
 
 
@@ -103,6 +124,9 @@ class CreateClinicDataHandler(CommandHandler[CreateClinicDataCommand]):
 
     def handle(self, command: CreateClinicDataCommand) -> ClinicDataEntity:
         data = command.payload.dict()
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic" and str(data.get("clinic_id")) != str(getattr(req.user, "clinic_id", None)):
+            raise PermissionError("Forbidden")
         data['id'] = uuid.uuid4()
         entity = ClinicDataEntity.from_dict(data)
         return self.repo.save(entity)
@@ -114,6 +138,11 @@ class UpdateClinicDataHandler(CommandHandler[UpdateClinicDataCommand]):
     def handle(self, command: UpdateClinicDataCommand) -> ClinicDataEntity:
         data = command.payload.dict()
         data['id'] = command.id
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.clinic_id) != str(getattr(req.user, "clinic_id", None)):
+                raise PermissionError("Forbidden")
         entity = ClinicDataEntity.from_dict(data)
         return self.repo.save(entity)
 
@@ -126,6 +155,9 @@ class CreateClinicPhoneHandler(CommandHandler[CreateClinicPhoneCommand]):
 
     def handle(self, command: CreateClinicPhoneCommand) -> ClinicPhoneEntity:
         data = command.payload.dict()
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic" and str(data.get("clinic_id")) != str(getattr(req.user, "clinic_id", None)):
+            raise PermissionError("Forbidden")
         data['id'] = uuid.uuid4()
         entity = ClinicPhoneEntity.from_dict(data)
         return self.repo.save(entity)
@@ -137,6 +169,11 @@ class UpdateClinicPhoneHandler(CommandHandler[UpdateClinicPhoneCommand]):
     def handle(self, command: UpdateClinicPhoneCommand) -> ClinicPhoneEntity:
         data = command.payload.dict()
         data['id'] = command.id
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.clinic_id) != str(getattr(req.user, "clinic_id", None)):
+                raise PermissionError("Forbidden")
         entity = ClinicPhoneEntity.from_dict(data)
         return self.repo.save(entity)
 
@@ -145,6 +182,11 @@ class DeleteClinicPhoneHandler(CommandHandler[DeleteClinicPhoneCommand]):
         self.repo = repo
 
     def handle(self, command: DeleteClinicPhoneCommand) -> None:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.clinic_id) != str(getattr(req.user, "clinic_id", None)):
+                raise PermissionError("Forbidden")
         self.repo.delete(command.id)
 
 
@@ -156,6 +198,9 @@ class CreatePatientPhoneHandler(CommandHandler[CreatePatientPhoneCommand]):
 
     def handle(self, command: CreatePatientPhoneCommand) -> PatientPhoneEntity:
         data = command.payload.dict()
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic" and str(data.get("clinic_id")) != str(getattr(req.user, "clinic_id", None)):
+            raise PermissionError("Forbidden")
         data['id'] = uuid.uuid4()
         entity = PatientPhoneEntity.from_dict(data)
         return self.repo.save(entity)
@@ -167,6 +212,11 @@ class UpdatePatientPhoneHandler(CommandHandler[UpdatePatientPhoneCommand]):
     def handle(self, command: UpdatePatientPhoneCommand) -> PatientPhoneEntity:
         data = command.payload.dict()
         data['id'] = command.id
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.clinic_id) != str(getattr(req.user, "clinic_id", None)):
+                raise PermissionError("Forbidden")
         entity = PatientPhoneEntity.from_dict(data)
         return self.repo.save(entity)
 
@@ -175,6 +225,11 @@ class DeletePatientPhoneHandler(CommandHandler[DeletePatientPhoneCommand]):
         self.repo = repo
 
     def handle(self, command: DeletePatientPhoneCommand) -> None:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "clinic":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.clinic_id) != str(getattr(req.user, "clinic_id", None)):
+                raise PermissionError("Forbidden")
         self.repo.delete(command.id)
 
 
@@ -187,6 +242,9 @@ class CreateUserHandler(CommandHandler[CreateUserCommand]):
 
     def handle(self, command: CreateUserCommand) -> UserEntity:
         data = command.payload.dict()
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         data['id'] = uuid.uuid4()
         data['password_hash'] = self.hash_service.hash_password(data.pop('password'))
         entity = UserEntity.from_dict(data)
@@ -202,6 +260,11 @@ class UpdateUserHandler(CommandHandler[UpdateUserCommand]):
         data['id'] = command.payload.id
         if 'password' in data and data['password']:
             data['password_hash'] = self.hash_service.hash_password(data.pop('password'))
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.id) != str(getattr(req.user, "id", None)):
+                raise PermissionError("Forbidden")
         entity = UserEntity.from_dict(data)
         return self.repo.save(entity)
 
@@ -210,6 +273,11 @@ class DeleteUserHandler(CommandHandler[DeleteUserCommand]):
         self.repo = repo
 
     def handle(self, command: DeleteUserCommand) -> None:
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            existing = self.repo.find_by_id(command.id)
+            if existing and str(existing.id) != str(getattr(req.user, "id", None)):
+                raise PermissionError("Forbidden")
         self.repo.delete(command.user_id)
 
 
@@ -221,6 +289,9 @@ class RegisterCoveredClinicHandler(CommandHandler[RegisterCoveredClinicCommand])
 
     def handle(self, command: RegisterCoveredClinicCommand) -> CoveredClinicEntity:
         data = command.payload.dict()
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         data['id'] = uuid.uuid4()
         entity = CoveredClinicEntity.from_dict(data)
         return self.repo.save(entity)
@@ -236,5 +307,8 @@ class LinkUserClinicHandler(CommandHandler[LinkUserClinicCommand]):
             'clinic_id': command.clinic_id,
             'linked_at': datetime.utcnow()
         }
+        req = get_current_request()
+        if req and getattr(req.user, "role", None) == "admin":
+            raise PermissionError("Forbidden")
         entity = UserClinicEntity.from_dict(data)
         return self.repo.save(entity)
