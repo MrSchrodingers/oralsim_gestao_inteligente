@@ -18,6 +18,7 @@ help:
 	@echo "  seed-complete      → Execução de todos os seeds (flow cfg, messages, dados, schedules…)"
 	@echo "  test-notifications → Roda testes de notificação (modo real, sem mocks)"
 	@echo "  rebuild-all        → Derruba tudo, remove volumes e sobe do zero (build completo)"
+	@echo "  sync-old-debts     → Sincroniza dívidas com due_date > 90 dias e busca pacientes no Pipeboard"
 	@echo ""
 
 # ------------------------------------------------------------
@@ -60,3 +61,10 @@ rebuild-all:
 	clear
 	$(COMPOSE) down --volumes --remove-orphans || true 
 	$(COMPOSE) up -d --build
+
+# ------------------------------------------------------------
+# 5) Sincronizar dívidas antigas para a clínica 47
+# ------------------------------------------------------------
+sync-old-debts:
+	$(MANAGE) sync_old_debts --clinic-id 47 --min-days 90
+	@echo "✅ Executado às $$(date '+%H:%M:%S')"
