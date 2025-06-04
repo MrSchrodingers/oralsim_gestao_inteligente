@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pika
 import structlog
+from oralsin_core.adapters.observability.metrics import RABBITMQ_CONSUMED, RABBITMQ_PUBLISHED
 from pika.adapters.blocking_connection import BlockingChannel
 
 logger = structlog.get_logger()
@@ -57,6 +58,7 @@ class RabbitMQ:
             body=json.dumps(serialized).encode(),
             properties=pika.BasicProperties(delivery_mode=2)
         )
+        RABBITMQ_PUBLISHED.labels(exchange, routing_key).inc()
         logger.info("rabbitmq.published", exchange=exchange, routing_key=routing_key, message=message)
 
 # Decorator para publicar saída de uma função como mensagem
@@ -83,7 +85,7 @@ def publish(exchange: str, routing_key: str):
 import backoff  # noqa: E402
 
 
-def retry_consume(max_tries=5, base=1.0):
+def retry_consume(max_tries=5, base=1.0, queue: str | None = None):
     def deco(fn):
         @backoff.on_exception(backoff.expo, pika.exceptions.AMQPError, max_tries=max_tries)
         @wraps(fn)
@@ -92,6 +94,8 @@ def retry_consume(max_tries=5, base=1.0):
             try:
                 fn(ch, method, properties, data)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
+                label = queue or getattr(method, "routing_key", "unknown")
+                RABBITMQ_CONSUMED.labels(label).inc()
             except Exception:
                 logger.exception("rabbitmq.consume.failed", data=data)
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

@@ -13,6 +13,7 @@ from django.conf import settings
 from django.db import connection, transaction
 
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+from oralsin_core.adapters.observability.metrics import SYNC_DURATION, SYNC_PATIENTS, SYNC_RUNS
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import CommandHandler
 from oralsin_core.core.application.dtos.oralsin_dtos import InadimplenciaQueryDTO, OralsinPacienteDTO
@@ -84,7 +85,9 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         profiler = cProfile.Profile() if PROFILE_ENABLED else None
         if profiler:
             profiler.enable()
-
+        SYNC_RUNS.labels(str(cmd.oralsin_clinic_id)).inc()
+        start = time.perf_counter()
+        
         # 1) registrar clínica
         clinic = self._profiled(
             "clinic.get_or_create",
@@ -116,6 +119,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
 
             # 3.3 Persistir parcelas
             self._profiled(f"{tag}.installments", self._persist_installments, dto, saved_contract.id)
+            SYNC_PATIENTS.labels(str(cmd.oralsin_clinic_id)).inc()
 
         if profiler:
             profiler.disable()
@@ -123,6 +127,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
             stats = pstats.Stats(profiler, stream=stream).sort_stats(pstats.SortKey.CUMULATIVE)
             stats.print_stats(20)
             logger.info(f"[PROFILE] Core sync stats:\n{stream.getvalue()}")
+        SYNC_DURATION.labels(str(cmd.oralsin_clinic_id)).observe(time.perf_counter() - start)
 
     def _persist_patient_and_phones(self, dto: OralsinPacienteDTO, clinic_id: uuid.UUID):
         patient = self.mapper.map_patient(dto, clinic_id)

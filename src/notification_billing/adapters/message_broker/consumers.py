@@ -25,7 +25,7 @@ def start_consuming():
     ch = rabbit.channel()
 
     # 3) consumidor de envios manuais
-    @retry_consume()
+    @retry_consume(queue="notifications.manual")
     def on_manual(ch, method, props, payload):
         notification_service.send_manual(
             patient_id=payload["patient_id"],
@@ -36,7 +36,7 @@ def start_consuming():
         # opcional: log, métrica, etc.
 
     # 4) consumidor de envios automáticos
-    @retry_consume()
+    @retry_consume(queue="notifications.automated")
     def on_automated(ch, method, props, payload):
         notification_service.run_automated(clinic_id=payload["clinic_id"])
 

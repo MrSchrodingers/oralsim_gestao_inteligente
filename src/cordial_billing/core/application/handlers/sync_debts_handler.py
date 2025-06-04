@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -11,6 +12,7 @@ from oralsin_core.core.domain.repositories.installment_repository import Install
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 from structlog import get_logger
 
+from cordial_billing.adapters.observability.metrics import CASES_CREATED, CASES_SKIPPED, SYNC_DURATION
 from cordial_billing.core.application.commands.collect_commands import (
     SyncOldDebtsCommand,
 )
@@ -50,6 +52,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
     # ----------------------------------------------------------------- #
     async def handle(self, cmd: SyncOldDebtsCommand) -> dict[str, int]:
         created, skipped = 0, 0
+        start = time.perf_counter()
 
         # 1. pega todos os contratos da clínica
         contracts = await sync_to_async(self.contract_repo.list_by_clinic)(cmd.clinic_id)
@@ -97,6 +100,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                     )(inst.id)
                     if exists_case:
                         skipped += 1
+                        CASES_SKIPPED.labels(cmd.clinic_id).inc()
                         continue
 
                     # 4. obtém patient_id via contrato
@@ -129,6 +133,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                     # 8. salva no repositório
                     await sync_to_async(self.case_repo.save)(case)
                     created += 1
+                    CASES_CREATED.labels(cmd.clinic_id).inc()
                     processed_patients.add(patient_id)
 
                     # 9. dispara evento
@@ -142,4 +147,5 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
             created=created,
             skipped=skipped,
         )
+        SYNC_DURATION.labels(cmd.clinic_id).observe(time.perf_counter() - start)
         return {"created": created, "skipped": skipped}

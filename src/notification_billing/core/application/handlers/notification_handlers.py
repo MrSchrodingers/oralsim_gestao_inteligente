@@ -1,11 +1,14 @@
+import time
 from typing import Any
 
 from django.utils import timezone
+from oralsin_core.adapters.observability.metrics import NOTIFICATIONS_SENT
 from oralsin_core.core.domain.repositories.installment_repository import InstallmentRepository
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 
 from notification_billing.adapters.message_broker.rabbitmq import publish
 from notification_billing.adapters.notifiers.registry import get_notifier
+from notification_billing.adapters.observability.metrics import NOTIFICATION_FLOW_COUNT, NOTIFICATION_FLOW_DURATION
 from notification_billing.core.application.commands.contact_commands import AdvanceContactStepCommand
 from notification_billing.core.application.commands.notification_commands import (
     RunAutomatedNotificationsCommand,
@@ -90,51 +93,58 @@ class SendManualNotificationHandler(
 
     @publish(exchange="notifications", routing_key="manual")
     def handle(self, cmd: SendManualNotificationCommand) -> dict[str, Any]:
-        sched = self.schedule_repo.get_by_patient_contract(
-            cmd.patient_id, cmd.contract_id
-        )
-        inst = self.notification_service.installment_repo.get_current_installment(
-            sched.contract_id
-        )
-        if not inst:                    
-            raise ValueError(
-                f"Parcela atual não encontrada para contrato {sched.contract_id}"
+        start = time.perf_counter()
+        success = True
+        try:
+            sched = self.schedule_repo.get_by_patient_contract(
+                cmd.patient_id, cmd.contract_id
             )
+            inst = self.notification_service.installment_repo.get_current_installment(
+                sched.contract_id
+            )
+            if not inst:
+                raise ValueError(
+                    f"Parcela atual não encontrada para contrato {sched.contract_id}"
+                )
+            msg = self.notification_service.message_repo.get_message(
+                cmd.channel, sched.current_step, sched.clinic_id
+            )
+            patient = self.notification_service.patient_repo.find_by_id(str(sched.patient_id))
+            self.notification_service.send(msg, patient, inst)
 
-        msg = self.notification_service.message_repo.get_message(
-            cmd.channel, sched.current_step, sched.clinic_id
-        )
-        patient = self.notification_service.patient_repo.find_by_id(str(sched.patient_id))
-        self.notification_service.send(msg, patient, inst)
-
-        hist = self.history_repo.save_from_schedule(
-            schedule=sched,
-            sent_at=timezone.now(),
-            success=True,
-            channel=cmd.channel,
-            feedback=None,
-            observation="manual send",
-            message=msg,
-        )
-        import structlog
-        structlog.get_logger(__name__).info("history saved", history=hist)
-        self.dispatcher.dispatch(
-            NotificationSentEvent(
-                schedule_id=sched.id,
-                message_id=msg.id,
-                sent_at=hist.sent_at,
+            hist = self.history_repo.save_from_schedule(
+                schedule=sched,
+                sent_at=timezone.now(),
+                success=True,
                 channel=cmd.channel,
+                feedback=None,
+                observation="manual send",
+                message=msg,
             )
-        )
-
-        return {
-            "patient_id": cmd.patient_id,
-            "contract_id": cmd.contract_id,
-            "channel": cmd.channel,
-            "message_id": msg.id,
-            "sent_at": hist.sent_at.isoformat(),
-        }
-
+            import structlog
+            structlog.get_logger(__name__).info("history saved", history=hist)
+            self.dispatcher.dispatch(
+                NotificationSentEvent(
+                    schedule_id=sched.id,
+                    message_id=msg.id,
+                    sent_at=hist.sent_at,
+                    channel=cmd.channel,
+                )
+            )
+            return {
+                "patient_id": cmd.patient_id,
+                "contract_id": cmd.contract_id,
+                "channel": cmd.channel,
+                "message_id": msg.id,
+                "sent_at": hist.sent_at.isoformat(),
+            }
+        except Exception:
+            success = False
+            raise
+        finally:
+            NOTIFICATIONS_SENT.labels("manual", cmd.channel, str(success)).inc()
+            NOTIFICATION_FLOW_COUNT.labels("manual", str(success)).inc()
+            NOTIFICATION_FLOW_DURATION.labels("manual").observe(time.perf_counter() - start)
 
 class RunAutomatedNotificationsHandler(
     CommandHandler[RunAutomatedNotificationsCommand]
@@ -156,93 +166,108 @@ class RunAutomatedNotificationsHandler(
         self.query_bus = query_bus
 
     @publish(exchange="notifications", routing_key="automated")
-    def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:
-        filters = {"clinic_id": cmd.clinic_id}
-        if cmd.only_pending:
-            filters["status"] = ContactSchedule.Status.PENDING
+    def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:  # noqa: PLR0912
+        start = time.perf_counter()
+        success = True
+        try:
+            filters = {"clinic_id": cmd.clinic_id}
+            if cmd.only_pending:
+                filters["status"] = ContactSchedule.Status.PENDING
 
-        query = ListPendingSchedulesQuery(
-            filtros=filters, page=1, page_size=cmd.batch_size
-        )
-        schedules: PagedResult[Any] = self.query_bus.dispatch(query)
-        now = timezone.now()
-        results: list[dict[str, Any]] = []
-
-        if not schedules.items:
-            return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
-
-        for sched in schedules.items:
-            # obtém parcela atual e paciente
-            inst_page = self.notification_service.installment_repo.list_overdue(
-                contract_id=sched.contract_id,
-                min_days_overdue=0,
-                offset=0,
-                limit=1,
+            query = ListPendingSchedulesQuery(
+                filtros=filters, page=1, page_size=cmd.batch_size
             )
-            if not inst_page.items:
-                continue
-            inst = inst_page.items[0]
-            if inst.received:
-                continue
+            schedules: PagedResult[Any] = self.query_bus.dispatch(query)
+            now = timezone.now()
+            results: list[dict[str, Any]] = []
 
-            patient = self.notification_service.patient_repo.find_by_id(
-                sched.patient_id
-            )
+            if not schedules.items:
+                return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
 
-            # busca canais configurados no FlowStepConfig
-            cfg = self.config_repo.find_by_step(sched.current_step)
-            if not cfg or not cfg.active:
-                continue
-
-            for channel in cfg.channels:
-                msg = self.notification_service.message_repo.get_message(
-                    channel, sched.current_step, sched.clinic_id
+            for sched in schedules.items:
+                inst_page = self.notification_service.installment_repo.list_overdue(
+                    contract_id=sched.contract_id,
+                    min_days_overdue=0,
+                    offset=0,
+                    limit=1,
                 )
-                if not msg:
+                if not inst_page.items:
+                    continue
+                inst = inst_page.items[0]
+                if inst.received:
                     continue
 
-                try:
-                    self.notification_service.send(msg, patient, inst)
-                    success = True
-                except Exception as err:
-                    success = False
-                    err_msg = str(err)
+                patient = self.notification_service.patient_repo.find_by_id(sched.patient_id)
 
-                hist = self.history_repo.save_from_schedule(
-                    schedule=sched,
-                    sent_at=now,
-                    success=success,
-                    channel=channel, 
-                    feedback=None,
-                    observation=("automated send" if success else f"error: {err_msg}"),
-                    message=msg,
-                )
+                cfg = self.config_repo.find_by_step(sched.current_step)
+                if not cfg or not cfg.active:
+                    continue
 
-                if success:
-                    self.dispatcher.dispatch(
-                        NotificationSentEvent(
-                            schedule_id=sched.id,
-                            message_id=msg.id,
-                            sent_at=hist.sent_at,
-                            channel=channel,
-                        )
+                for channel in cfg.channels:
+                    msg = self.notification_service.message_repo.get_message(
+                        channel, sched.current_step, sched.clinic_id
                     )
-                results.append({
-                    "patient_id": str(sched.patient_id),
-                    "contract_id": str(sched.contract_id),
-                    "step": sched.current_step,
-                    "channel": channel,
-                    "success": success,
-                })
+                    if not msg:
+                        continue
 
-            # Avança step se ao menos um canal teve sucesso
-            if any(r["success"] for r in results if r["step"] == sched.current_step and r["patient_id"] == str(sched.patient_id)):
-                self.dispatcher.dispatch(
-                    AdvanceContactStepCommand(schedule_id=sched.id)
-                )
+                    try:
+                        self.notification_service.send(msg, patient, inst)
+                        send_ok = True
+                    except Exception as err:
+                        send_ok = False
+                        err_msg = str(err)
 
-        return {
-            "clinic_id": cmd.clinic_id,
-            "processed": len(results),
-            "results": results,
-        }
+                    hist = self.history_repo.save_from_schedule(
+                        schedule=sched,
+                        sent_at=now,
+                        success=send_ok,
+                        channel=channel,
+                        feedback=None,
+                        observation=(
+                            "automated send" if send_ok else f"error: {err_msg}"
+                        ),
+                        message=msg,
+                    )
+                    NOTIFICATIONS_SENT.labels("automated", channel, str(send_ok)).inc()
+
+                    if send_ok:
+                        self.dispatcher.dispatch(
+                            NotificationSentEvent(
+                                schedule_id=sched.id,
+                                message_id=msg.id,
+                                sent_at=hist.sent_at,
+                                channel=channel,
+                            )
+                        )
+                    results.append(
+                        {
+                            "patient_id": str(sched.patient_id),
+                            "contract_id": str(sched.contract_id),
+                            "step": sched.current_step,
+                            "channel": channel,
+                            "success": send_ok,
+                        }
+                    )
+                if any(
+                    r["success"]
+                    for r in results
+                    if r["step"] == sched.current_step
+                    and r["patient_id"] == str(sched.patient_id)
+                ):
+                    self.dispatcher.dispatch(
+                        AdvanceContactStepCommand(schedule_id=sched.id)
+                    )
+
+            return {
+                "clinic_id": cmd.clinic_id,
+                "processed": len(results),
+                "results": results,
+            }
+        except Exception:
+            success = False
+            raise
+        finally:
+            NOTIFICATION_FLOW_COUNT.labels("automated", str(success)).inc()
+            NOTIFICATION_FLOW_DURATION.labels("automated").observe(
+                time.perf_counter() - start
+            )
