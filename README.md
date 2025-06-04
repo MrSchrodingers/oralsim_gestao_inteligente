@@ -17,10 +17,10 @@ flowchart TB
         B --> H[Grafana]
     end
 
-    subgraph Aplicação Core (Python)
+    subgraph Aplicação Core
         direction TB
-        I[oralsin_core] --> J[Domain (Entidades, Eventos)]
-        J --> K[Application (Comandos, Queries, Handlers)]
+        I[oralsin_core] --> J["Domain (Entidades, Eventos)"]
+        J --> K["Application (Comandos, Queries, Handlers)"]
         K --> L[Adapters: API Clients, Repositórios Django, Observability]
     end
 
@@ -32,7 +32,7 @@ flowchart TB
     end
 
     subgraph Observabilidade
-        G --> P[Scrape de Métricas (HTTP, Celery, DB)]
+        G --> P["Scrape de Métricas (HTTP, Celery, DB)"]
         H -->|Dashboards| P
     end
 
@@ -49,7 +49,7 @@ flowchart TB
 
         Q3[3. Fluxo de Notificação] --> Y[Scheduler Django / Celery Beat → Geração de Agendamentos]
         Y --> Z[RabbitMQ → Fila de Notificação]
-        Z --> AA[Celery Worker / Consumer → Notifiers (E-mail, SMS, WhatsApp)]
+        Z --> AA["Celery Worker / Consumer → Notifiers (E-mail, SMS, WhatsApp)"]
         AA --> AB[Persistência de Histórico de Contato]
     end
 
