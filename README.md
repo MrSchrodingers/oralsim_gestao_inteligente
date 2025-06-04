@@ -763,9 +763,8 @@ jobs:
 
 Caso necessite de suporte técnico, customização ou queira adquirir licenças corporativas:
 
-* **E-mail**: [suporte@suporte.com.br](mailto:suporte@suporte.com.br)
-* **Telefone/WhatsApp**: +55 (19) 99999-9999
-* **Site**: [www.suporte.com.br](https://www.suporte.com.br)
+* **E-mail**: [mrschrodingers@gmail.com.br](mailto:suporte@suporte.com)
+* **Nome**: Matheus Munhoz
 
 Para contribuir com o projeto ou reportar issues, acesse o repositório no GitHub:
 
