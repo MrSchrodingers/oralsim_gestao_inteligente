@@ -38,16 +38,16 @@ flowchart TB
 
     subgraph Fluxos Principais
         direction TB
-        Q[1. Registro de Cobertura] --> R[CommandBus → RegisterCoverageHandler]
+        Q["1. Registro de Cobertura"] --> R[CommandBus → RegisterCoverageHandler]
         R --> S[OralsinAPIClient → API Externa Oralsin]
         S --> T[Persistência de Clínica / Dados Relacionados]
         T --> U[Emissão de Evento → SyncInadimplencia]
 
-        Q2[2. Sincronização de Inadimplência] --> V[CommandBus → SyncInadimplenciaHandler]
+        Q2["2. Sincronização de Inadimplência"] --> V[CommandBus → SyncInadimplenciaHandler]
         V --> W[OralsinAPIClient → Lista de Pacientes / Contratos / Parcelas]
         W --> X[Bulk Upsert em PostgreSQL via Repositórios]
 
-        Q3[3. Fluxo de Notificação] --> Y[Scheduler Django / Celery Beat → Geração de Agendamentos]
+        Q3["3. Fluxo de Notificação"] --> Y[Scheduler Django / Celery Beat → Geração de Agendamentos]
         Y --> Z[RabbitMQ → Fila de Notificação]
         Z --> AA["Celery Worker / Consumer → Notifiers (E-mail, SMS, WhatsApp)"]
         AA --> AB[Persistência de Histórico de Contato]
