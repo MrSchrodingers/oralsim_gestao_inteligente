@@ -78,7 +78,7 @@ erDiagram
         UUID id PK
         string email UNIQUE
         string name
-        enum role
+        string role
     }
     CLINIC {
         UUID id PK
@@ -90,7 +90,7 @@ erDiagram
         UUID id PK
         UUID user_id FK
         UUID clinic_id FK
-        enum permission
+        string permission
     }
     CLINIC_COVERAGE {
         UUID id PK
@@ -110,7 +110,7 @@ erDiagram
         UUID id PK
         int oralsin_contract_id UNIQUE
         UUID patient_id FK
-        enum status
+        string status
     }
     INSTALLMENT {
         UUID id PK
@@ -123,12 +123,12 @@ erDiagram
     FLOW_STEP_CONFIG {
         UUID id PK
         int step_number UNIQUE
-        string channels JSON
+        string channels
     }
     MESSAGE {
         UUID id PK
         UUID flow_step_config_id FK
-        enum type
+        string type
         text content
     }
     CONTACT_SCHEDULE {
@@ -136,7 +136,7 @@ erDiagram
         UUID contract_id FK
         UUID flow_step_config_id FK
         datetime scheduled_date
-        enum status
+        string status
     }
     CONTACT_HISTORY {
         UUID id PK
