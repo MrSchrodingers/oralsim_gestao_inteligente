@@ -176,10 +176,14 @@ erDiagram
     Contract ||--o{ CollectionCase : "pode gerar"
     Installment ||--o{ CollectionCase : "pode gerar"
     ContactSchedule ||--o{ ContactHistory : "gera"
-    FlowStepConfig ||..| Message : "define conteúdo para"
-    FlowStepConfig ||..| ContactSchedule : "define regra para"
-    PaymentMethod |o--o{ Contract : "usado em"
-    PaymentMethod |o--o{ Installment : "usado em"
+
+    %% Relações conceituais (sem FK direta)
+    FlowStepConfig ..> Message : "define conteúdo para"
+    FlowStepConfig ..> ContactSchedule : "define regra para"
+
+    %% Relações com PaymentMethod (Muitos para Um)
+    Contract }o--|| PaymentMethod : "usa"
+    Installment }o--|| PaymentMethod : "usa"
 ```
 
 > **Detalhamento das Entidades**
