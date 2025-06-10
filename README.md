@@ -178,8 +178,8 @@ erDiagram
     ContactSchedule ||--o{ ContactHistory : "gera"
 
     %% Relações conceituais (sem FK direta)
-    FlowStepConfig ..> Message : "define conteúdo para"
-    FlowStepConfig ..> ContactSchedule : "define regra para"
+    FlowStepConfig -.-> Message : "define conteúdo para"
+    FlowStepConfig -.-> ContactSchedule : "define regra para"
 
     %% Relações com PaymentMethod (Muitos para Um)
     Contract }o--|| PaymentMethod : "usa"
