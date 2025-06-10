@@ -152,16 +152,16 @@ erDiagram
 
 > **Detalhamento das Entidades**
 >
-> **User**: Representa os usuários do sistema, que podem ter a função de `admin` ou `clinic`.
-> **Clinic**: Armazena as informações básicas das clínicas, como nome e CNPJ, e é a entidade central que conecta pacientes, contratos e usuários.
-> **CoveredClinic**: Indica se uma clínica está habilitada para o serviço de cobrança inteligente.
-> **Patient**: Contém os dados dos pacientes, incluindo informações de contato e um vínculo com sua clínica.
-> **Contract**: Descreve os contratos dos pacientes, com seu status e valores.
-> **Installment**: Representa as parcelas de um contrato, com datas de vencimento e status de pagamento.
-> **FlowStepConfig**: Define as etapas do fluxo de cobrança, especificando os canais de comunicação a serem utilizados em cada passo.
-> **Message**: Armazena os templates de mensagens que serão enviados aos pacientes em cada etapa do fluxo de cobrança.
-> **ContactSchedule**: Agenda os contatos a serem feitos com os pacientes, com base nas regras definidas em `FlowStepConfig`.
-> **ContactHistory**: Mantém um registro de todos os contatos realizados com os pacientes.
+> * **User**: Representa os usuários do sistema, que podem ter a função de `admin` ou `clinic`.
+> * **Clinic**: Armazena as informações básicas das clínicas, como nome e CNPJ, e é a entidade central que conecta pacientes, contratos e usuários.
+> * **CoveredClinic**: Indica se uma clínica está habilitada para o serviço de cobrança inteligente.
+> * **Patient**: Contém os dados dos pacientes, incluindo informações de contato e um vínculo com sua clínica.
+> * **Contract**: Descreve os contratos dos pacientes, com seu status e valores.
+> * **Installment**: Representa as parcelas de um contrato, com datas de vencimento e status de pagamento.
+> * **FlowStepConfig**: Define as etapas do fluxo de cobrança, especificando os canais de comunicação a serem utilizados em cada passo.
+> * **Message**: Armazena os templates de mensagens que serão enviados aos pacientes em cada etapa do fluxo de cobrança.
+> * **ContactSchedule**: Agenda os contatos a serem feitos com os pacientes, com base nas regras definidas em `FlowStepConfig`.
+> * **ContactHistory**: Mantém um registro de todos os contatos realizados com os pacientes.
 
 ---
 
