@@ -75,88 +75,88 @@ O diagrama abaixo representa as principais entidades do sistema e seus relaciona
 ```mermaid
 erDiagram
     User {
-        UUID id PK
-        string email UNIQUE
+        UUID id "PK"
+        string email "UNIQUE"
         string name
         string role
     }
     Clinic {
-        UUID id PK
-        int oralsin_clinic_id UNIQUE
+        UUID id "PK"
+        int oralsin_clinic_id "UNIQUE"
         string name
         string cnpj
     }
     CoveredClinic {
-        UUID id PK
-        UUID clinic_id FK
+        UUID id "PK"
+        UUID clinic_id "FK"
         bool active
     }
     Patient {
-        UUID id PK
-        int oralsin_patient_id UNIQUE
-        UUID clinic_id FK
+        UUID id "PK"
+        int oralsin_patient_id "UNIQUE"
+        UUID clinic_id "FK"
         string name
         string cpf
     }
     Contract {
-        UUID id PK
-        int oralsin_contract_id UNIQUE
-        UUID patient_id FK
-        UUID clinic_id FK
-        UUID payment_method_id FK
+        UUID id "PK"
+        int oralsin_contract_id "UNIQUE"
+        UUID patient_id "FK"
+        UUID clinic_id "FK"
+        UUID payment_method_id "FK"
         string status
     }
     Installment {
-        UUID id PK
-        UUID contract_id FK
-        UUID payment_method_id FK
+        UUID id "PK"
+        UUID contract_id "FK"
+        UUID payment_method_id "FK"
         int installment_number
         date due_date
         decimal amount
         bool received
     }
     FlowStepConfig {
-        UUID id PK
-        int step_number UNIQUE
+        UUID id "PK"
+        int step_number "UNIQUE"
         text[] channels
     }
     Message {
-        UUID id PK
+        UUID id "PK"
         string type
         text content
         int step
-        UUID clinic_id FK
+        UUID clinic_id "FK"
     }
     ContactSchedule {
-        UUID id PK
-        UUID patient_id FK
-        UUID contract_id FK
-        UUID clinic_id FK
+        UUID id "PK"
+        UUID patient_id "FK"
+        UUID contract_id "FK"
+        UUID clinic_id "FK"
         int current_step
         datetime scheduled_date
         string status
     }
     ContactHistory {
-        UUID id PK
-        UUID schedule_id FK
-        UUID patient_id FK
-        UUID contract_id FK
-        UUID message_id FK
+        UUID id "PK"
+        UUID schedule_id "FK"
+        UUID patient_id "FK"
+        UUID contract_id "FK"
+        UUID message_id "FK"
         datetime sent_at
         bool success
     }
     CollectionCase {
-        UUID id PK
-        UUID patient_id FK
-        UUID contract_id FK
-        UUID installment_id FK
-        UUID clinic_id FK
+        UUID id "PK"
+        UUID patient_id "FK"
+        UUID contract_id "FK"
+        UUID installment_id "FK"
+        UUID clinic_id "FK"
         datetime opened_at
         decimal amount
     }
     PaymentMethod {
-        UUID id PK
-        int oralsin_payment_method_id UNIQUE
+        UUID id "PK"
+        int oralsin_payment_method_id "UNIQUE"
         string name
     }
 
@@ -178,8 +178,8 @@ erDiagram
     ContactSchedule ||--o{ ContactHistory : "gera"
     FlowStepConfig ||..| Message : "define conteúdo para"
     FlowStepConfig ||..| ContactSchedule : "define regra para"
-    PaymentMethod ||..o{ Contract : "usado em"
-    PaymentMethod ||..o{ Installment : "usado em"
+    PaymentMethod |o--o{ Contract : "usado em"
+    PaymentMethod |o--o{ Installment : "usado em"
 ```
 
 > **Detalhamento das Entidades**
