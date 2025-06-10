@@ -444,11 +444,7 @@ class ClinicDataViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("ClinicDataViewSet_retrieve")
     def retrieve(self, request, pk=None):
-        filtros = self._filters(request)
-        # Se o usuário for do tipo "clinic", força o filtro por clinic_id
-        if getattr(request.user, "clinic_id", None):
-            filtros["clinic_id"] = str(request.user.clinic_id)
-        cd = core_query_bus.dispatch(GetClinicDataQuery(filtros=filtros, id=str(pk)))
+        cd = core_query_bus.dispatch(GetClinicDataQuery(id=str(pk)))
         return Response(ClinicDataSerializer(cd).data)
 
     @track_http("ClinicDataViewSet_create")

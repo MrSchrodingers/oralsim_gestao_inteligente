@@ -4,7 +4,6 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
 from oralsin_core.core.application.queries.dashboard_queries import GetDashboardSummaryQuery
-from oralsin_core.core.application.queries.patient_queries import ListPatientsQuery
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,8 +14,8 @@ from notification_billing.core.application.commands.notification_commands import
     SendManualNotificationCommand,
 )
 from plugins.django_interface.models import User
-from plugins.django_interface.permissions import IsClinicUser
-from plugins.django_interface.serializers.core_serializers import PatientSerializer, UserSerializer
+from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
+from plugins.django_interface.serializers.core_serializers import UserFullDataSerializer, UserSerializer
 from plugins.django_interface.views.core_views import PaginationFilterMixin
 
 core_query_bus = core_container.query_bus()
@@ -93,17 +92,35 @@ class SendManualNotificationView(APIView):
 
 
 # ╭──────────────────────────────────────────────╮
-# │           ME / USERS INFO                   │
+# │              ME / USERS INFO                 │
 # ╰──────────────────────────────────────────────╯
 @method_decorator(
     cache_page(ME_TTL, key_prefix=cache_key_prefix_for("me")),
     name="get",
 )
 class MeView(APIView):
+    """
+    View para retornar os dados do usuário logado.
+    Se o usuário for do tipo 'clinic', anexa as informações
+    detalhadas de suas clínicas (UserClinics, ClinicData, ClinicPhone).
+    """
     permission_classes = [IsClinicUser]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        user = request.user
+
+        # Se for um usuário de clínica, retorna os dados completos com clínicas
+        if user.role == "clinic":
+            # Usamos prefetch_related para otimizar a busca dos dados aninhados
+            user_instance = User.objects.prefetch_related(
+                'clinics__clinic_data',
+                'clinics__clinic_phones'
+            ).get(pk=user.pk)
+            serializer = UserFullDataSerializer(user_instance)
+            return Response(serializer.data)
+
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
 
 
 @method_decorator(
@@ -111,35 +128,23 @@ class MeView(APIView):
     name="get",
 )
 class UsersFullDataView(APIView):
-    permission_classes = [IsClinicUser]
+    """
+    View para retornar os dados de todos os usuários com suas
+    respectivas clínicas e detalhes.
+    - Otimizada para usar o UserFullDataSerializer e prefetch_related.
+    - Permissão alterada para IsAdminUser para maior segurança.
+    """
+    permission_classes = [IsAdminUser()]
 
     def get(self, request):
-        users = User.objects.all().prefetch_related("clinics")
-        results = []
-        for u in users:
-            clinics = [str(link.clinic_id) for link in u.clinics.all()]
-            data = UserSerializer(u).data
-            data["clinics"] = clinics
-            results.append(data)
-        return Response({"results": results, "total": len(results)})
+        # Busca todos os usuários e otimiza a query para já trazer
+        # os dados relacionados de clínicas, data e phones.
+        users = User.objects.prefetch_related(
+            'clinics__clinic_data',
+            'clinics__clinic_phones'
+        ).all()
 
-
-# ╭──────────────────────────────────────────────╮
-# │        PATIENTS DATA (lightweight list)      │
-# ╰──────────────────────────────────────────────╯
-@method_decorator(
-    cache_page(PATIENTS_DATA_TTL, key_prefix=patients_data_cache_key),
-    name="get",
-)
-class PatientsDataView(APIView):
-    permission_classes = [IsClinicUser]
-
-    def get(self, request):
-        q = ListPatientsQuery(
-            filtros=request.query_params.dict(),
-            page=int(request.query_params.get("page", 1)),
-            page_size=int(request.query_params.get("page_size", 50)),
-        )
-        res = core_query_bus.dispatch(q)
-        data = PatientSerializer(res.items, many=True).data
-        return Response({"results": data, "total": res.total})
+        # O serializer agora cuida de toda a montagem dos dados aninhados
+        serializer = UserFullDataSerializer(users, many=True)
+        
+        return Response({"results": serializer.data, "total": len(serializer.data)})

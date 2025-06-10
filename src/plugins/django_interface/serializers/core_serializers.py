@@ -5,6 +5,8 @@
 # =========================================================
 from rest_framework import serializers
 
+from plugins.django_interface.models import Clinic, ClinicData
+
 
 # ───────────────────────────────────────────────
 # Endereços
@@ -219,3 +221,34 @@ class ContactHistorySerializer(serializers.Serializer):
     schedule_id          = serializers.UUIDField(allow_null=True)
     created_at           = serializers.DateTimeField()
     updated_at           = serializers.DateTimeField()
+
+class ClinicWithDetailsSerializer(serializers.ModelSerializer):
+    """
+    Serializer para a Clínica que inclui detalhes aninhados
+    de ClinicData e ClinicPhone.
+    """
+    data = serializers.SerializerMethodField()
+    phones = ClinicPhoneSerializer(source="clinic_phones", many=True, read_only=True)
+
+    class Meta:
+        model = Clinic
+        fields = ("id", "oralsin_clinic_id", "name", "cnpj", "data", "phones")
+
+    def get_data(self, obj):
+        """
+        Retorna os dados de ClinicData, tratando o caso em que não existem.
+        """
+        try:
+            return ClinicDataSerializer(obj.clinic_data).data
+        except ClinicData.DoesNotExist:
+            return None
+
+class UserFullDataSerializer(UserSerializer):
+    """
+    Serializer para o Usuário que estende o UserSerializer
+    para incluir as clínicas com todos os seus detalhes.
+    """
+    clinics = ClinicWithDetailsSerializer(many=True, read_only=True)
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ("clinics",)

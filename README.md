@@ -56,7 +56,104 @@ flowchart TB
     C & D & E & F & G & H --> I
     I --> M
     M --> Observabilidade
-````
+```
+
+## Modelo de Dados e Relacionamentos
+
+O diagrama abaixo representa as principais entidades do sistema e seus relacionamentos.
+
+```mermaid
+erDiagram
+    User {
+        UUID id PK
+        string email
+        string name
+        string role
+    }
+    Clinic {
+        UUID id PK
+        int oralsin_clinic_id
+        string name
+        string cnpj
+    }
+    CoveredClinic {
+        UUID id PK
+        UUID clinic_id FK
+        bool active
+    }
+    Patient {
+        UUID id PK
+        int oralsin_patient_id
+        UUID clinic_id FK
+        string name
+        string cpf
+    }
+    Contract {
+        UUID id PK
+        int oralsin_contract_id
+        UUID patient_id FK
+        UUID clinic_id FK
+        string status
+    }
+    Installment {
+        UUID id PK
+        UUID contract_id FK
+        int installment_number
+        date due_date
+        bool received
+    }
+    FlowStepConfig {
+        UUID id PK
+        int step_number
+        text[] channels
+    }
+    Message {
+        UUID id PK
+        string type
+        text content
+        int step
+    }
+    ContactSchedule {
+        UUID id PK
+        UUID patient_id FK
+        UUID contract_id FK
+        int current_step
+        datetime scheduled_date
+        string status
+    }
+    ContactHistory {
+        UUID id PK
+        UUID patient_id FK
+        UUID schedule_id FK
+        datetime sent_at
+        bool success
+    }
+
+    User ||--o{ UserClinic : "tem"
+    UserClinic }o--|| Clinic : "vinculado a"
+    Clinic ||--o{ CoveredClinic : "é coberta por"
+    Clinic ||--o{ Patient : "pertence a"
+    Patient ||--o{ Contract : "possui"
+    Contract ||--o{ Installment : "contém"
+    Patient ||--o{ ContactSchedule : "tem agendamento para"
+    ContactSchedule ||--o{ ContactHistory : "gera histórico"
+    FlowStepConfig ||--o{ Message : "usa"
+```
+
+### Detalhamento das Entidades
+
+* **User**: Representa os usuários do sistema, que podem ter a função de `admin` ou `clinic`.
+* **Clinic**: Armazena as informações básicas das clínicas, como nome e CNPJ, e é a entidade central que conecta pacientes, contratos e usuários.
+* **CoveredClinic**: Indica se uma clínica está habilitada para o serviço de cobrança inteligente.
+* **Patient**: Contém os dados dos pacientes, incluindo informações de contato e um vínculo com sua clínica.
+* **Contract**: Descreve os contratos dos pacientes, com seu status e valores.
+* **Installment**: Representa as parcelas de um contrato, com datas de vencimento e status de pagamento.
+* **FlowStepConfig**: Define as etapas do fluxo de cobrança, especificando os canais de comunicação a serem utilizados em cada passo.
+* **Message**: Armazena os templates de mensagens que serão enviados aos pacientes em cada etapa do fluxo de cobrança.
+* **ContactSchedule**: Agenda os contatos a serem feitos com os pacientes, com base nas regras definidas em `FlowStepConfig`.
+* **ContactHistory**: Mantém um registro de todos os contatos realizados com os pacientes.
+
+---
 
 > **Legenda dos Componentes**
 >
@@ -71,12 +168,23 @@ flowchart TB
 
 ---
 
+## Status do Projeto
+
+O sistema está **parcialmente implementado**, com os seguintes fluxos principais em funcionamento:
+
+* **Sincronização de Clínicas e Inadimplência**: O registro de cobertura de clínicas e a sincronização de dados de pacientes, contratos e parcelas com a API externa da Oralsin estão operacionais.
+* **Agendamento de Notificações**: A lógica para agendamento de contatos com base em regras de negócio (steps de cobrança) está implementada, com envio efetivo das notificações.
+* **Verificação Pipedrive**: A sincronização e verificação de CPF's inadimplentes entre o Banco de dados da Oralsin e do Pipedrive (Implementação via um sistema própio chamado Pipeboad) está operacional, mas as ações estão pendentes.
+* **Infraestrutura e Orquestração**: Toda a infraestrutura baseada em Docker e Docker Compose está configurada, permitindo a execução dos serviços de forma integrada (banco de dados, mensageria, cache, etc.).
+
+---
 ## Índice
 
 1. [Visão Geral do Projeto](#visão-geral-do-projeto)
 2. [Casos de Uso & Proposta Comercial](#casos-de-uso--proposta-comercial)
-3. [Requisitos de Sistema](#requisitos-de-sistema)
-4. [Instalação e Execução](#instalação-e-execução)
+3. [Fluxos de Negócio e Regras](#fluxos-de-negocio-regras)
+4. [Requisitos de Sistema](#requisitos-de-sistema)
+5. [Instalação e Execução](#instalação-e-execução)
 
    1. [Pré-requisitos](#pré-requisitos)
    2. [Configuração de Ambiente](#configuração-de-ambiente)
@@ -144,6 +252,57 @@ A solução foi projetada para permitir **escala horizontal** (cada componente e
 
      * Arquitetura modular que permite integração com novos canais (Telegram, Firebase, etc.).
      * Métricas em tempo real para tomada de decisão ágil.
+
+---
+
+## Fluxos de Negócio e Regras
+
+### 1. Registro de Cobertura e Sincronização Inicial
+
+**Objetivo**: Cadastrar uma nova clínica no sistema e realizar a primeira sincronização de dados de inadimplência.
+
+**Regras de Negócio**:
+
+* Um usuário `admin` pode registrar uma nova clínica pelo nome.
+* O sistema busca a clínica na API da Oralsin e, se encontrada, armazena seus dados localmente.
+* Após o registro, uma sincronização inicial de inadimplência é disparada automaticamente para a nova clínica.
+* A sincronização busca pacientes, contratos e parcelas em um intervalo de datas pré-definido.
+* Os dados recebidos da API são persistidos no banco de dados local, atualizando registros existentes se necessário (upsert).
+
+### 2. Sincronização de Inadimplência Contínua
+
+**Objetivo**: Manter os dados de inadimplência do sistema atualizados com a API da Oralsin.
+
+**Regras de Negócio**:
+
+* A sincronização é executada periodicamente por uma tarefa agendada (Celery Beat).
+* O processo é semelhante à sincronização inicial, mas focado em atualizar os dados existentes.
+* A cada execução, o sistema incrementa métricas no Prometheus para monitoramento, como `SYNC_RUNS`, `SYNC_PATIENTS`, e `SYNC_DURATION_SECONDS`.
+
+### 3. Fluxo de Notificações de Cobrança
+
+**Objetivo**: Notificar os pacientes sobre parcelas em atraso de forma automática e escalonada.
+
+**Regras de Negócio**:
+
+* O sistema verifica periodicamente os agendamentos de contato (`ContactSchedule`) que estão pendentes e com a data de envio vencida.
+* Para cada agendamento, o sistema:
+    1.  Renderiza a mensagem apropriada (`Message`) para a etapa (`FlowStepConfig`) e o canal de comunicação definidos.
+    2.  Envia a notificação para o paciente através do canal especificado (e-mail, SMS ou WhatsApp).
+    3.  Registra o envio (ou a falha) no histórico de contatos (`ContactHistory`).
+    4.  Se o envio for bem-sucedido, avança o fluxo de cobrança para a próxima etapa, se houver.
+* O sistema permite o envio de notificações manuais através de um endpoint específico.
+
+### 4. Escalonamento de Dívidas Antigas
+
+**Objetivo**: Identificar dívidas muito antigas e escaloná-las para um processo de cobrança diferenciado.
+
+**Regras de Negócio**:
+
+* Uma tarefa periódica (`SyncOldDebtsCommand`) identifica parcelas vencidas há mais de 90 dias.
+* Para cada dívida identificada, o sistema cria um `CollectionCase`, que representa um caso de cobrança a ser tratado de forma especial.
+* Se a dívida já estiver associada a um `deal` em um sistema externo (como o Pipedrive), essa informação é vinculada ao `CollectionCase`.
+* Um evento `DebtEscalatedEvent` é disparado para notificar outros sistemas sobre o escalonamento da dívida.
 
 ---
 
