@@ -74,80 +74,88 @@ O diagrama abaixo representa as principais entidades do sistema e seus relaciona
 
 ```mermaid
 erDiagram
-    User {
+    USER {
         UUID id PK
-        string email
+        string email UNIQUE
         string name
-        string role
+        enum role
     }
-    Clinic {
+    CLINIC {
         UUID id PK
-        int oralsin_clinic_id
+        int oralsin_clinic_id UNIQUE
         string name
         string cnpj
     }
-    CoveredClinic {
+    USER_CLINIC {
+        UUID id PK
+        UUID user_id FK
+        UUID clinic_id FK
+        enum permission
+    }
+    CLINIC_COVERAGE {
         UUID id PK
         UUID clinic_id FK
         bool active
+        date coverage_start
+        date coverage_end
     }
-    Patient {
+    PATIENT {
         UUID id PK
-        int oralsin_patient_id
+        int oralsin_patient_id UNIQUE
         UUID clinic_id FK
         string name
         string cpf
     }
-    Contract {
+    CONTRACT {
         UUID id PK
-        int oralsin_contract_id
+        int oralsin_contract_id UNIQUE
         UUID patient_id FK
-        UUID clinic_id FK
-        string status
+        enum status
     }
-    Installment {
+    INSTALLMENT {
         UUID id PK
         UUID contract_id FK
-        int installment_number
+        int number
         date due_date
+        decimal amount
         bool received
     }
-    FlowStepConfig {
+    FLOW_STEP_CONFIG {
         UUID id PK
-        int step_number
-        text[] channels
+        int step_number UNIQUE
+        string channels JSON
     }
-    Message {
+    MESSAGE {
         UUID id PK
-        string type
+        UUID flow_step_config_id FK
+        enum type
         text content
-        int step
     }
-    ContactSchedule {
+    CONTACT_SCHEDULE {
         UUID id PK
-        UUID patient_id FK
         UUID contract_id FK
-        int current_step
+        UUID flow_step_config_id FK
         datetime scheduled_date
-        string status
+        enum status
     }
-    ContactHistory {
+    CONTACT_HISTORY {
         UUID id PK
-        UUID patient_id FK
-        UUID schedule_id FK
+        UUID contact_schedule_id FK
         datetime sent_at
         bool success
+        text details
     }
 
-    User ||--o{ UserClinic : "tem"
-    UserClinic }o--|| Clinic : "vinculado a"
-    Clinic ||--o{ CoveredClinic : "é coberta por"
-    Clinic ||--o{ Patient : "pertence a"
-    Patient ||--o{ Contract : "possui"
-    Contract ||--o{ Installment : "contém"
-    Patient ||--o{ ContactSchedule : "tem agendamento para"
-    ContactSchedule ||--o{ ContactHistory : "gera histórico"
-    FlowStepConfig ||--o{ Message : "usa"
+    USER ||--o{ USER_CLINIC : "vincula"
+    CLINIC ||--o{ USER_CLINIC : "vincula"
+    CLINIC ||--o{ CLINIC_COVERAGE : "cobre"
+    CLINIC ||--o{ PATIENT : "pertence a"
+    PATIENT ||--o{ CONTRACT : "possui"
+    CONTRACT ||--o{ INSTALLMENT : "contém"
+    FLOW_STEP_CONFIG ||--o{ MESSAGE : "define"
+    FLOW_STEP_CONFIG ||--o{ CONTACT_SCHEDULE : "orquestra"
+    CONTRACT ||--o{ CONTACT_SCHEDULE : "gera"
+    CONTACT_SCHEDULE ||--o{ CONTACT_HISTORY : "registra"
 ```
 
 > **Detalhamento das Entidades**

@@ -111,11 +111,10 @@ class MeView(APIView):
 
         # Se for um usuário de clínica, retorna os dados completos com clínicas
         if user.role == "clinic":
-            # Usamos prefetch_related para otimizar a busca dos dados aninhados
             user_instance = User.objects.prefetch_related(
-                'clinics__clinic_data',
-                'clinics__clinic_phones'
-            ).get(pk=user.pk)
+                "clinics__clinic_data__address",  
+                "clinics__clinic_phones"
+            ).get(pk=user.id)
             serializer = UserFullDataSerializer(user_instance)
             return Response(serializer.data)
 
@@ -134,14 +133,14 @@ class UsersFullDataView(APIView):
     - Otimizada para usar o UserFullDataSerializer e prefetch_related.
     - Permissão alterada para IsAdminUser para maior segurança.
     """
-    permission_classes = [IsAdminUser()]
+    permission_classes = [IsAdminUser]
 
     def get(self, request):
         # Busca todos os usuários e otimiza a query para já trazer
         # os dados relacionados de clínicas, data e phones.
         users = User.objects.prefetch_related(
-            'clinics__clinic_data',
-            'clinics__clinic_phones'
+            "clinics__clinic_data__address",
+            "clinics__clinic_phones"
         ).all()
 
         # O serializer agora cuida de toda a montagem dos dados aninhados
