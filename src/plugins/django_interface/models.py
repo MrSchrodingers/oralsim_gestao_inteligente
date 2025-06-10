@@ -327,15 +327,25 @@ class Contract(models.Model):
 
 class Installment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="installments")
-    contract_version = models.PositiveIntegerField(null=True, db_index=True) 
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="installments"
+    )
+    contract_version = models.PositiveIntegerField(null=True, db_index=True)
     installment_number = models.PositiveIntegerField()
     oralsin_installment_id = models.IntegerField(null=True, db_index=True)
     due_date = models.DateField(db_index=True)
     installment_amount = models.DecimalField(max_digits=14, decimal_places=2)
     received = models.BooleanField(default=False, db_index=True)
     installment_status = models.CharField(max_length=50, blank=True, null=True, db_index=True)
-    payment_method = models.ForeignKey(PaymentMethod, on_delete=models.SET_NULL, blank=True, null=True, related_name="installments")
+    payment_method = models.ForeignKey(
+        PaymentMethod,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="installments"
+    )
     is_current = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -351,20 +361,27 @@ class Installment(models.Model):
             Index(
                 fields=["received", "due_date"],
                 name="inst_overdue_idx",
-                condition=Q(received=False)
+                condition=Q(received=False),
             ),
-            # parcial p/ parcelas ativas não recebidas
+            # índice parcial para parcelas ativas não recebidas
             Index(
                 name="inst_current_overdue_idx",
                 fields=["due_date"],
-                condition=Q(is_current=True, received=False)
+                condition=Q(is_current=True, received=False),
             ),
-            # composto p/ is_current por contrato
+            # índice simples de is_current por contrato
             Index(
                 name="inst_contract_current_idx",
-                fields=["contract", "is_current"]
+                fields=["contract", "is_current"],
             ),
         ]
+        # constraints = [
+        #     UniqueConstraint(
+        #         fields=["contract", "contract_version"],
+        #         condition=Q(is_current=True),
+        #         name="unique_current_per_contract_version",
+        #     )
+        # ]
 
     def __str__(self) -> str:
         return f"Parcela {self.installment_number} | {self.contract}"

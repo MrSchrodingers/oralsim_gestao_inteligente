@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.patient_phone_entity import PatientPhoneEntity
 from oralsin_core.core.domain.repositories.patient_phone_repository import (
     PatientPhoneRepository,
@@ -48,3 +49,25 @@ class PatientPhoneRepoImpl(PatientPhoneRepository):
             PatientPhoneEntity.from_model(m)
             for m in PatientPhoneModel.objects.filter(patient_id=patient_id)
         ]
+
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[PatientPhoneEntity]:
+        """
+        Retorna PagedResult contendo lista de PatientPhoneEntity e total,
+        aplicando paginação sobre PatientPhoneModel.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = PatientPhoneModel.objects.all()
+
+        # Aplica filtros simples se houver campos em `filtros`
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        pacientes_telefone_page = qs.order_by('id')[offset: offset + page_size]
+
+        items = [PatientPhoneEntity.from_model(m) for m in pacientes_telefone_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

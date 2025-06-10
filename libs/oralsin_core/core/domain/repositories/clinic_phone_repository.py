@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.clinic_phone_entity import ClinicPhoneEntity
 
 
@@ -23,3 +24,16 @@ class ClinicPhoneRepository(ABC):
     def delete(self, phone_id: str) -> None:
         """Remove um ClinicPhone pelo ID."""
         ...
+
+    @abstractmethod
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[ClinicPhoneEntity]:
+        """
+        Retorna PagedResult contendo lista da Entidade e total,
+        aplicando paginação sobre o Modelo.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        ...
+        

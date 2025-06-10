@@ -21,10 +21,10 @@ class JWTService:
         
         now = datetime.utcnow()
         payload = {
-            "sub": subject,
+            "sub": str(subject), 
             "role": role,
             "iat": now,
-            "exp": now + timedelta(seconds=expires_in),
+            "exp": now + timedelta(seconds=int(expires_in)),
         }
         if clinic_id is not None:
             payload["clinic_id"] = clinic_id

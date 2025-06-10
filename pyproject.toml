@@ -46,6 +46,7 @@ oralsin_core = { path = "libs/oralsin_core" }
 sqlalchemy = "^2.0.41"
 asyncpg = "^0.30.0"
 django-extensions = "^4.1"
+django-celery-beat = "^2.8.1"
 
 [[tool.poetry.packages]]
 include = "oralsin_core"

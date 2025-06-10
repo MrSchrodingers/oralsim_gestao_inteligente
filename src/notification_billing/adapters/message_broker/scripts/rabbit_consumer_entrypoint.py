@@ -1,8 +1,13 @@
-from django.conf import settings
+import os
 
-from notification_billing.adapters.config.composition_root import setup_di_container_from_settings
-from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ, retry_consume
-from notification_billing.core.application.services.notification_service import NotificationFacadeService
+import django
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+django.setup()
+
+from django.conf import settings  # noqa: E402
+
+from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ, retry_consume  # noqa: E402
 
 
 def run():
@@ -10,9 +15,11 @@ def run():
     Ponto de entrada para o consumidor Pika. 
     Será chamado pelo `manage.py runscript rabbit_consumer_entrypoint`.
     """
-    # 1) configura DI (já que você precisa de `container` do seu composition_root)
+    # 1) configura DI
+    from notification_billing.adapters.config.composition_root import setup_di_container_from_settings
     setup_di_container_from_settings(settings)
     from notification_billing.adapters.config.composition_root import container
+    from notification_billing.core.application.services.notification_service import NotificationFacadeService
 
     rabbit: RabbitMQ = container.rabbit()
     notification_service: NotificationFacadeService = container.notification_service()
@@ -58,3 +65,6 @@ def run():
     except KeyboardInterrupt:
         print(" [*] Rabbit consumer interrompido pelo usuário.")
         ch.close()
+
+if __name__ == "__main__":
+    run()

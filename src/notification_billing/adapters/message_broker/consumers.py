@@ -44,3 +44,6 @@ def start_consuming():
     ch.basic_consume(queue="notifications.automated", on_message_callback=on_automated)
 
     ch.start_consuming()
+
+if __name__ == "__main__":
+    start_consuming()

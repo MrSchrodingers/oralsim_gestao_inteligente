@@ -1,3 +1,4 @@
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.user_entity import UserEntity
 from oralsin_core.core.domain.repositories.user_repository import UserRepository
 from plugins.django_interface.models import User as UserModel
@@ -41,3 +42,25 @@ class UserRepoImpl(UserRepository):
 
     def delete(self, user_id: str) -> None:
         UserModel.objects.filter(id=user_id).delete()
+        
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[UserEntity]:
+        """
+        Retorna PagedResult contendo lista de UserEntity e total,
+        aplicando paginação sobre UserModel.
+
+        - filtros: dicionário de filtros (ex.: {'role': 'admin', 'email__icontains': 'foo'})
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = UserModel.objects.all()
+
+        # Aplica filtros simples se houver campos em `filtros`
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        usuarios_page = qs.order_by('id')[offset: offset + page_size]
+
+        items = [UserEntity.from_model(m) for m in usuarios_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

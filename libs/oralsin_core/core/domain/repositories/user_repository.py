@@ -38,3 +38,14 @@ class UserRepository(ABC):
     def delete(self, user_id: str) -> None:
         """Remove um usuário."""
         ...
+
+    @abstractmethod
+    def list(self, filtros: dict, page: int, page_size: int) -> tuple[list[UserEntity], int]:
+        """Retorna PagedResult contendo lista de UserEntity e total,
+        aplicando paginação sobre UserModel.
+
+        - filtros: dicionário de filtros (ex.: {'role': 'admin', 'email__icontains': 'foo'})
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        ...

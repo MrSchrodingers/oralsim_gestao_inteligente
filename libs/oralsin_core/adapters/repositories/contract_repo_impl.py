@@ -3,6 +3,7 @@ from __future__ import annotations
 import structlog
 from django.utils import timezone
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.contract_entity import ContractEntity
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from plugins.django_interface.models import Contract as ContractModel
@@ -25,15 +26,15 @@ class ContractRepoImpl(ContractRepository):
         a partir de `CoveredClinic` e devolve os contratos.
         """
         try:
-            covered = CoveredClinic.objects.get(oralsin_clinic_id=clinic_id)
+            covered = CoveredClinic.objects.get(clinic_id=clinic_id)
         except CoveredClinic.DoesNotExist:
-            logger.warning("covered_clinic_not_found", oralsin_clinic_id=clinic_id)
+            logger.warning("covered_clinic_not_found", clinic_id=clinic_id)
             return []
 
-        qs = ContractModel.objects.filter(clinic_id=covered.clinic_id)
+        qs = ContractModel.objects.filter(clinic_id=covered.clinic)
         logger.debug(
             "contracts_found",
-            oralsin_clinic_id=clinic_id,
+            clinic_id=clinic_id,
             internal_clinic_uuid=str(covered.id),
             contracts=qs.count(),
         )
@@ -81,3 +82,29 @@ class ContractRepoImpl(ContractRepository):
     # ------------------------------------------------------------------
     def delete(self, contract_id: str) -> None:
         ContractModel.objects.filter(id=contract_id).delete()
+
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[ContractEntity]:
+        """
+        Retorna PagedResult contendo lista de ContractEntity e total,
+        aplicando paginação sobre ContractModel.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = ContractModel.objects.all()
+
+        # Aplica filtros simples se houver campos em `filtros`
+        clinic_uuid = filtros.pop("clinic_id", None)
+        if clinic_uuid:
+            qs = qs.filter(clinic_id=clinic_uuid)
+
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        contrato_page = qs.order_by('id')[offset: offset + page_size]
+
+        items = [ContractEntity.from_model(m) for m in contrato_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 from oralsin_core.core.application.dtos.dashboard_dto import DashboardDTO, PaymentSummaryDTO, StatsDTO
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
@@ -25,12 +26,12 @@ class DashboardService:
         self.formatter = formatter
 
     def _build_payment_summary(self, inst: InstallmentEntity, status: str) -> PaymentSummaryDTO:
-        contract = self.contract_repo.find_by_id(inst.contract)
+        contract = self.contract_repo.find_by_id(inst.contract_id)
         if contract is None:
-            raise ValueError(f"Contrato não encontrado para id={inst.contract}")
-        patient = self.patient_repo.find_by_id(contract.patient)
+            raise ValueError(f"Contrato não encontrado para id={inst.contract_id}")
+        patient = self.patient_repo.find_by_id(contract.patient_id)
         if patient is None:
-            raise ValueError(f"Paciente não encontrado para id={contract.patient}")
+            raise ValueError(f"Paciente não encontrado para id={contract.patient_id}")
 
         return PaymentSummaryDTO(
             id=inst.id,
@@ -42,7 +43,7 @@ class DashboardService:
 
     def get_summary(self, user_id: str) -> DashboardDTO:
         # 1) pega clínicas do usuário
-        user_clinics = self.user_clinic_repo.find_clinics_by_user(user_id)
+        user_clinics = self.user_clinic_repo.find_by_user(user_id)
         if not user_clinics:
             empty = StatsDTO(
                 totalReceivables="0",
@@ -57,22 +58,24 @@ class DashboardService:
             )
             return DashboardDTO(stats=empty, recentPayments=[], pendingPayments=[])
 
-        clinic_id = user_clinics[0].clinic
+        clinic_id = user_clinics[0].clinic_id
 
         # 2) busca todos os contratos e calcula tot. contratos/pacientes
-        contracts = self.contract_repo.find_by_clinic_id(clinic_id)
+        contracts = self.contract_repo.list_by_clinic(clinic_id)
         total_contracts = len(contracts)
-        total_patients = len({c.patient for c in contracts})
+        total_patients = len({c.patient_id for c in contracts})
 
-        # 3) coleta todas as parcelas
-        all_installments: list[InstallmentEntity] = []
-        for c in contracts:
-            all_installments += self.installment_repo.find_by_contract_id(c.id)
+        # 3) coleta todas as parcelas de forma eficiente
+        if not contracts:
+            all_installments = []
+        else:
+            contract_ids = [c.id for c in contracts]
+            all_installments = self.installment_repo.find_by_contract_ids(contract_ids)
 
         today = date.today()
         month_start = today.replace(day=1)
 
-        total_amount = paid_amount = paid_month = pending_amount = overdue_amount = 0.0
+        total_amount = paid_amount = paid_month = pending_amount = overdue_amount = Decimal("0.0")
         paid_list: list[InstallmentEntity] = []
         pending_list: list[InstallmentEntity] = []
         days_overdue: list[int] = []
@@ -90,7 +93,7 @@ class DashboardService:
                 if inst.due_date < today:
                     overdue_amount += amt
                     days_overdue.append((today - inst.due_date).days)
-                    overdue_contracts.add(inst.contract)
+                    overdue_contracts.add(inst.contract_id)
                 else:
                     pending_amount += amt
                 pending_list.append(inst)

@@ -105,4 +105,4 @@ app = Starlette(routes=[
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("oralsin_core.adapters.observability.metrics:app",
-                host="0.0.0.0", port=int(os.getenv("APP_METRICS_PORT", 9108)))  # noqa: PLW1508
+                host="0.0.0.0", port=int(os.getenv("APP_METRICS_PORT")))

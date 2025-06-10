@@ -9,7 +9,7 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_timeout: 5s
     static_configs:
-      - targets: ['oralsin-app:9108']        # ← 9108 (metrics-server)
+      - targets: ['oralsin_app:9108']        # ← 9108 (metrics-server)
 
   # ── Celery Exporter (RabbitMQ) ───────────────────────────────────────────────
   - job_name: 'celery'

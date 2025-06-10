@@ -17,15 +17,15 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='', cast=Csv())
 # -------------------------------
 # Cookies & CSRF
 # -------------------------------
-SESSION_COOKIE_SECURE   = config('SESSION_COOKIE_SECURE', default=True, cast=bool)
+SESSION_COOKIE_SECURE   = config('SESSION_COOKIE_SECURE', default=False, cast=bool) # Desenvolvido para HTTPS
 SESSION_COOKIE_HTTPONLY = config('SESSION_COOKIE_HTTPONLY', default=True, cast=bool)
 SESSION_COOKIE_SAMESITE = config('SESSION_COOKIE_SAMESITE', default='Lax')
-CSRF_COOKIE_SECURE      = config('CSRF_COOKIE_SECURE', default=True, cast=bool)
+CSRF_COOKIE_SECURE      = config('CSRF_COOKIE_SECURE', default=False, cast=bool) # Desenvolvido para HTTPS
 CSRF_COOKIE_HTTPONLY    = config('CSRF_COOKIE_HTTPONLY', default=True, cast=bool)
 CSRF_COOKIE_SAMESITE    = config('CSRF_COOKIE_SAMESITE', default='Lax')
 
-AUTH_COOKIE_NAME     = config('AUTH_COOKIE_NAME', default='authToken')
-AUTH_COOKIE_SECURE   = config('AUTH_COOKIE_SECURE', default=True, cast=bool)
+AUTH_COOKIE_NAME     = config('AUTH_COOKIE_NAME', default='authToken') 
+AUTH_COOKIE_SECURE   = config('AUTH_COOKIE_SECURE', default=False, cast=bool) # Desenvolvido para HTTPS
 AUTH_COOKIE_HTTPONLY = config('AUTH_COOKIE_HTTPONLY', default=True, cast=bool)
 AUTH_COOKIE_SAMESITE = config('AUTH_COOKIE_SAMESITE', default='Lax')
 
@@ -147,6 +147,7 @@ INSTALLED_APPS = [
     'django_prometheus',
     'channels',
     'django_extensions',
+    'django_celery_beat',
     'cobranca_inteligente_api.apps.BillingConfig',
     'plugins.django_interface.apps.DjangoInterfaceConfig',
 ]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.clinic_entity import ClinicEntity
 from oralsin_core.core.domain.repositories.clinic_repository import ClinicRepository
 from plugins.django_interface.models import Clinic as ClinicModel
@@ -62,3 +63,25 @@ class ClinicRepoImpl(ClinicRepository):
 
     def delete(self, clinic_id: str) -> None:
         ClinicModel.objects.filter(id=clinic_id).delete()
+
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[ClinicEntity]:
+        """
+        Retorna PagedResult contendo lista de ClinicEntity e total,
+        aplicando paginação sobre ClinicModel.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = ClinicModel.objects.all()
+
+        # Aplica filtros simples se houver campos em `filtros`
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        clinica_page = qs.order_by('id')[offset: offset + page_size]
+
+        items = [ClinicEntity.from_model(m) for m in clinica_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

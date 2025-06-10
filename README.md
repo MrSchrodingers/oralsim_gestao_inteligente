@@ -128,7 +128,6 @@ A solução foi projetada para permitir **escala horizontal** (cada componente e
    * **Problema**: Processos de cobrança manuais, comunicação fragmentada e falta de centralização de métricas de contato.
    * **Solução**:
 
-     * Automação total do fluxo de geração de boletos e cobranças, integrando-se a sistemas CRM/Hospitalares via API Oralsin.
      * Histórico completo de contatos e campanhas segmentadas por perfil de paciente/clínica.
      * Redução de custos operacionais, pois o sistema lida automaticamente com falhas de entrega (retry) e fallback entre canais.
 
@@ -137,22 +136,14 @@ A solução foi projetada para permitir **escala horizontal** (cada componente e
    * **Problema**: Dificuldade em acompanhar pagamentos a distância e falta de confirmação de recebimento.
    * **Solução**:
 
-     * Integração com modo “offline-first”: dados sincronizados assim que houver conexão.
-     * Notificações programadas conforme fuso horário local da clínica/paciente.
      * Relatórios semanais de inadimplência enviados automaticamente aos gestores.
 
 4. **Valor Comercial**
 
-   * **ROI (Retorno sobre Investimento)**:
-
-     * Redução de tempo de equipe de cobrança em até 70%.
-     * Aumento de recuperação de receitas em até 20% no primeiro mês de uso.
-     * Economia em custos de SMS via uso de fallback inteligente entre canais (ex.: WhatsApp quando possível).
    * **Diferenciais**:
 
      * Arquitetura modular que permite integração com novos canais (Telegram, Firebase, etc.).
      * Métricas em tempo real para tomada de decisão ágil.
-     * Modelo White-Label para revenda em consórcios de clínicas ou redes de franquias.
 
 ---
 
@@ -253,7 +244,7 @@ A solução foi projetada para permitir **escala horizontal** (cada componente e
    * **5672**: RabbitMQ
    * **15672**: RabbitMQ Management UI
    * **6379**: Redis
-   * **9090**: Prometheus
+   * **9095**: Prometheus
    * **3000**: Grafana
    * **9108**: Métricas HTTP
 
@@ -305,7 +296,7 @@ A solução foi projetada para permitir **escala horizontal** (cada componente e
 
    * **API Django**: `http://localhost:8000/api/`
    * **RabbitMQ Management**: `http://localhost:15672/` (usuário/senha: definidos em `.env`)
-   * **Prometheus**: `http://localhost:9090/`
+   * **Prometheus**: `http://localhost:9095/`
    * **Grafana**: `http://localhost:3000/` (usuário/senha padrão: admin / admin)
 
 ---

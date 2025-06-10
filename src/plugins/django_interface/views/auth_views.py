@@ -30,8 +30,12 @@ class LoginView(APIView):
         clinic_id: str | None = None
         if user.role == "clinic":
             link = UserClinic.objects.filter(user_id=user.id).first()
-            if link:
-                clinic_id = str(link.clinic_id)
+            if not link:
+                return Response(
+                    {"detail": "Usuário de clínica sem vínculo de clínica cadastrado."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            clinic_id = str(link.clinic_id)
                 
         jwt = JWTService.create_token(
             subject=str(user.id),
@@ -47,7 +51,7 @@ class LoginView(APIView):
             secure=settings.AUTH_COOKIE_SECURE,
             httponly=settings.AUTH_COOKIE_HTTPONLY,
             samesite=settings.AUTH_COOKIE_SAMESITE,
-            expires=timezone.now() + timezone.timedelta(seconds=settings.JWT_EXPIRES_IN),
+            expires=timezone.now() + timezone.timedelta(seconds=int(settings.JWT_EXPIRES_IN)),
         )
         return resp
 

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.covered_clinics import CoveredClinicEntity
 
 
@@ -27,4 +28,16 @@ class CoveredClinicRepository(ABC):
     @abstractmethod
     def delete(self, clinic_id: str) -> None:
         """Remove uma CoveredClinic pelo ID."""
+        ...
+        
+    @abstractmethod
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[CoveredClinicEntity]:
+        """
+        Retorna PagedResult contendo lista da Entidade e total,
+        aplicando paginação sobre o Modelo.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
         ...

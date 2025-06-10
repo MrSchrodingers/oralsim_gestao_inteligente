@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.clinic_entity import ClinicEntity
 
 
@@ -33,4 +34,16 @@ class ClinicRepository(ABC):
     def get_or_create_by_oralsin_id(
             self, oralsin_clinic_id: int, *, name: str | None = None, cnpj: str | None = None
         ) -> ClinicEntity:
+        ...
+
+    @abstractmethod
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[ClinicEntity]:
+        """
+        Retorna PagedResult contendo lista da Entidade e total,
+        aplicando paginação sobre o Modelo.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
         ...

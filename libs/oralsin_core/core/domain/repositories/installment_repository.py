@@ -16,6 +16,13 @@ class InstallmentRepository(ABC):
     ) -> PagedResult[InstallmentEntity]:
         """Lista parcelas vencidas paginadas."""
         ...
+    
+    @abstractmethod    
+    def find_by_contract_ids(self, contract_ids: list[str]) -> list[InstallmentEntity]:
+        """
+        Busca todas as parcelas associadas a uma lista de IDs de contrato.
+        """
+        ...
         
     @abstractmethod
     def list_current_overdue(
@@ -63,4 +70,16 @@ class InstallmentRepository(ABC):
     @abstractmethod
     def delete(self, installment_id: str) -> None:
         """Remove uma parcela."""
+        ...
+
+    @abstractmethod
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[InstallmentEntity]:
+        """
+        Retorna PagedResult contendo lista da Entidade e total,
+        aplicando paginação sobre o Modelo.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
         ...

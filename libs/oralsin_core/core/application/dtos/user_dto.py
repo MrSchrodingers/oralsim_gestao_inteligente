@@ -9,7 +9,7 @@ class CreateUserDTO(BaseModel):
     password: str
     name: str
     role: Literal["admin", "clinic"]
-    clinic_name: str | None = None
+    clinic_id: str | None = None
 
 
 class UpdateUserDTO(BaseModel):

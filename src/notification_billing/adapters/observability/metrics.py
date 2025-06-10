@@ -42,5 +42,5 @@ if __name__ == "__main__":
     uvicorn.run(
         "notification_billing.adapters.observability.metrics:app",
         host="0.0.0.0",
-        port=int(os.getenv("APP_METRICS_PORT", 9109)),
+        port=int(os.getenv("APP_METRICS_PORT")),
     )

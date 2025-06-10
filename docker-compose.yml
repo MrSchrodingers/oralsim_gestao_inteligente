@@ -119,10 +119,10 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DJANGO_SETTINGS_MODULE: cobranca_inteligente_api.settings
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      DJANGO_SETTINGS_MODULE: config.settings
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
-      PYTHONPATH: /app/src
+      PYTHONPATH: /app/src:/app/libs
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -149,9 +149,10 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DJANGO_SETTINGS_MODULE: cobranca_inteligente_api.settings
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      DJANGO_SETTINGS_MODULE: config.settings
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+      PYTHONPATH: /app/src:/app/libs
     depends_on:
       db:
         condition: service_healthy
@@ -177,7 +178,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      CELERY_EXPORTER_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      CELERY_EXPORTER_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
     expose:
       - "9500"
     ports:
@@ -196,12 +197,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: oralsin_rabbit_consumer
-    restart: unless-stopped
+    restart: on-failure
     env_file: .env
+    working_dir: /app
     environment:
-      DJANGO_SETTINGS_MODULE: cobranca_inteligente_api.settings
-      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672//
+      DJANGO_SETTINGS_MODULE: config.settings
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
       REDIS_URL: ${REDIS_URL}
+      PYTHONPATH: /app:/app/libs:/app/src
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -238,9 +241,9 @@ services:
     volumes:
       - ./bin/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     expose:
-      - "9090"
+      - "9095"
     ports:
-      - "${PROMETHEUS_EXTERNAL_PORT:-9090}:9090"
+      - "${PROMETHEUS_EXTERNAL_PORT:-9090}:9095"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'

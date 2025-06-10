@@ -5,6 +5,8 @@ adapters/api_clients/base_api_client.py
 adapters/api_clients/oralsin_api_client.py
 adapters/config/__init__.py
 adapters/config/composition_root.py
+adapters/context/__init__.py
+adapters/context/request_context.py
 adapters/observability/__init__.py
 adapters/observability/decorators.py
 adapters/observability/metrics.py
@@ -56,6 +58,7 @@ core/application/handlers/__init__.py
 core/application/handlers/core_entities_handlers.py
 core/application/handlers/coverage_handlers.py
 core/application/handlers/dashboard_handlers.py
+core/application/handlers/query_handlers.py
 core/application/handlers/sync_handlers.py
 core/application/queries/__init__.py
 core/application/queries/address_queries.py

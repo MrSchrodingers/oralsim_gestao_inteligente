@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db import IntegrityError
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.address_entity import AddressEntity
 from oralsin_core.core.domain.entities.patient_entity import PatientEntity
 from oralsin_core.core.domain.entities.patient_phone_entity import PatientPhoneEntity
@@ -84,3 +85,25 @@ class PatientRepoImpl(PatientRepository):
     # -----------------------------------------------------------------
     def delete(self, patient_id: str) -> None:
         PatientModel.objects.filter(id=patient_id).delete()
+
+    def list(self, filtros: dict, page: int, page_size: int, user_id = str) -> PagedResult[PatientEntity]:
+        """
+        Retorna PagedResult contendo lista de PatientEntity e total,
+        aplicando paginação sobre PatientModel.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = PatientModel.objects.all()
+
+        # Aplica filtros simples se houver campos em `filtros`
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        pacientes_page = qs.order_by('id')[offset: offset + page_size]
+
+        items = [PatientEntity.from_model(m) for m in pacientes_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

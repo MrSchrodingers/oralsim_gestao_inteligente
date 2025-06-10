@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.covered_clinics import CoveredClinicEntity
 from oralsin_core.core.domain.repositories.covered_clinic_repository import (
     CoveredClinicRepository,
@@ -76,3 +77,24 @@ class CoveredClinicRepoImpl(CoveredClinicRepository):
     def delete(self, covered_id: str) -> None:
         CoveredClinicModel.objects.filter(id=covered_id).delete()    
     
+    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[CoveredClinicEntity]:
+        """
+        Retorna PagedResult contendo lista de CoveredClinicEntity e total,
+        aplicando paginação sobre CoveredClinicModel.
+
+        - filtros: dicionário de filtros 
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = CoveredClinicModel.objects.all()
+
+        # Aplica filtros simples se houver campos em `filtros`
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        clinicas_covered_page = qs.order_by('id')[offset: offset + page_size]
+
+        items = [CoveredClinicEntity.from_model(m) for m in clinicas_covered_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

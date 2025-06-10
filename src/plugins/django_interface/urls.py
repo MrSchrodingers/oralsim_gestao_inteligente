@@ -7,12 +7,20 @@ from config import settings
 
 from .routers import build_router
 from .views.auth_views import HealthCheckView, LoginView, LogoutView
+from .views.extra_views import (
+    DashboardSummaryView,
+    MeView,
+    PatientsDataView,
+    RunAutomatedNotificationsView,
+    SendManualNotificationView,
+    UsersFullDataView,
+)
 
 swagger_permissions = [permissions.IsAdminUser] if not settings.DEBUG else [permissions.AllowAny]
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="Oralsin Gestão Recebíveis API",
+        title="Oralsin Gestão Inteligente",
         default_version="v1",
         description="Camada HTTP da arquitetura CQRS + Bus",
         contact=openapi.Contact(email="suporte@oralsin.com.br"),
@@ -28,11 +36,17 @@ urlpatterns = [
     path("login/",  LoginView.as_view(),  name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("healthz/", HealthCheckView.as_view(), name="healthz"),
+    path("me/", MeView.as_view(), name="me"),
+    path("dashboard-summary/", DashboardSummaryView.as_view(), name="dashboard-summary"),
+    path("notifications/run-automated/", RunAutomatedNotificationsView.as_view(), name="run-automated"),
+    path("notifications/send-manual/", SendManualNotificationView.as_view(), name="send-manual"),
+    path("users-data/", UsersFullDataView.as_view(), name="users-data"),
+    path("patients-data/", PatientsDataView.as_view(), name="patients-data"),
 
     path("swagger/",     schema_view.with_ui("swagger", cache_timeout=0), name="swagger-ui"),
     path("swagger.json", schema_view.without_ui(cache_timeout=0),         name="swagger-json"),
     path("redoc/",       schema_view.with_ui("redoc",   cache_timeout=0), name="redoc-ui"),
 
-    # todas as suas rotas CRUD + healthz
+    # todas as suas rotas CRUD
     path("", include(router.urls)),
 ]
