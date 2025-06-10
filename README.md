@@ -58,6 +58,16 @@ flowchart TB
     M --> Observabilidade
 ```
 
+> **Legenda dos Componentes**
+>
+> * **PostgreSQL**: Banco relacional para armazenar entidades de domínio, histórico de contratos e parcelas.
+> * **Redis**: Cache de consultas frequentes e backend para Celery.
+> * **RabbitMQ**: Broker de mensageria para filas de notificação.
+> * **Celery (Worker & Beat)**: Tarefas assíncronas e agendamento periódico (sync, notificações).
+> * **Prometheus & Grafana**: Telemetria de métricas (latência, contadores, gauges) e dashboards em tempo real.
+> * **oralsin\_core**: Núcleo de negócio em Python, seguindo DDD/CQRS, com injeção de dependência via Dependency Injector.
+> * **Django API**: Camada de interface web (REST + WebSockets), expondo endpoints de cobrança inteligente e notificações.
+> * **Notifiers**: Integrações com SendGrid (e-mail), Assertiva (SMS) e DebtApp (WhatsApp).
 ## Modelo de Dados e Relacionamentos
 
 O diagrama abaixo representa as principais entidades do sistema e seus relacionamentos.
@@ -140,31 +150,18 @@ erDiagram
     FlowStepConfig ||--o{ Message : "usa"
 ```
 
-### Detalhamento das Entidades
-
-* **User**: Representa os usuários do sistema, que podem ter a função de `admin` ou `clinic`.
-* **Clinic**: Armazena as informações básicas das clínicas, como nome e CNPJ, e é a entidade central que conecta pacientes, contratos e usuários.
-* **CoveredClinic**: Indica se uma clínica está habilitada para o serviço de cobrança inteligente.
-* **Patient**: Contém os dados dos pacientes, incluindo informações de contato e um vínculo com sua clínica.
-* **Contract**: Descreve os contratos dos pacientes, com seu status e valores.
-* **Installment**: Representa as parcelas de um contrato, com datas de vencimento e status de pagamento.
-* **FlowStepConfig**: Define as etapas do fluxo de cobrança, especificando os canais de comunicação a serem utilizados em cada passo.
-* **Message**: Armazena os templates de mensagens que serão enviados aos pacientes em cada etapa do fluxo de cobrança.
-* **ContactSchedule**: Agenda os contatos a serem feitos com os pacientes, com base nas regras definidas em `FlowStepConfig`.
-* **ContactHistory**: Mantém um registro de todos os contatos realizados com os pacientes.
-
----
-
-> **Legenda dos Componentes**
+> **Detalhamento das Entidades**
 >
-> * **PostgreSQL**: Banco relacional para armazenar entidades de domínio, histórico de contratos e parcelas.
-> * **Redis**: Cache de consultas frequentes e backend para Celery.
-> * **RabbitMQ**: Broker de mensageria para filas de notificação.
-> * **Celery (Worker & Beat)**: Tarefas assíncronas e agendamento periódico (sync, notificações).
-> * **Prometheus & Grafana**: Telemetria de métricas (latência, contadores, gauges) e dashboards em tempo real.
-> * **oralsin\_core**: Núcleo de negócio em Python, seguindo DDD/CQRS, com injeção de dependência via Dependency Injector.
-> * **Django API**: Camada de interface web (REST + WebSockets), expondo endpoints de cobrança inteligente e notificações.
-> * **Notifiers**: Integrações com SendGrid (e-mail), Assertiva (SMS) e DebtApp (WhatsApp).
+> **User**: Representa os usuários do sistema, que podem ter a função de `admin` ou `clinic`.
+> **Clinic**: Armazena as informações básicas das clínicas, como nome e CNPJ, e é a entidade central que conecta pacientes, contratos e usuários.
+> **CoveredClinic**: Indica se uma clínica está habilitada para o serviço de cobrança inteligente.
+> **Patient**: Contém os dados dos pacientes, incluindo informações de contato e um vínculo com sua clínica.
+> **Contract**: Descreve os contratos dos pacientes, com seu status e valores.
+> **Installment**: Representa as parcelas de um contrato, com datas de vencimento e status de pagamento.
+> **FlowStepConfig**: Define as etapas do fluxo de cobrança, especificando os canais de comunicação a serem utilizados em cada passo.
+> **Message**: Armazena os templates de mensagens que serão enviados aos pacientes em cada etapa do fluxo de cobrança.
+> **ContactSchedule**: Agenda os contatos a serem feitos com os pacientes, com base nas regras definidas em `FlowStepConfig`.
+> **ContactHistory**: Mantém um registro de todos os contatos realizados com os pacientes.
 
 ---
 
@@ -178,11 +175,12 @@ O sistema está **parcialmente implementado**, com os seguintes fluxos principai
 * **Infraestrutura e Orquestração**: Toda a infraestrutura baseada em Docker e Docker Compose está configurada, permitindo a execução dos serviços de forma integrada (banco de dados, mensageria, cache, etc.).
 
 ---
+
 ## Índice
 
 1. [Visão Geral do Projeto](#visão-geral-do-projeto)
 2. [Casos de Uso & Proposta Comercial](#casos-de-uso--proposta-comercial)
-3. [Fluxos de Negócio e Regras](#fluxos-de-negocio-regras)
+3. [Fluxos de Negócio e Regras](#fluxos-de-negócio-e-regras)
 4. [Requisitos de Sistema](#requisitos-de-sistema)
 5. [Instalação e Execução](#instalação-e-execução)
 
