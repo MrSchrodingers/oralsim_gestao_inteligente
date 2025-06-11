@@ -9,6 +9,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils.text import slugify
 from oralsin_core.adapters.config.composition_root import setup_di_container_from_settings
+from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
 from oralsin_core.core.application.commands.coverage_commands import RegisterCoverageClinicCommand
 from oralsin_core.core.application.commands.user_commands import CreateUserCommand
 from oralsin_core.core.application.dtos.user_dto import CreateUserDTO
@@ -45,6 +46,12 @@ class Command(BaseCommand):
            help="Não cria o usuário super_admin",
         )
         parser.add_argument(
+            "--min-days-billing",
+            type=int,
+            default=90,
+            help="Dias mínimos para escalonar dívida em BillingSettings",
+        )
+        parser.add_argument(
             "--skip-full-sync",
             action="store_true",
             help="Usa intervalo curto de datas para sync de teste rápido.",
@@ -58,23 +65,36 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         # inicializa o container DI do core
         container = setup_di_container_from_settings(None)
+        cmd_bus = container.command_bus()
 
         clinic_name: str = options["clinic_name"]
         admin_email: str = options["admin_email"]
         admin_pass: str = options["admin_pass"]
+        min_days_billing = options["min_days_billing"]
         skip_admin: bool = options["skip_admin"]
         skip_sync: bool = options["skip_full_sync"]
         no_schedules: bool = options["no_schedules"]
 
         self.stdout.write(self.style.NOTICE("🚀 Seed dinâmico iniciado…"))
 
-        # 1️⃣ Bloco transacional: cobertura + (opcional) super-admin + clinic-user
+        # 1️⃣ Bloco transacional: cobertura + (opcional) super-admin + clinic-user + billing_config
         with transaction.atomic():
            covered_id, oralsin_id = self._register_coverage(container, clinic_name)
            self.stdout.write(
                self.style.SUCCESS(
                    f"🏥 CoveredClinic={covered_id}  OralsinID={oralsin_id}"
                )
+           )
+           cmd_bus.dispatch(
+                UpdateBillingSettingsCommand(
+                    clinic_id=str(covered_id),
+                    min_days_overdue=min_days_billing,
+                )
+            )
+           self.stdout.write(
+                self.style.SUCCESS(
+                    f"⚙️ BillingSettings.min_days_overdue={min_days_billing} para clinic {covered_id}"
+                )
            )
            if not skip_admin:
                admin_id = self._create_or_get_admin(container, admin_email, admin_pass)

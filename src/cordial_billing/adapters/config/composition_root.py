@@ -37,6 +37,9 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
     core_container = _setup_core_di(settings)
 
     # ------------- repositórios desta BC ---------------------------
+    from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
+    from oralsin_core.adapters.repositories.covered_clinic_repo_impl import CoveredClinicRepoImpl
+
     from cordial_billing.adapters.repositories.collection_case_repo_impl import (
         CollectionCaseRepoImpl,
     )
@@ -84,7 +87,8 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
             pipeboard_engine=pipeboard_engine,
         )
         collection_case_repo = providers.Singleton(CollectionCaseRepoImpl)
-
+        billing_settings_repo = providers.Singleton(BillingSettingsRepoImpl)
+        covered_clinic_repo = providers.Singleton(CoveredClinicRepoImpl)
         # --- handlers ---------------------------------------------
         sync_old_debts_handler = providers.Factory(
             SyncOldDebtsHandler,
@@ -93,6 +97,8 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
             deal_repo=deal_repo,
             case_repo=collection_case_repo,
             contract_repo=core_container.contract_repo,
+            billing_settings_repo=billing_settings_repo,
+            covered_clinic_repo = covered_clinic_repo,
             dispatcher=dispatcher,
             logger=logger,
         )

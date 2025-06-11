@@ -17,6 +17,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     # API client, mappers e infra de mensageria...
     from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
     from oralsin_core.adapters.repositories.address_repo_impl import AddressRepoImpl
+    from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
     from oralsin_core.adapters.repositories.clinic_data_repo_impl import ClinicDataRepoImpl
     from oralsin_core.adapters.repositories.clinic_phone_repo_impl import ClinicPhoneRepoImpl
     from oralsin_core.adapters.repositories.clinic_repo_impl import ClinicRepoImpl
@@ -37,6 +38,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         DeleteAddressCommand,
         UpdateAddressCommand,
     )
+    from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
     from oralsin_core.core.application.commands.clinic_commands import (
         CreateClinicCommand,
         DeleteClinicCommand,
@@ -71,6 +73,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # CQRS buses
     from oralsin_core.core.application.cqrs import CommandBusImpl, QueryBusImpl
+    from oralsin_core.core.application.handlers.billing_settings_handlers import GetBillingSettingsHandler, ListBillingSettingsHandler, UpdateBillingSettingsHandler
 
     # Handlers de CRUD (comandos)
     from oralsin_core.core.application.handlers.core_entities_handlers import (
@@ -133,6 +136,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # Handlers de Queries
     from oralsin_core.core.application.queries.address_queries import GetAddressQuery, ListAddressesQuery
+    from oralsin_core.core.application.queries.billing_settings_queries import GetBillingSettingsQuery, ListBillingSettingsQuery
     from oralsin_core.core.application.queries.clinic_data_queries import GetClinicDataQuery, ListClinicDataQuery
     from oralsin_core.core.application.queries.clinic_phone_queries import GetClinicPhoneQuery, ListClinicPhonesQuery
     from oralsin_core.core.application.queries.clinic_queries import GetClinicQuery, ListClinicsQuery
@@ -207,6 +211,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         )
         user_repo           = providers.Singleton(UserRepoImpl)
         user_clinic_repo    = providers.Singleton(UserClinicRepoImpl)
+        billing_settings_repo = providers.Singleton(BillingSettingsRepoImpl)
 
         # Hash
         hash_service = providers.Singleton(HashService)
@@ -252,6 +257,16 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         )
         link_user_clinic_handler        = providers.Factory(LinkUserClinicHandler,        repo=user_clinic_repo)
 
+        get_billing_settings_handler = providers.Factory( 
+            GetBillingSettingsHandler, repo=billing_settings_repo
+        )
+        list_billing_settings_handler = providers.Factory( 
+            ListBillingSettingsHandler, repo=billing_settings_repo
+        )
+        update_billing_settings_handler = providers.Factory(
+            UpdateBillingSettingsHandler, repo=billing_settings_repo
+        )
+    
         # Serviços de negócio
         formatter_service    = providers.Singleton(FormatterService, currency_symbol="R$")
         oralsin_sync_service = providers.Singleton(
@@ -310,7 +325,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         get_user_clinic_handler          = providers.Factory(GetUserClinicHandler)
         list_users_handler               = providers.Factory(ListUsersHandler)
         get_user_handler                 = providers.Factory(GetUserHandler)
-
         def init(self):
             # Bus de comandos
             cmd_bus = self.command_bus()
@@ -343,7 +357,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             cmd_bus.register(LinkUserClinicCommand, self.link_user_clinic_handler())
 
             cmd_bus.register(SyncInadimplenciaCommand, self.sync_inadimplencia_handler())
-
+            cmd_bus.register(
+                UpdateBillingSettingsCommand,
+                self.update_billing_settings_handler(),
+            )
             # Bus de queries (core)
             qry_bus = self.query_bus()
 
@@ -379,7 +396,15 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
             qry_bus.register(ListUsersQuery, self.list_users_handler())
             qry_bus.register(GetUserQuery, self.get_user_handler())
-
+            
+            qry_bus.register(
+                GetBillingSettingsQuery,
+                self.get_billing_settings_handler(),
+            )
+            qry_bus.register(
+                ListBillingSettingsQuery,
+                self.list_billing_settings_handler(),
+            )
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()
     container.config.rabbitmq_url.from_value(settings.RABBITMQ_URL)

@@ -38,7 +38,7 @@ class UserClinicRepoImpl(UserClinicRepository):
     def find_by_clinic(self, clinic_id: str) -> list[UserClinicEntity]:
         qs = UserClinicModel.objects.filter(clinic_id=clinic_id)
         return [UserClinicEntity.from_model(m) for m in qs]
-
+    
     def save(self, link: UserClinicEntity) -> UserClinicEntity:
         m, _ = UserClinicModel.objects.update_or_create(
             user_id=link.user_id,

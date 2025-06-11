@@ -13,7 +13,6 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--clinic-id", required=True, type=str)
-        parser.add_argument("--min-days", type=int, default=90)
 
     def handle(self, *a, **opts):
         container         = cordial_container(None)
@@ -21,7 +20,6 @@ class Command(BaseCommand):
         out = bus.dispatch(
             SyncOldDebtsCommand(
                 clinic_id=opts["clinic_id"],
-                min_days=opts["min_days"],
             )
         )
         self.stdout.write(self.style.SUCCESS(str(out)))

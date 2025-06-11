@@ -675,3 +675,61 @@ class CollectionCase(models.Model):
         db_table = "collection_cases"
         indexes = [models.Index(fields=["clinic", "status", "patient", "deal_id", "installment", "deal_sync_status"])]
 
+
+class PendingCall(models.Model):
+    """
+    Ligações pendentes geradas por steps cujo canal inclui 'phonecall'.
+    A pendência é resolvida por atendentes humanos ou robocall externo.
+    """
+    class Status(models.TextChoices):
+        PENDING   = "pending",  "Pendente"
+        DONE      = "done",     "Concluída"
+        FAILED    = "failed",   "Falhou"
+
+    id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    patient       = models.ForeignKey(Patient,  on_delete=models.CASCADE, related_name="pending_calls")
+    contract      = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="pending_calls")
+    clinic        = models.ForeignKey(Clinic,   on_delete=models.CASCADE, related_name="pending_calls")
+    schedule      = models.ForeignKey(
+        ContactSchedule, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pending_calls"
+    )
+    current_step  = models.PositiveIntegerField()
+    scheduled_at  = models.DateTimeField(help_text="Quando a ligação deve ser feita", db_index=True)
+    last_attempt_at = models.DateTimeField(blank=True, null=True)
+    attempts      = models.PositiveIntegerField(default=0)
+    status        = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    result_notes  = models.TextField(blank=True, null=True)
+
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pending_calls"
+        indexes = [
+            Index(fields=["clinic", "status"]),
+            BrinIndex(fields=["scheduled_at"], autosummarize=True),
+        ]
+        constraints = [
+            UniqueConstraint(
+                fields=["patient", "contract", "current_step"],
+                condition=Q(status="pending"),
+                name="uq_pending_phonecall_per_step",
+            )
+        ]
+
+    def __str__(self) -> str:     # pragma: no cover
+        return f"{self.patient} → ligação step {self.current_step}"
+    
+    
+class BillingSettings(models.Model):
+    id     = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    clinic = models.OneToOneField(
+        Clinic, on_delete=models.CASCADE, related_name="billing_settings"
+    )
+    min_days_overdue = models.PositiveIntegerField(
+        default=90,
+        help_text="Dias mínimos de atraso para escalonar dívida"
+    )
+    class Meta:
+        db_table = "billing_settings"

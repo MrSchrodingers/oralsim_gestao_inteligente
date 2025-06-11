@@ -220,13 +220,25 @@ class ContactHistorySerializer(serializers.Serializer):
     created_at           = serializers.DateTimeField()
     updated_at           = serializers.DateTimeField()
 
-class ClinicWithDetailsSerializer(ClinicSerializer):
+class ClinicWithDetailsSerializer(serializers.Serializer):
     """
-    Serializer para a Clínica que estende o ClinicSerializer
-    para incluir detalhes aninhados de ClinicData e ClinicPhone.
+    Serializa uma UserClinic (relação usuário→clínica),
+    expondo os dados da clínica e seus detalhes.
     """
-    data   = ClinicDataSerializer(read_only=True, source="clinic_data")
-    phones = ClinicPhoneSerializer(many=True, read_only=True, source="clinic_phones")
+    # campos básicos de Clinic
+    id                = serializers.UUIDField(source="clinic.id")
+    oralsin_clinic_id = serializers.IntegerField(source="clinic.oralsin_clinic_id")
+    name              = serializers.CharField(source="clinic.name")
+    cnpj              = serializers.CharField(source="clinic.cnpj", allow_blank=True, allow_null=True)
+    created_at        = serializers.DateTimeField(source="clinic.created_at")
+    updated_at        = serializers.DateTimeField(source="clinic.updated_at")
+
+    # detalhes de ClinicData (OneToOneField related_name="data")
+    data = ClinicDataSerializer(source="clinic.data", allow_null=True, read_only=True)
+
+    # telefones (ForeignKey related_name="phones")
+    phones = ClinicPhoneSerializer(source="clinic.phones", many=True, read_only=True)
+
 
 
 class UserFullDataSerializer(UserSerializer):
@@ -235,3 +247,20 @@ class UserFullDataSerializer(UserSerializer):
     para incluir as clínicas com todos os seus detalhes.
     """
     clinics = ClinicWithDetailsSerializer(many=True, read_only=True)
+    
+class PendingCallSerializer(serializers.Serializer):
+    id              = serializers.UUIDField()
+    patient_id      = serializers.UUIDField()
+    contract_id     = serializers.UUIDField()
+    clinic_id       = serializers.UUIDField()
+    schedule_id     = serializers.UUIDField(allow_null=True)
+    current_step    = serializers.IntegerField()
+    scheduled_at    = serializers.DateTimeField()
+    last_attempt_at = serializers.DateTimeField(allow_null=True)
+    attempts        = serializers.IntegerField()
+    status          = serializers.CharField()
+    result_notes    = serializers.CharField(allow_null=True)
+    
+class BillingSettingsSerializer(serializers.Serializer):
+    clinic_id         = serializers.UUIDField()
+    min_days_overdue  = serializers.IntegerField()

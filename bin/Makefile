@@ -67,5 +67,5 @@ rebuild-all:
 # 5) Sincronizar dívidas antigas para a clínica 47
 # ------------------------------------------------------------
 sync-old-debts:
-	$(MANAGE) sync_old_debts --clinic-id 47 --min-days 90
+	$(MANAGE) sync_old_debts --clinic-id 47
 	@echo "✅ Executado às $$(date '+%H:%M:%S')"

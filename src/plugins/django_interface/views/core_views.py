@@ -14,9 +14,9 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
 from oralsin_core.adapters.observability.decorators import track_http
-
-# ───────────────────────────────  CQRS Buses  ────────────────────────────────
+from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
 from oralsin_core.core.application.cqrs import CommandBusImpl, QueryBusImpl
+from oralsin_core.core.application.queries.billing_settings_queries import GetBillingSettingsQuery, ListBillingSettingsQuery
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -24,11 +24,16 @@ from rest_framework.response import Response
 from notification_billing.adapters.config.composition_root import (
     container as billing_container,
 )
+
+# ───────────────────────────────  CQRS Buses  ────────────────────────────────
+from notification_billing.core.application.commands.pending_call_commands import SetPendingCallDoneCommand
+from notification_billing.core.application.queries.pending_call_queries import GetPendingCallQuery, ListPendingCallsQuery
 from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
 
 # ────────────────────────────────  Serializers  ───────────────────────────────
 from ..serializers.core_serializers import (
     AddressSerializer,
+    BillingSettingsSerializer,
     ClinicDataSerializer,
     ClinicPhoneSerializer,
     ClinicSerializer,
@@ -40,6 +45,7 @@ from ..serializers.core_serializers import (
     MessageSerializer,
     PatientPhoneSerializer,
     PatientSerializer,
+    PendingCallSerializer,
     UserClinicSerializer,
     UserSerializer,
 )
@@ -1028,3 +1034,142 @@ class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
     def destroy(self, request, pk=None):
         billing_command_bus.dispatch(DeleteMessageCommand(id=pk))
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(
+    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("pending_calls_list")),
+    name="list",
+)
+@method_decorator(
+    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("pending_call_detail")),
+    name="retrieve",
+)
+class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
+    """
+    Ligações pendentes (phonecall).  
+    • Somente leitura para list/retrieve;  
+    • Ação `mark_done` para encerrar a pendência.
+    """
+
+    permission_classes = [IsClinicUser]
+
+    # ------------------------------------------------------------------ #
+    @track_http("PendingCallViewSet_list")
+    def list(self, request):
+        filtros = self._filters(request)
+        page, page_size = self._pagination(request)
+
+        # sempre força clinic_id do usuário-clínica
+        filtros["clinic_id"] = str(request.user.clinic_id)
+
+        res = billing_query_bus.dispatch(
+            ListPendingCallsQuery(filtros=filtros, page=page, page_size=page_size)
+        )
+
+        total_items = res.total
+        total_pages = math.ceil(total_items / page_size) if page_size else 1
+
+        payload = {
+            "results": PendingCallSerializer(res.items, many=True).data,
+            "total_items": total_items,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "items_on_page": len(res.items),
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+    # ------------------------------------------------------------------ #
+    @track_http("PendingCallViewSet_retrieve")
+    def retrieve(self, request, pk=None):
+        filtros = {"clinic_id": str(request.user.clinic_id)}
+        pc = billing_query_bus.dispatch(
+            GetPendingCallQuery(filtros=filtros, id=str(pk))
+        )
+        return Response(PendingCallSerializer(pc).data)
+
+    # ------------------------------------------------------------------ #
+    @track_http("PendingCallViewSet_mark_done")
+    @action(methods=["post"], detail=True, url_path="mark-done")
+    def mark_done(self, request, pk=None):
+        """
+        Marca a pendência como concluída ou falhada.
+
+        Body:
+        ```
+        {
+          "success": true,
+          "notes": "Paciente retornou ligação"
+        }
+        ```
+        """
+        success = bool(request.data.get("success", True))
+        notes = request.data.get("notes")
+
+        billing_command_bus.dispatch(
+            SetPendingCallDoneCommand(
+                call_id=str(pk),
+                success=success,
+                notes=notes,
+                user_id=str(request.user.id),
+            )
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+@method_decorator(
+    cache_page(LIST_TTL, key_prefix=lambda req,*a,**k: f"bs_list_user_{req.user.id}"),
+    name="list",
+)
+@method_decorator(
+    cache_page(RETRIEVE_TTL, key_prefix=lambda req,*a,**k: f"bs_detail_user_{req.user.id}"),
+    name="retrieve",
+)
+class BillingSettingsViewSet(PaginationFilterMixin, viewsets.ViewSet):
+    """
+    Visualiza e atualiza as configurações de cobrança por clínica.
+    """
+    permission_classes = [IsClinicUser]
+
+    @track_http("BillingSettingsViewSet_list")
+    def list(self, request):
+        # para admins, listar todas; para clinic_user, só a própria
+        filtros = {}
+        if getattr(request.user, "role", None) == "clinic":
+            filtros["clinic_id"] = str(request.user.clinic_id)
+        page, page_size = self._pagination(request)
+        q = ListBillingSettingsQuery(filtros=filtros, page=page, page_size=page_size)
+        res = core_query_bus.dispatch(q)
+        total = res.total
+        total_pages = math.ceil(total / page_size) if page_size else 1
+        data = BillingSettingsSerializer(res.items, many=True).data
+        return Response({
+            "results": data,
+            "total_items": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "items_on_page": len(res.items),
+        }, status=status.HTTP_200_OK)
+
+    @track_http("BillingSettingsViewSet_retrieve")
+    def retrieve(self, request, pk=None):
+        filtros = {}
+        if getattr(request.user, "role", None) == "clinic":
+            filtros["clinic_id"] = str(request.user.clinic_id)
+        setting = core_query_bus.dispatch(
+            GetBillingSettingsQuery(filtros=filtros, clinic_id=str(pk))
+        )
+        return Response(BillingSettingsSerializer(setting).data)
+
+    @track_http("BillingSettingsViewSet_update")
+    def update(self, request, pk=None):
+        payload = request.data
+        cmd = UpdateBillingSettingsCommand(
+            clinic_id=str(pk),
+            min_days_overdue=int(payload.get("min_days_overdue", 90))
+        )
+        updated = core_command_bus.dispatch(cmd)
+        return Response(
+            BillingSettingsSerializer(updated).data,
+            status=status.HTTP_200_OK
+        )

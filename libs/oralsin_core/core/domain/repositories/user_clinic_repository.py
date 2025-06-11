@@ -20,7 +20,7 @@ class UserClinicRepository(ABC):
     def find_by_clinic(self, clinic_id: str) -> list[UserClinicEntity]:
         """Lista usuários vinculados a uma clínica."""
         ...
-
+        
     @abstractmethod
     def save(self, link: UserClinicEntity) -> UserClinicEntity:
         """Cria ou atualiza um vínculo usuário↔clínica."""

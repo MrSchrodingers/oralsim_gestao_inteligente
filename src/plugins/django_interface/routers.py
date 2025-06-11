@@ -2,6 +2,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views.core_views import (
     AddressViewSet,
+    BillingSettingsViewSet,
     ClinicDataViewSet,
     ClinicPhoneViewSet,
     ClinicViewSet,
@@ -12,6 +13,7 @@ from .views.core_views import (
     InstallmentViewSet,
     MessageViewSet,
     PatientViewSet,
+    PendingCallViewSet,
     UserClinicViewSet,
     UserViewSet,
 )
@@ -31,6 +33,8 @@ RESOURCES = [
     ("users",              UserViewSet),
     ("user-clinics",       UserClinicViewSet),
     ("messages",           MessageViewSet),
+    ("pending-calls",      PendingCallViewSet),
+    ("billing-settings",   BillingSettingsViewSet),
 ]
 
 def build_router() -> DefaultRouter:

@@ -58,3 +58,13 @@ class ContactOutcomeRecordedEvent:
     feedback_status: str
     observation: str
     recorded_at: datetime = field(default_factory=datetime.utcnow)
+    
+# ───────────────────────────────────────────────
+# Pending Call Resolvido
+# ───────────────────────────────────────────────
+@dataclass(frozen=True)
+class PendingCallResolvedEvent(DomainEvent):
+    call_id: uuid.UUID
+    success: bool
+    user_id: uuid.UUID | None
+    resolved_at: datetime

@@ -18,8 +18,8 @@ FLOW_STEP_CONFIG = [
     { 'step_number': 10, 'channels': ['phonecall'],       'active': True,  'description': 'Semana 10: Ligação',               'cooldown_days': 7 },
     { 'step_number': 11, 'channels': ['phonecall'],       'active': True,  'description': 'Semana 11: Ligação',               'cooldown_days': 7 },
     { 'step_number': 12, 'channels': ['sms'],             'active': True,  'description': 'Semana 12: SMS',                   'cooldown_days': 7 },
-    { 'step_number': 13, 'channels': ['phonecall'],       'active': True,  'description': 'Semana 13: Ligação',               'cooldown_days': 7 },
-    { 'step_number': 14, 'channels': ['sms'],             'active': True,  'description': 'Cobrança Encerrada: SMS',         'cooldown_days': 7 },
+    { 'step_number': 13, 'channels': ['sms'],             'active': True,  'description': 'Semana 13: Ligação',               'cooldown_days': 7 },
+    { 'step_number': 14, 'channels': ['phonecall'],       'active': True,  'description': 'Cobrança Encerrada: SMS',         'cooldown_days': 7 },
 ]
 
 class Command(BaseCommand):
