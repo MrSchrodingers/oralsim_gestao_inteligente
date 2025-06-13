@@ -6,6 +6,7 @@ import structlog
 
 from config import settings
 from oralsin_core.adapters.api_clients.base_api_client import BaseAPIClient
+from oralsin_core.adapters.observability.decorators import cacheable
 from oralsin_core.core.application.cqrs import PagedResult, PaginatedQueryDTO
 from oralsin_core.core.application.dtos.oralsin_dtos import (
     ClinicaSearchResponseDTO,
@@ -15,6 +16,7 @@ from oralsin_core.core.application.dtos.oralsin_dtos import (
     InadimplenciaQueryDTO,
     InadimplenciaResponseDTO,
     OralsinClinicDTO,
+    OralsinContatoHistoricoEnvioDTO,
     OralsinContratoDetalhadoDTO,
     OralsinPacienteDTO,
 )
@@ -64,6 +66,7 @@ class OralsinAPIClient(BaseAPIClient):
         )
 
     # -------- detalhe por id --------------------------------------------------------
+    @cacheable(lambda self, oralsin_id: f"clinic:{oralsin_id}")
     def get_clinic_by_id(self, oralsin_id: int) -> OralsinClinicDTO:
         """
         Chama `/clinica/{id}` (endpoint de detalhe).  
@@ -116,3 +119,11 @@ class OralsinAPIClient(BaseAPIClient):
             response_model=InadimplenciaContratoResponseDTO,
         )
         return raw.data
+
+    def post_contact_history(self, payload: OralsinContatoHistoricoEnvioDTO) -> None:
+        """Envia histórico de contato para a Oralsin."""
+        self._post(
+            "/relatorio/inadimplencia/contato",
+            json=payload.model_dump(by_alias=True, exclude_none=True),
+            response_model=None,
+        )

@@ -64,14 +64,14 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
         )(cmd.clinic_id)
         if not covered:
             raise ValueError(f"Oralsin clinic {cmd.clinic_id} não mapeada em CoveredClinic")
-        clinic_uuid = covered.id
+        clinic_uuid = covered.clinic_id
         
         settings = await sync_to_async(self.billing_settings_repo.get)(clinic_uuid)
         min_days = settings.min_days_overdue
         self.log.info("using_billing_settings", clinic_id=cmd.clinic_id, min_days_overdue=min_days)
 
         # 1️⃣  pega todos os contratos da clínica
-        contracts = await sync_to_async(self.contract_repo.list_by_clinic)(cmd.clinic_id)
+        contracts = await sync_to_async(self.contract_repo.list_by_clinic)(clinic_uuid)
 
         self.log.info(
             "sync_old_debts_started",
@@ -83,6 +83,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
         processed_patients: set[str] = set()
 
         for contract in contracts:
+            effective_min_days = 0 if contract.do_billings else min_days
             page = 0
             while True:
                 # 2️⃣ busca parcelas vencidas usando min_days da configuração
@@ -90,7 +91,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                     self.installment_repo.list_current_overdue
                 )(
                     contract_id=contract.id,
-                    min_days_overdue=min_days,
+                    min_days_overdue=effective_min_days,
                     offset=page * 1000,
                     limit=1000,
                 )

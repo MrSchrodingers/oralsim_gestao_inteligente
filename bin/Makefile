@@ -40,7 +40,7 @@ seed-complete:
 	                    --admin-pass  matheus@admin \
 											--skip-admin
 	$(MANAGE) seed_test_contacts --email mrschrodingers@gmail.com \
-	                             --phone 5543991938235
+	                             --phone 5543991938235 
 	$(MANAGE) seed_scheduling --clinic-id 2 --min-days 1 --verbosity 2
 	$(TIME_ECHO)
 

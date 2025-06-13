@@ -17,16 +17,22 @@ from oralsin_core.adapters.observability.decorators import track_http
 from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
 from oralsin_core.core.application.cqrs import CommandBusImpl, QueryBusImpl
 from oralsin_core.core.application.queries.billing_settings_queries import GetBillingSettingsQuery, ListBillingSettingsQuery
+from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from cordial_billing.adapters.config.composition_root import (
+    container as cordial_billing_container,
+)
+from cordial_billing.core.application.queries.collection_case_queries import GetCollectionCaseQuery, ListCollectionCasesQuery
 from notification_billing.adapters.config.composition_root import (
-    container as billing_container,
+    container as notification_billing_container,
 )
 
 # ───────────────────────────────  CQRS Buses  ────────────────────────────────
 from notification_billing.core.application.commands.pending_call_commands import SetPendingCallDoneCommand
+from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
 from notification_billing.core.application.queries.pending_call_queries import GetPendingCallQuery, ListPendingCallsQuery
 from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
 
@@ -37,14 +43,17 @@ from ..serializers.core_serializers import (
     ClinicDataSerializer,
     ClinicPhoneSerializer,
     ClinicSerializer,
+    CollectionCaseSerializer,
     ContactHistorySerializer,
     ContactScheduleSerializer,
     ContractSerializer,
     CoveredClinicSerializer,
+    FlowStepConfigSerializer,
     InstallmentSerializer,
     MessageSerializer,
     PatientPhoneSerializer,
     PatientSerializer,
+    PaymentMethodSerializer,
     PendingCallSerializer,
     UserClinicSerializer,
     UserSerializer,
@@ -52,8 +61,10 @@ from ..serializers.core_serializers import (
 
 core_command_bus: CommandBusImpl = core_container.command_bus()
 core_query_bus: QueryBusImpl = core_container.query_bus()
-billing_command_bus: CommandBusImpl = billing_container.command_bus()
-billing_query_bus: QueryBusImpl = billing_container.query_bus()
+notification_billing_command_bus: CommandBusImpl = notification_billing_container.command_bus()
+notification_billing_query_bus: QueryBusImpl = notification_billing_container.query_bus()
+cordial_billing_command_bus: CommandBusImpl = cordial_billing_container.command_bus()
+cordial_billing_query_bus: QueryBusImpl = cordial_billing_container.query_bus()
 
 # ───────────────────────────────  Constantes  ────────────────────────────────
 LIST_TTL = 5 * 60        # 5 min
@@ -896,7 +907,7 @@ class ContactScheduleViewSet(PaginationFilterMixin, viewsets.ViewSet):
         filtros = {"clinic_id": request.user.clinic_id, **self._filters(request)}
         page, page_size = self._pagination(request)
         
-        res = billing_query_bus.dispatch(ListDueContactsQuery(filtros=filtros, page=page, page_size=page_size))
+        res = notification_billing_query_bus.dispatch(ListDueContactsQuery(filtros=filtros, page=page, page_size=page_size))
         
         total_items = res.total
         total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
@@ -920,22 +931,22 @@ class ContactScheduleViewSet(PaginationFilterMixin, viewsets.ViewSet):
         # Se o usuário for do tipo "clinic", força o filtro por clinic_id
         if getattr(request.user, "clinic_id", None):
             filtros["clinic_id"] = str(request.user.clinic_id)
-        cs = billing_query_bus.dispatch(GetContactScheduleQuery(filtros=filtros, id=str(pk)))
+        cs = notification_billing_query_bus.dispatch(GetContactScheduleQuery(filtros=filtros, id=str(pk)))
         return Response(ContactScheduleSerializer(cs).data)
 
     @track_http("ContactScheduleViewSet_create")
     def create(self, request):
-        cs = billing_command_bus.dispatch(CreateContactScheduleCommand(payload=ContactScheduleDTO(**request.data)))
+        cs = notification_billing_command_bus.dispatch(CreateContactScheduleCommand(payload=ContactScheduleDTO(**request.data)))
         return Response(ContactScheduleSerializer(cs).data, status=status.HTTP_201_CREATED)
 
     @track_http("ContactScheduleViewSet_update")
     def update(self, request, pk=None):
-        cs = billing_command_bus.dispatch(UpdateContactScheduleCommand(id=pk, payload=ContactScheduleDTO(**request.data)))
+        cs = notification_billing_command_bus.dispatch(UpdateContactScheduleCommand(id=pk, payload=ContactScheduleDTO(**request.data)))
         return Response(ContactScheduleSerializer(cs).data)
 
     @track_http("ContactScheduleViewSet_destroy")
     def destroy(self, request, pk=None):
-        billing_command_bus.dispatch(DeleteContactScheduleCommand(id=pk))
+        notification_billing_command_bus.dispatch(DeleteContactScheduleCommand(id=pk))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -956,7 +967,7 @@ class ContactHistoryViewSet(PaginationFilterMixin, viewsets.ViewSet):
         filtros = self._filters(request)
         page, page_size = self._pagination(request)
         
-        res = billing_query_bus.dispatch(ListContactHistoryQuery(filtros=filtros, page=page, page_size=page_size))
+        res = notification_billing_query_bus.dispatch(ListContactHistoryQuery(filtros=filtros, page=page, page_size=page_size))
         
         total_items = res.total
         total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
@@ -976,7 +987,7 @@ class ContactHistoryViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("ContactHistoryViewSet_retrieve")
     def retrieve(self, request, pk=None):
-        ch = billing_query_bus.dispatch(GetContactHistoryQuery(filtros={}, id=str(pk)))
+        ch = notification_billing_query_bus.dispatch(GetContactHistoryQuery(filtros={}, id=str(pk)))
         return Response(ContactHistorySerializer(ch).data)
 
 
@@ -997,7 +1008,7 @@ class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
         filtros = self._filters(request)
         page, page_size = self._pagination(request)
         
-        res = billing_query_bus.dispatch(ListMessagesQuery(filtros=filtros, page=page, page_size=page_size))
+        res = notification_billing_query_bus.dispatch(ListMessagesQuery(filtros=filtros, page=page, page_size=page_size))
         
         total_items = res.total
         total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
@@ -1017,22 +1028,22 @@ class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("MessageViewSet_retrieve")
     def retrieve(self, request, pk=None): 
-        m = billing_query_bus.dispatch(GetMessageQuery(filtros={}, id=str(pk)))
+        m = notification_billing_query_bus.dispatch(GetMessageQuery(filtros={}, id=str(pk)))
         return Response(MessageSerializer(m).data)
 
     @track_http("MessageViewSet_create")
     def create(self, request):
-        m = billing_command_bus.dispatch(CreateMessageCommand(payload=MessageDTO(**request.data)))
+        m = notification_billing_command_bus.dispatch(CreateMessageCommand(payload=MessageDTO(**request.data)))
         return Response(MessageSerializer(m).data, status=status.HTTP_201_CREATED)
 
     @track_http("MessageViewSet_update")
     def update(self, request, pk=None):
-        m = billing_command_bus.dispatch(UpdateMessageCommand(id=pk, payload=MessageDTO(**request.data)))
+        m = notification_billing_command_bus.dispatch(UpdateMessageCommand(id=pk, payload=MessageDTO(**request.data)))
         return Response(MessageSerializer(m).data)
 
     @track_http("MessageViewSet_destroy")
     def destroy(self, request, pk=None):
-        billing_command_bus.dispatch(DeleteMessageCommand(id=pk))
+        notification_billing_command_bus.dispatch(DeleteMessageCommand(id=pk))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1062,7 +1073,7 @@ class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
         # sempre força clinic_id do usuário-clínica
         filtros["clinic_id"] = str(request.user.clinic_id)
 
-        res = billing_query_bus.dispatch(
+        res = notification_billing_query_bus.dispatch(
             ListPendingCallsQuery(filtros=filtros, page=page, page_size=page_size)
         )
 
@@ -1083,7 +1094,7 @@ class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
     @track_http("PendingCallViewSet_retrieve")
     def retrieve(self, request, pk=None):
         filtros = {"clinic_id": str(request.user.clinic_id)}
-        pc = billing_query_bus.dispatch(
+        pc = notification_billing_query_bus.dispatch(
             GetPendingCallQuery(filtros=filtros, id=str(pk))
         )
         return Response(PendingCallSerializer(pc).data)
@@ -1106,7 +1117,7 @@ class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
         success = bool(request.data.get("success", True))
         notes = request.data.get("notes")
 
-        billing_command_bus.dispatch(
+        notification_billing_command_bus.dispatch(
             SetPendingCallDoneCommand(
                 call_id=str(pk),
                 success=success,
@@ -1173,3 +1184,100 @@ class BillingSettingsViewSet(PaginationFilterMixin, viewsets.ViewSet):
             BillingSettingsSerializer(updated).data,
             status=status.HTTP_200_OK
         )
+        
+@method_decorator(cache_page(LIST_TTL, key_prefix="pm_list"), name="list")
+@method_decorator(cache_page(RETRIEVE_TTL, key_prefix="pm_detail"), name="retrieve")
+class PaymentMethodViewSet(PaginationFilterMixin, viewsets.ViewSet):
+    permission_classes = [IsClinicUser]
+
+    def list(self, request):
+        filtros = self._filters(request)
+        page, page_size = self._pagination(request)
+        res  = core_query_bus.dispatch(ListPaymentMethodsQuery(filtros=filtros, page=page, page_size=page_size))
+        
+        total_items = res.total
+        total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
+        
+        payment_methods_serializados = PaymentMethodSerializer(res.items, many=True).data
+
+        payload = {
+            "results": payment_methods_serializados,     
+            "total_items": total_items,            
+            "page": page,                          # página atual (extraído de self._pagination)
+            "page_size": page_size,                # quantidade de itens por página
+            "total_pages": total_pages,            # número total de páginas
+            "items_on_page": len(res.items),
+        }
+
+        return Response(payload, status=status.HTTP_200_OK)
+    
+
+    def retrieve(self, request, pk=None):
+        filtros = self._filters(request)
+        pm = core_query_bus.dispatch(GetPaymentMethodQuery(filtros=filtros, payment_method_id=str(pk)))
+        return Response(PaymentMethodSerializer(pm).data)
+
+@method_decorator(cache_page(LIST_TTL, key_prefix="flowcfg_list"), name="list")
+@method_decorator(cache_page(RETRIEVE_TTL, key_prefix="flowcfg_detail"), name="retrieve")
+class FlowStepConfigViewSet(PaginationFilterMixin, viewsets.ViewSet):
+    permission_classes = [IsClinicUser]
+
+    def list(self, request):
+        filtros = self._filters(request)
+        page, page_size = self._pagination(request)
+        res = notification_billing_query_bus.dispatch(ListFlowStepConfigsQuery(filtros=filtros, page=page, page_size=page_size))
+        
+        total_items = res.total
+        total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
+        
+        flow_step_config_serializados = FlowStepConfigSerializer(res.items, many=True).data
+
+        payload = {
+            "results": flow_step_config_serializados,     
+            "total_items": total_items,            
+            "page": page,                          # página atual (extraído de self._pagination)
+            "page_size": page_size,                # quantidade de itens por página
+            "total_pages": total_pages,            # número total de páginas
+            "items_on_page": len(res.items),
+        }
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, pk=None):
+        filtros = self._filters(request)
+        cfg = notification_billing_query_bus.dispatch(GetFlowStepConfigQuery(filtros=filtros, payment_method_id=str(pk)))
+        return Response(FlowStepConfigSerializer(cfg).data)
+
+
+@method_decorator(cache_page(LIST_TTL, key_prefix="collect_list"), name="list")
+@method_decorator(cache_page(RETRIEVE_TTL, key_prefix="collect_detail"), name="retrieve")
+class CollectionCaseViewSet(PaginationFilterMixin, viewsets.ViewSet):
+    permission_classes = [IsClinicUser]
+
+    def list(self, request):
+        filtros = {"clinic_id": str(request.user.clinic_id), **self._filters(request)}
+        page, page_size = self._pagination(request)
+        res = cordial_billing_query_bus.dispatch(ListCollectionCasesQuery(filtros=filtros, page=page, page_size=page_size))
+        
+        total_items = res.total
+        total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
+        
+        collection_cases_serializados = CollectionCaseSerializer(res.items, many=True).data
+
+        payload = {
+            "results": collection_cases_serializados,     
+            "total_items": total_items,            
+            "page": page_size,                          # página atual (extraído de self._pagination)
+            "page_size": page_size,                # quantidade de itens por página
+            "total_pages": total_pages,            # número total de páginas
+            "items_on_page": len(res.items),
+        }
+
+        return Response(payload, status=status.HTTP_200_OK)
+    
+
+    def retrieve(self, request, pk=None):
+        case = cordial_billing_query_bus.dispatch(
+            GetCollectionCaseQuery(collection_case_id=str(pk), filtros={"clinic_id": str(request.user.clinic_id)})
+        )
+        return Response(CollectionCaseSerializer(case).data)

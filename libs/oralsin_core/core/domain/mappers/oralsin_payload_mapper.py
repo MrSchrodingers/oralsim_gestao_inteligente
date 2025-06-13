@@ -64,10 +64,11 @@ class OralsinPayloadMapper:
             raise MappingError(exc) from exc
 
     @classmethod
-    def map_covered_clinic(cls, dto: OralsinClinicDTO) -> CoveredClinicEntity:
+    def map_covered_clinic(cls, dto: OralsinClinicDTO, clinic_id: uuid.UUID,) -> CoveredClinicEntity:
         try:
             return CoveredClinicEntity(
                 id=cls._uuid(),
+                clinic_id=clinic_id, 
                 oralsin_clinic_id=dto.idClinica,
                 name=dto.nomeClinica,
                 cnpj=dto.cnpj,
@@ -189,8 +190,8 @@ class OralsinPayloadMapper:
     # ───────────────── contrato + parcelas ──────────────────────
     @classmethod
     def map_contract(cls, dto: OralsinContratoDTO,
-                     patient_id: uuid.UUID,
-                     clinic_id: uuid.UUID) -> ContractEntity:
+                    patient_id: uuid.UUID,
+                    clinic_id: uuid.UUID) -> ContractEntity:
         try:
             pm: PaymentMethodEntity | None = None
             if dto.nomeFormaPagamento:
@@ -205,13 +206,15 @@ class OralsinPayloadMapper:
                 patient_id=patient_id,
                 clinic_id=clinic_id,
                 status="ativo",
+                contract_version=str(dto.versaoContrato),
                 remaining_installments=dto.quantidadeParcelasFaltantes or 0,
                 overdue_amount=float(dto.valorInadimplente or 0),
                 first_billing_date=dto.primeiroFaturamento,
                 negotiation_notes=dto.obsNegociacao or "",
                 payment_method=pm,
-                valor_contrato_final=float(dto.valorContratoFinal or 0),
-                realizar_cobranca=dto.realizarCobranca,
+                final_contract_value=float(dto.valorContratoFinal or 0),
+                do_notifications=dto.realizarCobranca,
+                do_billings=dto.realizarCobrancaAmigavel,
             )
         except Exception as exc:  # pragma: no cover
             logger.error("map_contract", error=str(exc), dto=dto.dict())
@@ -221,11 +224,12 @@ class OralsinPayloadMapper:
     def map_installments(
         cls,
         parcelas: list[OralsinParcelaDTO],
+        contrato_version: int,
         parcela_detalhe: OralsinParcelaAtualDetalheDTO | None,
         contract_id: uuid.UUID,
     ) -> list[InstallmentEntity]:
         current_id = parcela_detalhe.idContratoParcela if parcela_detalhe else None
-        version = parcela_detalhe.versaoContrato if parcela_detalhe else 1
+        version = str(contrato_version)
 
         out: list[InstallmentEntity] = []
         for p in parcelas:

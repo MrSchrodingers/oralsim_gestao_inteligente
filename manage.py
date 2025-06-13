@@ -2,6 +2,9 @@
 import os
 import sys
 
+from config.structlog_config import configure_logging
+
+configure_logging(level="DEBUG")
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 def main():

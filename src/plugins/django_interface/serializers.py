@@ -5,6 +5,7 @@ from plugins.django_interface.serializers.core_serializers import (
     ClinicDataSerializer,
     ClinicPhoneSerializer,
     ClinicSerializer,
+    CollectionCaseSerializer,
     ContactHistorySerializer,
     ContactScheduleSerializer,
     ContractSerializer,
@@ -231,3 +232,7 @@ class UserUpdateDTOSerializer(serializers.Serializer):
 
 
 CoreUserSerializer = UserSerializer
+
+
+class PaginatedCollectionCaseResponseSerializer(PaginatedResponseSerializer):
+    results = CollectionCaseSerializer(many=True)

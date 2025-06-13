@@ -12,6 +12,7 @@ from oralsin_core.adapters.repositories.covered_clinic_repo_impl import CoveredC
 from oralsin_core.adapters.repositories.installment_repo_impl import InstallmentRepoImpl
 from oralsin_core.adapters.repositories.patient_phone_repo_impl import PatientPhoneRepoImpl
 from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
+from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
 from oralsin_core.adapters.repositories.user_clinic_repo_impl import UserClinicRepoImpl
 from oralsin_core.adapters.repositories.user_repo_impl import UserRepoImpl
 from oralsin_core.core.application.cqrs import PaginatedQueryDTO, QueryBusImpl, QueryHandler
@@ -55,6 +56,7 @@ from oralsin_core.core.application.queries.patient_queries import (
     GetPatientQuery,
     ListPatientsQuery,
 )
+from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
 from oralsin_core.core.application.queries.user_clinic_queries import (
     GetUserClinicQuery,
     ListUserClinicsQuery,
@@ -284,6 +286,25 @@ class GetUserHandler(QueryHandler[GetUserQuery, object]):
 
     def handle(self, query: GetUserQuery):
         return self._repo.find_by_id(query.user_id)
+    
+# 12 Payment Methods
+class ListPaymentMethodsHandler(QueryHandler[ListPaymentMethodsQuery, PaginatedQueryDTO]):
+    def __init__(self):
+        self._repo = PaymentMethodRepoImpl()
+
+    def handle(self, query: ListPaymentMethodsQuery):
+        return self._repo.list(
+            filtros=query.filtros,
+            page=query.page,
+            page_size=query.page_size,
+        )
+
+class GetPaymentMethodsHandler(QueryHandler[GetPaymentMethodQuery, object]):
+    def __init__(self):
+        self._repo = PaymentMethodRepoImpl()
+
+    def handle(self, query: GetPaymentMethodQuery):
+        return self._repo.find_by_id(query.payment_method_id)
 
 # ───────────────────────────────────────────────
 # Função para registrar todos os handlers nos respectivos QueryBuses

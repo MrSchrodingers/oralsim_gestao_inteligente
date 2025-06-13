@@ -5,6 +5,8 @@
 # =========================================================
 from rest_framework import serializers
 
+from plugins.django_interface.models import CollectionCase
+
 
 # ───────────────────────────────────────────────
 # Endereços
@@ -124,9 +126,10 @@ class PatientSerializer(serializers.Serializer):
 # Contratos  &  Parcelas
 # ───────────────────────────────────────────────
 class PaymentMethodSerializer(serializers.Serializer):
-    id                    = serializers.UUIDField()
+    id                       = serializers.UUIDField()
     oralsin_payment_method_id = serializers.IntegerField()
-    name                  = serializers.CharField()
+    name                     = serializers.CharField()
+    created_at               = serializers.DateTimeField()
 
 
 class ContractSerializer(serializers.Serializer):
@@ -138,8 +141,9 @@ class ContractSerializer(serializers.Serializer):
     contract_version       = serializers.CharField(allow_blank=True, allow_null=True)
     remaining_installments = serializers.IntegerField(allow_null=True)
     overdue_amount         = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
-    valor_contrato_final   = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
-    realizar_cobranca      = serializers.BooleanField()
+    final_contract_value   = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
+    do_notifications       = serializers.BooleanField()
+    do_billings            = serializers.BooleanField()     
     first_billing_date     = serializers.DateField(allow_null=True)
     negotiation_notes      = serializers.CharField(allow_blank=True, allow_null=True)
     payment_method         = PaymentMethodSerializer(allow_null=True)
@@ -214,6 +218,7 @@ class ContactHistorySerializer(serializers.Serializer):
     sent_at              = serializers.DateTimeField(allow_null=True)
     duration_ms          = serializers.IntegerField(allow_null=True)
     feedback_status      = serializers.CharField(allow_blank=True, allow_null=True)
+    success              = serializers.BooleanField()  
     observation          = serializers.CharField(allow_blank=True, allow_null=True)
     message_id           = serializers.UUIDField(allow_null=True)
     schedule_id          = serializers.UUIDField(allow_null=True)
@@ -264,3 +269,35 @@ class PendingCallSerializer(serializers.Serializer):
 class BillingSettingsSerializer(serializers.Serializer):
     clinic_id         = serializers.UUIDField()
     min_days_overdue  = serializers.IntegerField()
+    
+    
+class PendingSyncSerializer(serializers.Serializer):
+    id             = serializers.UUIDField()
+    object_type    = serializers.CharField()
+    object_api_id  = serializers.IntegerField(allow_null=True)
+    action         = serializers.CharField()
+    new_data       = serializers.JSONField()
+    old_data       = serializers.JSONField(allow_null=True)
+    status         = serializers.CharField()
+    processed_at   = serializers.DateTimeField(allow_null=True)
+    created_at     = serializers.DateTimeField()
+    updated_at     = serializers.DateTimeField()
+
+
+
+class CollectionCaseSerializer(serializers.Serializer):
+    id               = serializers.UUIDField()
+    patient_id       = serializers.UUIDField()
+    contract_id      = serializers.UUIDField()
+    installment_id   = serializers.UUIDField()
+    clinic_id        = serializers.UUIDField()
+    opened_at        = serializers.DateTimeField()
+    amount           = serializers.DecimalField(max_digits=14, decimal_places=2)
+    deal_id          = serializers.IntegerField(allow_null=True)
+    deal_sync_status = serializers.ChoiceField(
+        choices=CollectionCase.DealSyncStatus.choices
+    )
+    status           = serializers.ChoiceField(
+        choices=CollectionCase.Status.choices
+    )
+    

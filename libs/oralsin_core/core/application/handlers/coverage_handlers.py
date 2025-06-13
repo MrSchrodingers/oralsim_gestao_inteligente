@@ -116,9 +116,9 @@ class RegisterCoverageClinicHandler(
         # 4️⃣  Telefones
         for phone in self.mapper.map_clinic_phones(dto, saved_clinic.id):
             self.clinic_phone_repo.save(phone)
-
+    
         # 5️⃣  CoveredClinic
-        covered_ent = self.mapper.map_covered_clinic(dto)
+        covered_ent = self.mapper.map_covered_clinic(dto, saved_clinic.id)
         saved_covered = self.covered_repo.save(covered_ent)
 
         self.dispatcher.dispatch(

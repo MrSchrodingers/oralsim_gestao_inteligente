@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import structlog
+from django.db.models import Q
 from django.utils import timezone
 
 from oralsin_core.core.application.cqrs import PagedResult
@@ -26,7 +27,9 @@ class ContractRepoImpl(ContractRepository):
         a partir de `CoveredClinic` e devolve os contratos.
         """
         try:
-            covered = CoveredClinic.objects.get(clinic_id=clinic_id)
+            covered = CoveredClinic.objects.get(
+                Q(clinic_id=clinic_id) | Q(oralsin_clinic_id=clinic_id)
+            )
         except CoveredClinic.DoesNotExist:
             logger.warning("covered_clinic_not_found", clinic_id=clinic_id)
             return []
@@ -56,10 +59,12 @@ class ContractRepoImpl(ContractRepository):
             "patient_id": contract.patient_id,
             "clinic_id": contract.clinic_id,
             "status": contract.status,
+            "contract_version": contract.contract_version,
             "remaining_installments": contract.remaining_installments,
             "overdue_amount": contract.overdue_amount,
-            "valor_contrato_final": contract.valor_contrato_final,
-            "realizar_cobranca": contract.realizar_cobranca,
+            "final_contract_value": contract.final_contract_value,
+            "do_notifications": contract.do_notifications,
+            "do_billings": contract.do_billings,
             "first_billing_date": contract.first_billing_date,
             "negotiation_notes": contract.negotiation_notes,
             "payment_method": pm_model,
@@ -69,7 +74,7 @@ class ContractRepoImpl(ContractRepository):
         # 3) lookup apenas por (oralsin_contract_id, contract_version)
         lookup = {
             "oralsin_contract_id": contract.oralsin_contract_id,
-            "contract_version": contract.contract_version or 1,
+            "contract_version": contract.contract_version,
         }
 
         # 4) upsert

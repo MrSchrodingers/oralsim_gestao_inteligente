@@ -229,7 +229,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
 
         # 0) Map
         entities = self.installment_repo.merge_installments(
-            dto.parcelas, dto.parcelaAtualDetalhe, contract_id
+            dto.parcelas, dto.contrato, dto.parcelaAtualDetalhe, contract_id
         )
         if not entities:
             return
@@ -314,7 +314,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
                 )
 
         if to_create:
-            InstallmentModel.objects.bulk_create(to_create)
+            InstallmentModel.objects.bulk_create(to_create, ignore_conflicts=True)
 
         if to_update:
             InstallmentModel.objects.bulk_update(to_update, UPDATE_FIELDS)

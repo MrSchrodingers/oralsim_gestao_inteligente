@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import date, timedelta
 from typing import Any
@@ -13,6 +14,8 @@ from oralsin_core.core.application.commands.billing_settings_commands import Upd
 from oralsin_core.core.application.commands.coverage_commands import RegisterCoverageClinicCommand
 from oralsin_core.core.application.commands.user_commands import CreateUserCommand
 from oralsin_core.core.application.dtos.user_dto import CreateUserDTO
+
+from plugins.django_interface.models import Contract as ContractModel
 
 
 class Command(BaseCommand):
@@ -125,6 +128,29 @@ class Command(BaseCommand):
             start = today - timedelta(days=200)
             end = today + timedelta(days=730)
             self._run_sync(container, oralsin_id, start, end, no_schedules=no_schedules)
+            
+            self.stdout.write("🌱 Ajustando flags de billing para testes…")
+            # 1) pega todos os contratos da clínica
+            all_contracts = list(
+                ContractModel.objects.filter(clinic__oralsin_clinic_id=oralsin_id)
+            )
+
+            # 2) calcula metade
+            half = len(all_contracts) // 2
+
+            # 3) seleciona aleatoriamente metade para ativar as flags
+            to_enable = random.sample(all_contracts, half)
+
+            # 4) atualiza em batch
+            ids = [c.id for c in to_enable]
+            ContractModel.objects.filter(id__in=ids).update(
+                do_billings=True,
+                do_notifications=True,
+            )
+
+            self.stdout.write(self.style.SUCCESS(
+                f"✅ Flags ativadas em {len(ids)} contratos (de {len(all_contracts)})"
+            ))
 
         self.stdout.write(self.style.SUCCESS("🎉 Seed finalizado com sucesso."))
 

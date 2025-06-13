@@ -22,8 +22,9 @@ class ContractEntity(EntityMixin):
     first_billing_date: date | None = None
     negotiation_notes: str | None = None
     payment_method: PaymentMethodEntity | None = None
-    valor_contrato_final: float | None = None
-    realizar_cobranca: bool = True
+    final_contract_value: float | None = None
+    do_notifications: bool = False
+    do_billings: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

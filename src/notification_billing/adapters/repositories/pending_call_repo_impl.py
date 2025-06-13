@@ -71,6 +71,13 @@ class PendingCallRepoImpl(PendingCallRepository):
     # ────────────────────────────────── #
     # Consultas
     # ────────────────────────────────── #
+    def find_by_id(self, pending_call_id: str) -> PendingCallEntity | None:
+        try:
+            m = PendingCallModel.objects.get(id=pending_call_id)
+            return PendingCallEntity.from_model(m)
+        except PendingCallModel.DoesNotExist:
+            return None
+        
     def list_pending(
         self, clinic_id: str, before: datetime
     ) -> list[PendingCallEntity]:

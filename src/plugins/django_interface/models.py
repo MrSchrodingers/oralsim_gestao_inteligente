@@ -296,10 +296,11 @@ class Contract(models.Model):
     overdue_amount = models.DecimalField(
         max_digits=14, decimal_places=2, blank=True, null=True
     )
-    valor_contrato_final = models.DecimalField(
+    final_contract_value = models.DecimalField(
         max_digits=14, decimal_places=2, blank=True, null=True
     )
-    realizar_cobranca = models.BooleanField(default=True, db_index=True)
+    do_notifications = models.BooleanField(default=True, db_index=True)
+    do_billings = models.BooleanField(default=False, db_index=True)
     first_billing_date = models.DateField(blank=True, null=True, db_index=True)
     negotiation_notes = models.TextField(blank=True, null=True)
     payment_method = models.ForeignKey(

@@ -69,7 +69,16 @@ BUSINESS_OVERDUE_PAYMENTS = Gauge(
 BUSINESS_COLLECTION_RATE = Gauge(
     'business_collection_rate', 'Taxa de recuperação (%)', ['clinic'], registry=registry
 )
-
+# — Outros indicadores de negócio
+BUSINESS_TOTAL_CONTRACTS = Gauge(
+    'business_total_contracts', 'Total de contratos', ['clinic'], registry=registry
+)
+BUSINESS_TOTAL_PATIENTS = Gauge(
+    'business_total_patients', 'Total de pacientes', ['clinic'], registry=registry
+)
+BUSINESS_AVG_OVERDUE_DAYS = Gauge(
+    'business_avg_days_overdue', 'Média de dias em atraso', ['clinic'], registry=registry
+)
 # — Notifications
 NOTIFICATIONS_SENT = Counter(
     'notifications_sent_total',

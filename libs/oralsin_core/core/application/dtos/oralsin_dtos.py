@@ -55,6 +55,7 @@ class OralsinContratoDTO(BaseModel):
     obsNegociacao: str | None = None
     nomeFormaPagamento: str | None = None
     realizarCobranca: bool
+    realizarCobrancaAmigavel: bool
 
 
 class OralsinParcelaDTO(BaseModel):
@@ -76,6 +77,15 @@ class OralsinContatoHistoricoDTO(BaseModel):
     idContatoTipo: int | None = None
     descricao: str | None = None
 
+class OralsinContatoHistoricoEnvioDTO(BaseModel):
+    idClinica: int
+    idPaciente: int
+    idContrato: int | None = None
+    dataHoraInseriu: datetime
+    observacao: str | None = None
+    contatoTipo: str | None = None
+    idContatoTipo: int | None = None
+    descricao: str | None = None
 
 class OralsinClinicByPatientDTO(BaseModel):
     idClinica: int

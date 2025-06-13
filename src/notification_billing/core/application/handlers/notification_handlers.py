@@ -13,6 +13,7 @@ from typing import Any
 
 from django.utils import timezone
 from oralsin_core.adapters.observability.metrics import NOTIFICATIONS_SENT
+from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.installment_repository import (
     InstallmentRepository,
 )
@@ -105,11 +106,12 @@ class NotificationSenderService:
 # Handler – disparo manual
 # ──────────────────────────────────────────────────────────────────────────
 class SendManualNotificationHandler(CommandHandler[SendManualNotificationCommand]):
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         schedule_repo: ContactScheduleRepository,
         history_repo: ContactHistoryRepository,
         notification_service: NotificationSenderService,
+        contract_repo: ContractRepository,
         dispatcher: EventDispatcher,
         pending_call_repo: PendingCallRepository,
     ):
@@ -117,6 +119,7 @@ class SendManualNotificationHandler(CommandHandler[SendManualNotificationCommand
         self.history_repo = history_repo
         self.notification_service = notification_service
         self.dispatcher = dispatcher
+        self.contract_repo = contract_repo
         self.pending_call_repo = pending_call_repo
 
     # ------------------------------------------------------------------ #
@@ -128,6 +131,13 @@ class SendManualNotificationHandler(CommandHandler[SendManualNotificationCommand
             sched = self.schedule_repo.get_by_patient_contract(
                 cmd.patient_id, cmd.contract_id
             )
+            contract = self.contract_repo.find_by_id(sched.contract_id)
+            if not contract or not contract.do_notifications:
+                # pula todo o fluxo de notificação
+                raise ValueError(
+                    f"Paciente sem permissão para notificação {contract.patient_id}"
+                )
+                
             inst = self.notification_service.installment_repo.get_current_installment(
                 sched.contract_id
             )
@@ -204,6 +214,7 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         config_repo: FlowStepConfigRepository,
         notification_service: NotificationSenderService,
         pending_call_repo: PendingCallRepository,
+        contract_repo: ContractRepository,
         dispatcher: EventDispatcher,
         query_bus: Any,
     ):
@@ -212,12 +223,13 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         self.config_repo = config_repo
         self.notification_service = notification_service
         self.pending_call_repo = pending_call_repo
+        self.contract_repo = contract_repo
         self.dispatcher = dispatcher
         self.query_bus = query_bus
 
     # ------------------------------------------------------------------ #
     @publish(exchange="notifications", routing_key="automated")
-    def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:  # noqa: C901, PLR0912
+    def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR0915
         start = time.perf_counter()
         success = True
         try:
@@ -248,7 +260,13 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
                 inst = inst_page.items[0]
                 if inst.received:
                     continue
-
+                
+                # busca o contrato para checar a flag do_notification
+                contract = self.contract_repo.find_by_id(sched.contract_id)
+                if not contract or not contract.do_notifications:
+                    # pula todo o fluxo de notificação
+                    continue
+                
                 patient = self.notification_service.patient_repo.find_by_id(
                     sched.patient_id
                 )

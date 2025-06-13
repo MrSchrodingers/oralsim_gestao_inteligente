@@ -7,6 +7,10 @@ Composition-root do *cordial_billing*.
 """
 from dependency_injector import containers, providers
 
+from cordial_billing.core.application.handlers.collection_case_handler import GetCollectionCaseHandler, ListCollectionCaseHandler
+from cordial_billing.core.application.queries.collection_case_queries import GetCollectionCaseQuery, ListCollectionCasesQuery
+from notification_billing.core.application.cqrs import QueryBusImpl
+
 container = None  # type: ignore
 
 
@@ -72,7 +76,8 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
         logger = providers.Singleton(structlog.get_logger, __name__)
         dispatcher = providers.Singleton(EventDispatcher)
         command_bus = providers.Singleton(CommandBusImpl, dispatcher=dispatcher)
-
+        query_bus   = providers.Singleton(QueryBusImpl)
+        
         # --- conexões externas ------------------------------------
         pipeboard_engine = providers.Singleton(
             create_async_engine,
@@ -103,11 +108,19 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
             logger=logger,
         )
 
+        
+        list_collection_case_handler    = providers.Factory(ListCollectionCaseHandler)
+        get_collection_case_handler     = providers.Factory(GetCollectionCaseHandler)
+        
         # ----------------------------------------------------------
         def init(self) -> None:
             """Registra handlers no CommandBus (executado 1×)."""
             bus = self.command_bus()
             bus.register(SyncOldDebtsCommand, self.sync_old_debts_handler())
+            
+            qry_bus = self.query_bus()
+            qry_bus.register(ListCollectionCasesQuery, self.list_collection_case_handler()) 
+            qry_bus.register(GetCollectionCaseQuery, self.get_collection_case_handler())
 
     # ─── INSTANTIAÇÃO + CONFIGURAÇÃO ───────────────────────────────
     container = Container()

@@ -6,13 +6,16 @@ from .views.core_views import (
     ClinicDataViewSet,
     ClinicPhoneViewSet,
     ClinicViewSet,
+    CollectionCaseViewSet,
     ContactHistoryViewSet,
     ContactScheduleViewSet,
     ContractViewSet,
     CoveredClinicViewSet,
+    FlowStepConfigViewSet,
     InstallmentViewSet,
     MessageViewSet,
     PatientViewSet,
+    PaymentMethodViewSet,
     PendingCallViewSet,
     UserClinicViewSet,
     UserViewSet,
@@ -35,6 +38,9 @@ RESOURCES = [
     ("messages",           MessageViewSet),
     ("pending-calls",      PendingCallViewSet),
     ("billing-settings",   BillingSettingsViewSet),
+    ("payment-methods",    PaymentMethodViewSet),
+    ("flow-step-config",   FlowStepConfigViewSet),
+    ("collection-case",    CollectionCaseViewSet),
 ]
 
 def build_router() -> DefaultRouter:

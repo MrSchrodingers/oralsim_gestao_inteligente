@@ -1,5 +1,3 @@
-# notification_billing/adapters/repositories/contact_schedule_repo_impl.py
-
 from datetime import datetime, time, timedelta
 
 from django.db import transaction
@@ -9,6 +7,7 @@ from oralsin_core.core.domain.repositories.installment_repository import Install
 from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 from notification_billing.core.domain.repositories.contact_schedule_repository import ContactScheduleRepository
 from plugins.django_interface.models import ContactSchedule as ContactScheduleModel
+from plugins.django_interface.models import Contract as ContractModel
 from plugins.django_interface.models import FlowStepConfig
 
 
@@ -32,6 +31,18 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         - Se vier installment_id: agendar exatamente essa parcela (via find_by_id).
         - Se NÃO vier installment_id: pegar o GET_CURRENT_INSTALLMENT (via is_current).
         """
+        # 0) Valida permissão para agendar/ notificar paciente
+        if not ContractModel.objects.filter(id=contract_id, do_notifications=True).exists():
+            return None
+
+        # 0.1. Se já tem PENDING, não faz nada
+        if ContactScheduleModel.objects.filter(
+            patient_id=patient_id,
+            contract_id=contract_id,
+            status=ContactScheduleModel.Status.PENDING,
+            ).exists():
+            return None
+        
         # 1) buscar a parcela certa
         inst = self.installment_repo.find_by_id(installment_id) if installment_id else self.installment_repo.get_current_installment(contract_id)
 

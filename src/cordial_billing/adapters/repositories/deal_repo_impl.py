@@ -23,7 +23,7 @@ class DealRepoImpl(DealRepository):
         sql = """
         SELECT d.* FROM negocios d
         JOIN pessoas p ON p.id = d.person_id
-        WHERE translate(p.cpf_cnpj_text, '.-/', '') = :cpf
+        WHERE translate(p.cpf_text, '.-/', '') = :cpf
         ORDER BY d.update_time DESC
         LIMIT 1
         """

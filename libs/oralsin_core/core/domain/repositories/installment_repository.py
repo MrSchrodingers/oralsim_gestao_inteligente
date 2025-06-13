@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any
 
 from oralsin_core.core.application.cqrs import PagedResult
+from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContratoDTO, OralsinParcelaAtualDetalheDTO
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 
 
@@ -38,7 +38,7 @@ class InstallmentRepository(ABC):
         ...
         
     @abstractmethod
-    def merge_installments(parcelas: list, parcela_atual: Any | None, contract_id):
+    def merge_installments(self, parcelas: list, contrato: OralsinContratoDTO | None, parcela_atual: OralsinParcelaAtualDetalheDTO  | None, contract_id: str):
         """Retorna uma lista de InstallmentEntity única, priorizando parcelaAtualDetalhe."""
         ...
         

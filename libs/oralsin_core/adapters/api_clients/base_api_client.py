@@ -86,3 +86,31 @@ class BaseAPIClient:
         except Exception as exc:  # noqa: BLE001
             log.error("Falha em _get()", error=str(exc), exc_info=True)
             raise
+    
+    # ---------------------------------------------------------------------- HTTP POST --
+    def _post(
+        self,
+        path: str,
+        *,
+        json: dict[str, Any],
+        response_model: type[T] | None = None,
+    ) -> T | dict[str, Any]:
+        """Executa POST e retorna JSON bruto ou modelado."""
+        url = urljoin(self.base_url, path.lstrip("/"))
+        log = self.log.bind(method="POST", url=url)
+        log.debug("Enviando requisição", payload=json)
+
+        try:
+            resp = self.session.post(url, json=json, timeout=self.timeout)
+            log.debug("Resposta recebida", status_code=resp.status_code, headers=resp.headers)
+            resp.raise_for_status()
+
+            if response_model is not None:
+                payload = self._sanitize_payload(resp.json())
+                log.debug("Payload sanitizado", payload=payload)
+                return response_model.model_validate(payload)
+
+            return resp.json()
+        except Exception as exc:  # noqa: BLE001
+            log.error("Falha em _post()", error=str(exc), exc_info=True)
+            raise

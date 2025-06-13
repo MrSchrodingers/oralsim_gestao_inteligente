@@ -1,3 +1,7 @@
+from typing import Any
+
+from oralsin_core.core.application.cqrs import PagedResult
+
 from cordial_billing.core.domain.entities.collection_case_entity import (
     CollectionCaseEntity,
 )
@@ -13,6 +17,13 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
     Persistência de `CollectionCase` via Django ORM, agora incluindo
     controle de deal_sync_status conforme deal_id.
     """
+    def find_by_id(self, collection_case_id: str) -> CollectionCaseEntity | None:
+        try:
+            m = CaseModel.objects.get(id=collection_case_id)
+            return CollectionCaseEntity.from_model(m)
+        except CaseModel.DoesNotExist:
+            return None
+
 
     def save(self, case: CollectionCaseEntity) -> CollectionCaseEntity:
         """
@@ -70,3 +81,20 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
 
     def exists_for_installment(self, installment_id: str) -> bool:
         return CaseModel.objects.filter(installment_id=installment_id).exists()
+
+    def list(
+        self, filtros: dict[str, Any] | None, page: int, page_size: int
+    ) -> PagedResult[CollectionCaseEntity]:
+        """
+        lista com paginação genérica.
+        """
+        qs = CaseModel.objects.all()
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        objs_page = qs.order_by("deal_id")[offset : offset + page_size]
+
+        items = [CollectionCaseEntity.from_model(obj) for obj in objs_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

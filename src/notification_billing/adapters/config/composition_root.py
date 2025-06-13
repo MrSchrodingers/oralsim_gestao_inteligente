@@ -21,7 +21,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
     from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 
-    # Mensageria e notificadores
+    # Mensageria e notificadores    
     from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ
     from notification_billing.adapters.notifiers.registry import get_notifier
 
@@ -73,6 +73,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         UpdateContactScheduleHandler,
         UpdateMessageHandler,
     )
+    from notification_billing.core.application.handlers.flow_step_config_handlers import GetFlowStepConfigHandler, ListFlowStepConfigHandler
     from notification_billing.core.application.handlers.list_pending_schedules_handler import ListPendingSchedulesHandler
     from notification_billing.core.application.handlers.notification_handlers import (
         NotificationSenderService,
@@ -81,6 +82,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     )
     from notification_billing.core.application.handlers.pending_call_handlers import GetPendingCallHandler, ListPendingCallsHandler, SetPendingCallDoneHandler
     from notification_billing.core.application.handlers.sync_handlers import BulkScheduleContactsHandler
+    from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
 
     # Queries
     from notification_billing.core.application.queries.notification_queries import ListPendingSchedulesQuery
@@ -137,7 +139,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             address_repo=address_repo
         )
         pending_call_repo   = providers.Singleton(PendingCallRepoImpl)
-
+        
         # Serviços de negócio
         formatter_service        = providers.Singleton(FormatterService, currency_symbol="R$")
         notification_sender_service = providers.Singleton(
@@ -191,6 +193,13 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             DeleteContactScheduleHandler,
             repo=contact_schedule_repo,
         )
+        
+        get_flow_step_config_handler = providers.Factory( 
+            GetFlowStepConfigHandler
+        )
+        list_flow_step_config_handler = providers.Factory( 
+            ListFlowStepConfigHandler
+        )
 
         # Handlers de fluxo de contato/notificação
         advance_contact_step_handler = providers.Factory(
@@ -212,6 +221,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             history_repo=contact_history_repo,
             notification_service=notification_sender_service,
             pending_call_repo=pending_call_repo,
+            contract_repo=contract_repo,
             dispatcher=event_dispatcher,
         )
         run_automated_notifications_handler = providers.Factory(
@@ -221,6 +231,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             history_repo=contact_history_repo,
             pending_call_repo=pending_call_repo,
             notification_service=notification_sender_service,
+            contract_repo=contract_repo,
             dispatcher=event_dispatcher,
             query_bus=query_bus,
         )
@@ -253,6 +264,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             repo=pending_call_repo, 
             history_repo=contact_history_repo,
             schedule_repo=contact_schedule_repo,
+            logger=logger(),
             dispatcher=event_dispatcher
         )
 
@@ -292,6 +304,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             qb.register(
                 GetPendingCallQuery, self.get_pending_call_handler()
             )
+            
+            qb.register(ListFlowStepConfigsQuery, self.list_flow_step_config_handler()) 
+            qb.register(GetFlowStepConfigQuery, self.get_flow_step_config_handler())
+            
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()
     container.config.rabbitmq_url.from_value(settings.RABBITMQ_URL)

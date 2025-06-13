@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
+from oralsin_core.adapters.observability.metrics import BUSINESS_AVG_OVERDUE_DAYS, BUSINESS_COLLECTION_RATE, BUSINESS_OVERDUE_PAYMENTS, BUSINESS_TOTAL_CONTRACTS, BUSINESS_TOTAL_PATIENTS, BUSINESS_TOTAL_RECEIVABLES
 from oralsin_core.core.application.dtos.dashboard_dto import DashboardDTO, PaymentSummaryDTO, StatsDTO
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
@@ -113,6 +114,14 @@ class DashboardService:
             overdueContracts=len(overdue_contracts),
         )
 
+        label = str(clinic_id)
+        BUSINESS_TOTAL_RECEIVABLES.labels(label).set(float(total_amount))
+        BUSINESS_OVERDUE_PAYMENTS.labels(label).set(float(overdue_amount))
+        BUSINESS_COLLECTION_RATE.labels(label).set(collection_rate)
+        BUSINESS_TOTAL_CONTRACTS.labels(label).set(total_contracts)
+        BUSINESS_TOTAL_PATIENTS.labels(label).set(total_patients)
+        BUSINESS_AVG_OVERDUE_DAYS.labels(label).set(avg_overdue)
+        
         # 4) top-3 recentes e pendentes
         recent = sorted(paid_list, key=lambda i: i.due_date, reverse=True)[:3]
         upcoming = sorted(pending_list, key=lambda i: i.due_date)[:3]

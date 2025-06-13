@@ -15,6 +15,10 @@ class PendingCallRepository(ABC):
       ...
       
     @abstractmethod
+    def find_by_id(self, pending_call_id: str) -> PendingCallEntity | None:
+      ...
+      
+    @abstractmethod
     def list_pending(self, clinic_id: str, before: datetime) -> list[PendingCallEntity]: 
       ...
 

@@ -1,9 +1,9 @@
 from datetime import date, timedelta
-from typing import Any
 
 from django.db import IntegrityError, transaction
 
 from oralsin_core.core.application.cqrs import PagedResult
+from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContratoDTO, OralsinParcelaAtualDetalheDTO
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 from oralsin_core.core.domain.repositories.installment_repository import InstallmentRepository
@@ -108,18 +108,13 @@ class InstallmentRepoImpl(InstallmentRepository):
 
     # ─────────────────────────── persistência ────────────────────────────
     @transaction.atomic
-    def merge_installments(self, parcelas: list, parcela_atual: Any | None, contract_id: str):
+    def merge_installments(self, parcelas: list, contrato: OralsinContratoDTO | None, parcela_atual: OralsinParcelaAtualDetalheDTO  | None, contract_id: str):
         """
         Retorna uma lista de InstallmentEntity única, priorizando parcelaAtualDetalhe.
         """
         parcel_map = {}
-        # 1. Mapeia todas as parcelas normais
-        for ent in self.mapper.map_installments(parcelas, None, contract_id):
-            key = (ent.contract_id, ent.contract_version, ent.installment_number)
-            parcel_map[key] = ent
-        # 2. Se existir parcela_atual, sobrescreve (garantindo sempre que tem numeroParcela certo)
-        if parcela_atual:
-            ent = self.mapper.map_installment(parcela_atual, contract_id, parcelas)
+        # 1. Mapeia todas as parcelas
+        for ent in self.mapper.map_installments(parcelas, contrato.versaoContrato, parcela_atual, contract_id):
             key = (ent.contract_id, ent.contract_version, ent.installment_number)
             parcel_map[key] = ent
         return list(parcel_map.values())

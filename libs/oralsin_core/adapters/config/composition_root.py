@@ -26,6 +26,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.adapters.repositories.installment_repo_impl import InstallmentRepoImpl
     from oralsin_core.adapters.repositories.patient_phone_repo_impl import PatientPhoneRepoImpl
     from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
+    from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
     from oralsin_core.adapters.repositories.user_clinic_repo_impl import UserClinicRepoImpl
     from oralsin_core.adapters.repositories.user_repo_impl import UserRepoImpl
 
@@ -114,6 +115,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         GetInstallmentHandler,
         GetPatientHandler,
         GetPatientPhoneHandler,
+        GetPaymentMethodsHandler,
         GetUserClinicHandler,
         GetUserHandler,
         ListAddressesHandler,
@@ -125,6 +127,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         ListInstallmentsHandler,
         ListPatientPhonesHandler,
         ListPatientsHandler,
+        ListPaymentMethodsHandler,
         ListUserClinicsHandler,
         ListUsersHandler,
     )
@@ -146,6 +149,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.core.application.queries.installment_queries import GetInstallmentQuery, ListInstallmentsQuery
     from oralsin_core.core.application.queries.patient_phone_queries import GetPatientPhoneQuery, ListPatientPhonesQuery
     from oralsin_core.core.application.queries.patient_queries import GetPatientQuery, ListPatientsQuery
+    from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
     from oralsin_core.core.application.queries.user_clinic_queries import GetUserClinicQuery
     from oralsin_core.core.application.queries.user_queries import GetUserQuery, ListUsersQuery
     from oralsin_core.core.application.services.dashboard_service import (
@@ -212,6 +216,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         user_repo           = providers.Singleton(UserRepoImpl)
         user_clinic_repo    = providers.Singleton(UserClinicRepoImpl)
         billing_settings_repo = providers.Singleton(BillingSettingsRepoImpl)
+        payment_method_repo = providers.Singleton(PaymentMethodRepoImpl)
 
         # Hash
         hash_service = providers.Singleton(HashService)
@@ -265,6 +270,12 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         )
         update_billing_settings_handler = providers.Factory(
             UpdateBillingSettingsHandler, repo=billing_settings_repo
+        )
+        get_payment_method_handler = providers.Factory( 
+            GetPaymentMethodsHandler, repo=payment_method_repo
+        )
+        list_payment_method_handler = providers.Factory( 
+            ListPaymentMethodsHandler, repo=payment_method_repo
         )
     
         # Serviços de negócio
@@ -325,7 +336,11 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         get_user_clinic_handler          = providers.Factory(GetUserClinicHandler)
         list_users_handler               = providers.Factory(ListUsersHandler)
         get_user_handler                 = providers.Factory(GetUserHandler)
-        def init(self):
+        
+        list_payment_methods_handler     = providers.Factory(ListPaymentMethodsHandler)
+        get_payment_methods_handler      = providers.Factory(GetPaymentMethodsHandler)
+        
+        def init(self):  # noqa: PLR0915
             # Bus de comandos
             cmd_bus = self.command_bus()
 
@@ -396,6 +411,9 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
             qry_bus.register(ListUsersQuery, self.list_users_handler())
             qry_bus.register(GetUserQuery, self.get_user_handler())
+            
+            qry_bus.register(ListPaymentMethodsQuery, self.list_payment_methods_handler())
+            qry_bus.register(GetPaymentMethodQuery, self.get_payment_methods_handler())
             
             qry_bus.register(
                 GetBillingSettingsQuery,

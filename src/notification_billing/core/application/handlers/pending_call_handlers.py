@@ -4,6 +4,7 @@ from datetime import datetime
 
 from oralsin_core.core.application.cqrs import CommandHandler, PagedResult, QueryHandler
 
+from notification_billing.core.application.commands.contact_commands import AdvanceContactStepCommand
 from notification_billing.core.domain.entities.pending_call_entity import PendingCallEntity
 from notification_billing.core.domain.repositories.contact_history_repository import ContactHistoryRepository
 from notification_billing.core.domain.repositories.contact_schedule_repository import ContactScheduleRepository
@@ -34,17 +35,19 @@ class GetPendingCallHandler(QueryHandler[GetPendingCallQuery, PendingCallEntity 
 
 class SetPendingCallDoneHandler(CommandHandler[SetPendingCallDoneCommand]):
     def __init__(self, repo: PendingCallRepository, history_repo: ContactHistoryRepository,
-        schedule_repo: ContactScheduleRepository, dispatcher):
+        schedule_repo: ContactScheduleRepository, logger, dispatcher):
         self.repo = repo
         self.history_repo = history_repo
         self.schedule_repo = schedule_repo
         self.dispatcher = dispatcher
+        self.logger = logger
 
     def handle(self, cmd: SetPendingCallDoneCommand) -> None:
         self.repo.set_done(cmd.call_id, cmd.success, cmd.notes)
         
-        # Puxa o agendamento relacionado, se existir
-        sched_entity = self.schedule_repo.find_by_id(cmd.call_id)
+        sched_id = self.repo.find_by_id(cmd.call_id).schedule_id
+        
+        sched_entity = self.schedule_repo.find_by_id(sched_id)
         # Registra no histórico de contato
         if sched_entity:
             sent_at = datetime.utcnow()
@@ -69,3 +72,9 @@ class SetPendingCallDoneHandler(CommandHandler[SetPendingCallDoneCommand]):
                 resolved_at=datetime.utcnow(),
             )
         )
+        
+        # se a chamada foi bem-sucedida, avança para o próximo step
+        if cmd.success and sched_entity:
+            self.dispatcher.dispatch(
+                AdvanceContactStepCommand(schedule_id=sched_id)
+            )
