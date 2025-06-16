@@ -35,13 +35,12 @@ rebuild-app:
 seed-complete:
 	$(MANAGE) seed_flow_step_config
 	$(MANAGE) seed_messages
-	$(MANAGE) seed_data --clinic-name "Londrina - Zona Norte" \
+	$(MANAGE) seed_data --clinic-name "Bauru" \
 	                    --admin-email matheus@admin.com \
-	                    --admin-pass  matheus@admin \
-											--skip-admin
+	                    --admin-pass  matheus@admin 
 	$(MANAGE) seed_test_contacts --email mrschrodingers@gmail.com \
 	                             --phone 5543991938235 
-	$(MANAGE) seed_scheduling --clinic-id 2 --min-days 1 --verbosity 2
+	$(MANAGE) seed_scheduling --clinic-id 47 --min-days 1 --verbosity 2
 	$(TIME_ECHO)
 
 # ------------------------------------------------------------
@@ -67,5 +66,5 @@ rebuild-all:
 # 5) Sincronizar dívidas antigas para a clínica 47
 # ------------------------------------------------------------
 sync-old-debts:
-	$(MANAGE) sync_old_debts --clinic-id 47
+	$(MANAGE) sync_old_debts --clinic-id 2
 	@echo "✅ Executado às $$(date '+%H:%M:%S')"

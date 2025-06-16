@@ -98,6 +98,15 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
 
                 if not overdue_page.items:
                     break
+                    
+                if not contract.do_billings:
+                    self.log.info(
+                        "Permissão para cobrança negada:",
+                        contract_id=contract.id,
+                        contract_do_billings=contract.do_billings,
+                        contract_patient_id=contract.patient_id,
+                    )
+                    break
 
                 for inst in overdue_page.items:
                     exists = await sync_to_async(self.case_repo.exists_for_installment)(inst.id)
@@ -125,6 +134,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                         opened_at=timezone.now(),
                         amount=Decimal(inst.installment_amount),
                         deal_id=deal.id if deal else None,
+                        deal_sync_status= "pending" if deal else "created",
                         status="open",
                     )
 

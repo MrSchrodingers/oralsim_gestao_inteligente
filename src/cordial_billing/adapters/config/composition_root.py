@@ -7,10 +7,6 @@ Composition-root do *cordial_billing*.
 """
 from dependency_injector import containers, providers
 
-from cordial_billing.core.application.handlers.collection_case_handler import GetCollectionCaseHandler, ListCollectionCaseHandler
-from cordial_billing.core.application.queries.collection_case_queries import GetCollectionCaseQuery, ListCollectionCasesQuery
-from notification_billing.core.application.cqrs import QueryBusImpl
-
 container = None  # type: ignore
 
 
@@ -44,6 +40,9 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
     from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
     from oralsin_core.adapters.repositories.covered_clinic_repo_impl import CoveredClinicRepoImpl
 
+    from cordial_billing.adapters.repositories.activity_repo_impl import (
+        ActivityRepoImpl,
+    )
     from cordial_billing.adapters.repositories.collection_case_repo_impl import (
         CollectionCaseRepoImpl,
     )
@@ -55,15 +54,20 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
     from cordial_billing.core.application.commands.collect_commands import (
         SyncOldDebtsCommand,
     )
+    from cordial_billing.core.application.commands.sync_acordo_activity_commands import SyncAcordoActivitiesCommand
+    from cordial_billing.core.application.handlers.collection_case_handler import GetCollectionCaseHandler, ListCollectionCaseHandler
+    from cordial_billing.core.application.handlers.sync_acordo_activity_handler import SyncAcordoActivitiesHandler
     from cordial_billing.core.application.handlers.sync_debts_handler import (
         SyncOldDebtsHandler,
     )
+    from cordial_billing.core.application.queries.collection_case_queries import GetCollectionCaseQuery, ListCollectionCasesQuery
 
     # ------------- infra CQRS / domínio ----------------------------
     from cordial_billing.core.domain.services.event_dispatcher import (
         EventDispatcher,
     )
-    from notification_billing.core.application.cqrs import CommandBusImpl
+    from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ
+    from notification_billing.core.application.cqrs import CommandBusImpl, QueryBusImpl
 
     # ─── CONTAINER DEFINIÇÃO ───────────────────────────────────────
     class Container(containers.DeclarativeContainer):
@@ -85,10 +89,18 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
             pool_size=5,
             max_overflow=2,
         )
+        rabbit = providers.Singleton(
+            RabbitMQ,
+            url=config.rabbitmq_url,
+        )
 
         # --- repositórios -----------------------------------------
         deal_repo = providers.Singleton(
             DealRepoImpl,
+            pipeboard_engine=pipeboard_engine,
+        )
+        activity_repo = providers.Singleton(
+            ActivityRepoImpl,
             pipeboard_engine=pipeboard_engine,
         )
         collection_case_repo = providers.Singleton(CollectionCaseRepoImpl)
@@ -111,13 +123,21 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
         
         list_collection_case_handler    = providers.Factory(ListCollectionCaseHandler)
         get_collection_case_handler     = providers.Factory(GetCollectionCaseHandler)
-        
+        sync_acordo_activities_handler = providers.Factory(
+            SyncAcordoActivitiesHandler,
+            activity_repo=activity_repo,
+            patient_repo=core_container.patient_repo,
+            contract_repo=collection_case_repo,   
+            deal_repo=deal_repo,
+            rabbit=rabbit,
+        )
         # ----------------------------------------------------------
         def init(self) -> None:
             """Registra handlers no CommandBus (executado 1×)."""
             bus = self.command_bus()
             bus.register(SyncOldDebtsCommand, self.sync_old_debts_handler())
-            
+            bus.register(SyncAcordoActivitiesCommand, self.sync_acordo_activities_handler())
+
             qry_bus = self.query_bus()
             qry_bus.register(ListCollectionCasesQuery, self.list_collection_case_handler()) 
             qry_bus.register(GetCollectionCaseQuery, self.get_collection_case_handler())
@@ -125,6 +145,7 @@ def setup_di_container_from_settings(settings):         # noqa: PLR0915
     # ─── INSTANTIAÇÃO + CONFIGURAÇÃO ───────────────────────────────
     container = Container()
     container.config.pipeboard.dsn.from_value(settings.PIPEBOARD_DSN)
+    container.config.rabbitmq_url.from_value(settings.RABBITMQ_URL)
 
     # registra handlers
     Container.init(container)  # type: ignore[attr-defined]

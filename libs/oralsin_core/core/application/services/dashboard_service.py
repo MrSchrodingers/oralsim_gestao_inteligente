@@ -1,14 +1,37 @@
 from datetime import date
 from decimal import Decimal
 
-from oralsin_core.adapters.observability.metrics import BUSINESS_AVG_OVERDUE_DAYS, BUSINESS_COLLECTION_RATE, BUSINESS_OVERDUE_PAYMENTS, BUSINESS_TOTAL_CONTRACTS, BUSINESS_TOTAL_PATIENTS, BUSINESS_TOTAL_RECEIVABLES
-from oralsin_core.core.application.dtos.dashboard_dto import DashboardDTO, PaymentSummaryDTO, StatsDTO
+from django.db.models import Count
+from django.utils import timezone
+
+from oralsin_core.adapters.observability.metrics import (
+    BUSINESS_AVG_OVERDUE_DAYS,
+    BUSINESS_COLLECTION_RATE,
+    BUSINESS_OVERDUE_PAYMENTS,
+    BUSINESS_TOTAL_CONTRACTS,
+    BUSINESS_TOTAL_PATIENTS,
+    BUSINESS_TOTAL_RECEIVABLES,
+)
+from oralsin_core.core.application.dtos.dashboard_dto import (
+    CollectionSummaryDTO,
+    DashboardDTO,
+    NotificationSummaryDTO,
+    PaymentSummaryDTO,
+    StatsDTO,
+)
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.installment_repository import InstallmentRepository
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 from oralsin_core.core.domain.repositories.user_clinic_repository import UserClinicRepository
 from oralsin_core.core.domain.services.formatter_service import FormatterService
+from plugins.django_interface.models import (
+    BillingSettings,
+    CollectionCase,
+    ContactHistory,
+    ContactSchedule,
+    PendingCall,
+)
 
 
 class DashboardService:
@@ -42,7 +65,7 @@ class DashboardService:
             status=status,
         )
 
-    def get_summary(self, user_id: str) -> DashboardDTO:
+    def get_summary(self, user_id: str) -> DashboardDTO:  # noqa: PLR0912, PLR0915
         # 1) pega clínicas do usuário
         user_clinics = self.user_clinic_repo.find_by_user(user_id)
         if not user_clinics:
@@ -128,5 +151,78 @@ class DashboardService:
 
         recent_dtos = [self._build_payment_summary(i, "paid") for i in recent]
         pending_dtos = [self._build_payment_summary(i, "pending") for i in upcoming]
+        
+        billing_settings = int((
+            BillingSettings.objects.filter(
+                clinic_id=clinic_id,
+            ).first()
+        ).min_days_overdue)
 
-        return DashboardDTO(stats=stats, recentPayments=recent_dtos, pendingPayments=pending_dtos)
+        # 5) métricas de notificações e cobranças
+        pending_scheds = (
+            ContactSchedule.objects.filter(
+                clinic_id=clinic_id,
+                status=ContactSchedule.Status.PENDING,
+                scheduled_date__lte=timezone.now(),
+            ).count()
+        )
+        notifications_sent = ContactHistory.objects.filter(clinic_id=clinic_id).count()
+        pending_calls = PendingCall.objects.filter(
+            clinic_id=clinic_id, status=PendingCall.Status.PENDING
+        ).count()
+        step_qs = (
+            ContactSchedule.objects.filter(
+                clinic_id=clinic_id, status=ContactSchedule.Status.PENDING
+            )
+            .values("current_step")
+            .annotate(total=Count("id"))
+        )
+        by_step = {row["current_step"]: row["total"] for row in step_qs}
+        notification_summary = NotificationSummaryDTO(
+            pendingSchedules=pending_scheds,
+            sentNotifications=notifications_sent,
+            pendingCalls=pending_calls,
+            byStep=by_step,
+        )
+
+        total_cases = CollectionCase.objects.filter(clinic_id=clinic_id).count()
+        with_pipe = CollectionCase.objects.filter(
+            clinic_id=clinic_id, deal_id__isnull=False
+        ).count()
+        without_pipe = CollectionCase.objects.filter(
+            clinic_id=clinic_id, deal_id__isnull=True
+        ).count()
+
+        overdue_min_days_patients: set[str] = set()
+        overdue_patients: set[str] = set()
+        pre_overdue_patients: set[str] = set()
+        contract_map = {c.id: c.patient_id for c in contracts}
+        for inst in all_installments:
+            patient_id = contract_map.get(inst.contract_id)
+            if not patient_id:
+                continue
+            if inst.received:
+                continue
+            if inst.due_date < today:
+                overdue_patients.add(patient_id)
+                if (today - inst.due_date).days >= billing_settings:
+                    overdue_min_days_patients.add(patient_id)
+            else:
+                pre_overdue_patients.add(patient_id)
+
+        collection_summary = CollectionSummaryDTO(
+            totalCases=total_cases,
+            withPipeboard=with_pipe,
+            withoutPipeboard=without_pipe,
+            overdueMinDaysPlus=len(overdue_min_days_patients),
+            overduePatients=len(overdue_patients),
+            preOverduePatients=len(pre_overdue_patients),
+        )
+
+        return DashboardDTO(
+            stats=stats,
+            recentPayments=recent_dtos,
+            pendingPayments=pending_dtos,
+            notification=notification_summary,
+            collection=collection_summary,
+        )

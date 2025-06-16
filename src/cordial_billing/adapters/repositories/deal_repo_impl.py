@@ -51,3 +51,43 @@ class DealRepoImpl(DealRepository):
             expected_close_date=dto.expected_close_date,
         )
         return deal_entity
+    
+    async def find_by_id(self, deal_id: int) -> PipedriveDealEntity | None:
+        sql = "SELECT d.*, p.cpf_text FROM negocios d JOIN pessoas p ON p.id = d.person_id WHERE d.id = :id LIMIT 1"
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(text(sql), {"id": deal_id})).mappings().first()
+        if not row:
+            return None
+        dto = Deal.model_validate(row)
+        return PipedriveDealEntity(
+            id=dto.id,
+            title=dto.title,
+            person_id=dto.person_id,
+            stage_id=dto.stage_id,
+            pipeline_id=dto.pipeline_id,
+            value=dto.value,
+            currency=dto.currency,
+            status=dto.status,
+            add_time=dto.add_time,
+            update_time=dto.update_time,
+            expected_close_date=dto.expected_close_date,
+        )
+
+    async def find_cpf_by_deal_id(self, deal_id: int) -> str | None:
+        """
+        Retorna apenas o CPF (cpf_text) da pessoa associada a um negócio (deal).
+        """
+        sql = """
+        SELECT p.cpf_text
+          FROM pessoas p
+          JOIN negocios d ON p.id = d.person_id
+         WHERE d.id = :id
+           LIMIT 1
+        """
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(text(sql), {"id": deal_id})).mappings().first()
+
+        if not row or not row.get("cpf_text"):
+            return None
+
+        return _normalize_cpf(row["cpf_text"])

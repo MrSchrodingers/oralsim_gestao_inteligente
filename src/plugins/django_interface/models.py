@@ -734,3 +734,13 @@ class BillingSettings(models.Model):
     )
     class Meta:
         db_table = "billing_settings"
+
+
+class PipeboardActivitySent(models.Model):
+    """Mantém controle das atividades do Pipeboard já processadas."""
+
+    activity_id = models.BigIntegerField(primary_key=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pipeboard_activity_sent"

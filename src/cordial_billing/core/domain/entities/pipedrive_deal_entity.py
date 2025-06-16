@@ -16,3 +16,4 @@ class PipedriveDealEntity:
     add_time: datetime | None
     update_time: datetime | None
     expected_close_date: date | None
+    cpf_text: str | None

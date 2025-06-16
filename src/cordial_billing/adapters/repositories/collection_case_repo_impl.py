@@ -75,6 +75,7 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
             clinic_id=model.clinic_id,
             opened_at=model.opened_at,
             amount=model.amount,
+            deal_sync_status=model.deal_sync_status,
             deal_id=model.deal_id,
             status=model.status,
         )

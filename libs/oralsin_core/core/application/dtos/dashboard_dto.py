@@ -10,6 +10,23 @@ class PaymentSummaryDTO:
     status: str
 
 @dataclass(frozen=True)
+class NotificationSummaryDTO:
+    pendingSchedules: int
+    sentNotifications: int
+    pendingCalls: int
+    byStep: dict[int, int]
+
+
+@dataclass(frozen=True)
+class CollectionSummaryDTO:
+    totalCases: int
+    withPipeboard: int
+    withoutPipeboard: int
+    overdueMinDaysPlus: int
+    overduePatients: int
+    preOverduePatients: int
+    
+@dataclass(frozen=True)
 class StatsDTO:
     totalReceivables: str
     paidThisMonth: str
@@ -26,3 +43,5 @@ class DashboardDTO:
     stats: StatsDTO
     recentPayments: list[PaymentSummaryDTO] = field(default_factory=list)
     pendingPayments: list[PaymentSummaryDTO] = field(default_factory=list)
+    notification: NotificationSummaryDTO | None = None
+    collection: CollectionSummaryDTO | None = None

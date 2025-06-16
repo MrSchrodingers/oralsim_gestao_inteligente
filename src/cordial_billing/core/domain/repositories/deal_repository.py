@@ -10,3 +10,17 @@ class DealRepository(ABC):
       Busca um negócio pelo CPF.
       """
       ...
+
+    @abstractmethod
+    async def find_by_id(self, deal_id: int) -> PipedriveDealEntity | None:
+      """
+      Busca um negócio pelo deal_id.
+      """
+      ...
+    
+    @abstractmethod
+    async def find_cpf_by_deal_id(self, deal_id: int) -> str | None:
+      """
+      Busca um CPF pelo deal_id da relação pessoa.negocio_id = negocio.id.
+      """
+      ...

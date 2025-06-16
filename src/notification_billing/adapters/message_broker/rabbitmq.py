@@ -1,5 +1,7 @@
 import json
+from datetime import date, datetime
 from functools import wraps
+from typing import Any
 from uuid import UUID
 
 import pika
@@ -9,11 +11,14 @@ from pika.adapters.blocking_connection import BlockingChannel
 
 logger = structlog.get_logger()
 
+
 def _serialize_message(msg: dict) -> dict:
-    out = {}
+    out: dict[str, Any] = {}
     for k, v in msg.items():
         if isinstance(v, UUID):
             out[k] = str(v)
+        elif isinstance(v, datetime | date):
+            out[k] = v.isoformat()
         else:
             out[k] = v
     return out

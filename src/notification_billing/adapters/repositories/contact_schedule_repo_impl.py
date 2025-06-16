@@ -20,7 +20,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
             .filter(patient_id=patient_id, status=ContactScheduleModel.Status.PENDING)
             .update(status=ContactScheduleModel.Status.CANCELLED))
         
-    def schedule_first_contact(
+    def schedule_first_contact(  # noqa: PLR0912
         self,
         patient_id: str,
         contract_id: str,
@@ -64,8 +64,18 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         # 3) decidir se é pré-vencimento (step=0) ou vencida (step≥1)
         if inst.due_date > today:
             # ─────────── pré-vencimento ───────────
+            # Agendar 7, 5, 2, 1 ou 0 dias antes do vencimento, na ordem de prioridade
             step = 0
-            target = inst.due_date - timedelta(days=cfg0.cooldown_days)
+            days_priorities = [7, 5, 2, 1, 0]
+            target = None
+            for d in days_priorities:
+                candidate = inst.due_date - timedelta(days=d)
+                if candidate > today:
+                    target = candidate
+                    break
+            # se todos os candidatos já passaram, agenda no dia do vencimento
+            if target is None:
+                target = inst.due_date
             scheduled_dt = timezone.make_aware(datetime.combine(target, time.min))
 
         else:
