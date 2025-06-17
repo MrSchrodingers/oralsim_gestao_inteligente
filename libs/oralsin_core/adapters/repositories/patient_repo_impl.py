@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.db import IntegrityError
+from django.db.models import Q
 
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.address_entity import AddressEntity
@@ -46,7 +47,9 @@ class PatientRepoImpl(PatientRepository):
     # ───────────────────────── persistência ────────────────────────
     def save(self, patient: PatientEntity) -> PatientEntity:
         data = patient.to_dict()
-
+        
+        data.pop("flow_type", None)
+        
         # 1) trata endereço
         addr = data.pop("address", None)
         if addr:
@@ -96,14 +99,33 @@ class PatientRepoImpl(PatientRepository):
         - page_size: quantidade de itens por página
         """
         qs = PatientModel.objects.all()
+        
+        # 1) trata filtro especial de flow_type
+        flow = filtros.pop("flow_type", None)
+        search = filtros.pop("search", "").strip() 
+        
+        if flow == "notification_billing":
+            # tem schedule mas não tem collectioncase
+            qs = qs.filter(schedules__isnull=False).exclude(collectioncase__isnull=False)
+        elif flow == "cordial_billing":
+            # tem collectioncase (notification é irrelevante)
+            qs = qs.filter(collectioncase__isnull=False)
+        
 
         # Aplica filtros simples se houver campos em `filtros`
         if filtros:
             qs = qs.filter(**filtros)
+            
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(cpf__icontains=search)  |
+                Q(email__icontains=search)
+            )
 
         total = qs.count()
         offset = (page - 1) * page_size
-        pacientes_page = qs.order_by('id')[offset: offset + page_size]
+        pacientes_page = qs.order_by('contact_name')[offset: offset + page_size]
 
         items = [PatientEntity.from_model(m) for m in pacientes_page]
         return PagedResult(items=items, total=total, page=page, page_size=page_size)

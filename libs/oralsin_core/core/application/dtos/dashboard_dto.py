@@ -25,6 +25,21 @@ class CollectionSummaryDTO:
     overdueMinDaysPlus: int
     overduePatients: int
     preOverduePatients: int
+    noBilling: int
+    
+@dataclass(frozen=True)
+class MonthlyReceivableDTO:
+    month: str       
+    paid: float       
+    receivable: float
+
+@dataclass(frozen=True)
+class NotificationActivityDTO:
+    id: str
+    channel: str     
+    patient: str
+    sent_at: str      
+    success: bool
     
 @dataclass(frozen=True)
 class StatsDTO:
@@ -45,3 +60,5 @@ class DashboardDTO:
     pendingPayments: list[PaymentSummaryDTO] = field(default_factory=list)
     notification: NotificationSummaryDTO | None = None
     collection: CollectionSummaryDTO | None = None
+    monthlyReceivables: list[MonthlyReceivableDTO] | None = None
+    lastNotifications: list[NotificationActivityDTO] | None = None

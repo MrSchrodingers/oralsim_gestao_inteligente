@@ -238,7 +238,16 @@ class Patient(models.Model):
     name_search_vector = SearchVectorField(null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
+    @property
+    def flow_type(self) -> str | None:
+        """Return patient's billing flow based on related records."""
+        if self.collectioncase_set.exists():
+            return "cordial_billing"
+        if self.schedules.exists():
+            return "notification_billing"
+        return None
+    
     class Meta:
         db_table = "patients"
         indexes = [

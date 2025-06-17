@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 
+from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
@@ -34,6 +35,8 @@ from notification_billing.adapters.config.composition_root import (
 from notification_billing.core.application.commands.pending_call_commands import SetPendingCallDoneCommand
 from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
 from notification_billing.core.application.queries.pending_call_queries import GetPendingCallQuery, ListPendingCallsQuery
+from plugins.django_interface.models import Message as MessageModel
+from plugins.django_interface.models import Patient as PatientModel
 from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
 
 # ────────────────────────────────  Serializers  ───────────────────────────────
@@ -85,10 +88,22 @@ class PaginationFilterMixin:
 
     @staticmethod
     def _filters(request) -> dict[str, str]:
-        params = request.query_params.copy()  # QueryDict → mutável
+        params = request.query_params.copy()          # QueryDict mutável
         params.pop("page", None)
         params.pop("page_size", None)
-        return params.dict()
+
+        clean: dict[str, any] = {}
+        for key in params:
+            values = params.getlist(key)          
+            if key.endswith("__in"):
+                items: list[str] = []
+                for v in values:
+                    items.extend(v.split(","))        # “a,b,c” → [a,b,c]
+                clean[key] = items
+            else:
+                clean[key] = values[0] if len(values) == 1 else values
+
+        return clean
 
 
 # ────────────────────────────────
@@ -247,32 +262,60 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("PatientViewSet_list")
     def list(self, request):
-        # Extrai filtros e parâmetros de paginação (page, page_size) da requisição
         filtros = self._filters(request)
         page, page_size = self._pagination(request)
 
-        # Se o usuário for do tipo "clinic", força o filtro por clinic_id
         if getattr(request.user, "clinic_id", None):
             filtros["clinic_id"] = str(request.user.clinic_id)
-        
-        # Dispara a query para obter os pacientes paginados
-        q = ListPatientsQuery(filtros=filtros, page=page, page_size=page_size)
-        res = core_query_bus.dispatch(q)
-        
+
+        # --- separa flow_type para a camada CQRS ---------------------------
+        flow_type = filtros.pop("flow_type", None)        # tira do dict
+        search    = filtros.pop("search", "").strip() 
+        # ────────── 1) QUERYSET bruto só para o summary ────────────────────
+        qs = PatientModel.objects.filter(**filtros)
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(cpf__icontains=search)  |
+                Q(email__icontains=search)
+            )
+        if flow_type == "notification_billing":
+            qs = qs.filter(schedules__isnull=False).exclude(collectioncase__isnull=False)
+        elif flow_type == "cordial_billing":
+            qs = qs.filter(collectioncase__isnull=False)
+
+        if flow_type == "notification_billing":
+            qs = qs.filter(schedules__isnull=False).exclude(collectioncase__isnull=False)
+        elif flow_type == "cordial_billing":
+            qs = qs.filter(collectioncase__isnull=False)
+
+        summary = {
+            "with_receivable": qs.filter(
+                schedules__isnull=False
+            ).exclude(collectioncase__isnull=False).count(),
+            "with_collection": qs.filter(collectioncase__isnull=False).count(),
+            "with_notifications": qs.filter(is_notification_enabled=True).count(),
+        }
+
+        # ────────── 2) página paginada pelo CQRS (aqui flow_type volta) ────
+        filtros_for_query = {**filtros, **({"flow_type": flow_type} if flow_type else {})}
+        res = core_query_bus.dispatch(
+            ListPatientsQuery(filtros=filtros_for_query, page=page, page_size=page_size)
+        )
+
         total_items = res.total
-        total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
-        
+        total_pages = math.ceil(total_items / page_size) if page_size else 1
         pacientes_serializados = PatientSerializer(res.items, many=True).data
 
         payload = {
-            "results": pacientes_serializados,     
-            "total_items": total_items,            
-            "page": page,                          # página atual (extraído de self._pagination)
-            "page_size": page_size,                # quantidade de itens por página
-            "total_pages": total_pages,            # número total de páginas
+            "results": pacientes_serializados,
+            "total_items": total_items,
+            "summary": summary,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
             "items_on_page": len(res.items),
         }
-
         return Response(payload, status=status.HTTP_200_OK)
 
     @track_http("PatientViewSet_retrieve")
@@ -622,10 +665,10 @@ class PatientPhoneViewSet(PaginationFilterMixin, viewsets.ViewSet):
         total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
         
         telefones_pacientes_serializados = PatientPhoneSerializer(res.items, many=True).data
-
+        
         payload = {
             "results": telefones_pacientes_serializados,     
-            "total_items": total_items,            
+            "total_items": total_items,       
             "page": page,                          # página atual (extraído de self._pagination)
             "page_size": page_size,                # quantidade de itens por página
             "total_pages": total_pages,            # número total de páginas
@@ -636,7 +679,7 @@ class PatientPhoneViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("PatientPhoneViewSet_retrieve")
     def retrieve(self, request, pk=None):
-        pp = core_query_bus.dispatch(GetPatientPhoneQuery(filtros={}, id=str(pk)))
+        pp = core_query_bus.dispatch(GetPatientPhoneQuery(id=str(pk)))
         return Response(PatientPhoneSerializer(pp).data)
 
     @track_http("PatientPhoneViewSet_create")
@@ -754,11 +797,14 @@ class InstallmentViewSet(PaginationFilterMixin, viewsets.ViewSet):
         # Se o usuário for do tipo "clinic", força o filtro por clinic_id
         if getattr(request.user, "clinic_id", None):
             filtros["clinic_id"] = str(request.user.clinic_id)
-        contract_id = filtros.pop("contract_id", "")
+        # extrai e renomeia para usar no filtros que vai pro repositório
+        contract_uuid = filtros.pop("contract_id", None)
+        if contract_uuid:
+            filtros["contract_id"] = contract_uuid
         
         q = ListInstallmentsQuery(
             filtros=filtros,
-            payload=ContractQueryDTO(contract_id=contract_id),
+            payload=ContractQueryDTO(contract_id=contract_uuid),
             page=page,
             page_size=page_size,
         )
@@ -1014,10 +1060,19 @@ class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
         total_pages = math.ceil(total_items / page_size) if page_size > 0 else 1
         
         mensagens_serializadas = MessageSerializer(res.items, many=True).data
+        
+        # ────────── 1) QUERYSET bruto só para o summary ────────────────────
+        qs = MessageModel.objects.filter(**filtros)
+        summary = {
+            "whatsapp": qs.filter(type="whatsapp").count(),
+            "sms": qs.filter(type="sms").count(),
+            "email": qs.filter(type="email").count(),
+        }
 
         payload = {
             "results": mensagens_serializadas,     
-            "total_items": total_items,            
+            "total_items": total_items,
+            "summary": summary,            
             "page": page,                          # página atual (extraído de self._pagination)
             "page_size": page_size,                # quantidade de itens por página
             "total_pages": total_pages,            # número total de páginas
@@ -1028,7 +1083,8 @@ class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("MessageViewSet_retrieve")
     def retrieve(self, request, pk=None): 
-        m = notification_billing_query_bus.dispatch(GetMessageQuery(filtros={}, id=str(pk)))
+        filtros = self._filters(request)
+        m = notification_billing_query_bus.dispatch(GetMessageQuery(filtros=filtros, message_id=str(pk)))
         return Response(MessageSerializer(m).data)
 
     @track_http("MessageViewSet_create")

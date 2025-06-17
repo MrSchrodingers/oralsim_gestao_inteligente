@@ -247,7 +247,7 @@ class InstallmentRepoImpl(InstallmentRepository):
 
         total   = qs.count()
         offset  = (page - 1) * page_size
-        page_qs = qs.order_by("id")[offset: offset + page_size]
+        page_qs = qs.order_by("installment_number")[offset: offset + page_size]
 
         items = [InstallmentEntity.from_model(m) for m in page_qs]
         return PagedResult(items=items, total=total, page=page, page_size=page_size)

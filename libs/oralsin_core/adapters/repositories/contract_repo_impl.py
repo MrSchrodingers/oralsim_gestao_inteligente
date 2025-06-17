@@ -4,12 +4,12 @@ import structlog
 from django.db.models import Q
 from django.utils import timezone
 
+from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.contract_entity import ContractEntity
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from plugins.django_interface.models import Contract as ContractModel
 from plugins.django_interface.models import CoveredClinic
-from plugins.django_interface.models import PaymentMethod as PaymentMethodModel
 
 logger = structlog.get_logger(__name__)
 
@@ -48,11 +48,13 @@ class ContractRepoImpl(ContractRepository):
         # 1) resolve FK de PaymentMethod
         pm_model = None
         if contract.payment_method:
-            pm, _ = PaymentMethodModel.objects.get_or_create(
-                oralsin_payment_method_id=contract.payment_method.oralsin_payment_method_id,
-                defaults={"name": contract.payment_method.name},
+            pm_model = PaymentMethodRepoImpl().get_or_create_by_name(
+                contract.payment_method.name
             )
-            pm_model = pm
+            contract.payment_method.id = pm_model.id
+            contract.payment_method.oralsin_payment_method_id = (
+                pm_model.oralsin_payment_method_id
+            )
 
         # 2) fields que queremos atualizar / criar
         defaults = {
@@ -87,6 +89,9 @@ class ContractRepoImpl(ContractRepository):
     # ------------------------------------------------------------------
     def delete(self, contract_id: str) -> None:
         ContractModel.objects.filter(id=contract_id).delete()
+        
+    def qs(self):
+        return ContractModel.objects.all()
 
     def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[ContractEntity]:
         """
@@ -109,7 +114,7 @@ class ContractRepoImpl(ContractRepository):
 
         total = qs.count()
         offset = (page - 1) * page_size
-        contrato_page = qs.order_by('id')[offset: offset + page_size]
+        contrato_page = qs.order_by('overdue_amount')[offset: offset + page_size]
 
         items = [ContractEntity.from_model(m) for m in contrato_page]
         return PagedResult(items=items, total=total, page=page, page_size=page_size)

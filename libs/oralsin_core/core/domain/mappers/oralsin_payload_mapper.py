@@ -220,6 +220,50 @@ class OralsinPayloadMapper:
             logger.error("map_contract", error=str(exc), dto=dto.dict())
             raise MappingError(exc) from exc
 
+
+    @staticmethod
+    def _is_paid(dto) -> bool:
+        """
+        Retorna True se a parcela deve ser considerada paga, ou seja:
+        - Status financeiro indica compensação, negociação concluída ou passagem por gateway
+        - E a data de vencimento não está no futuro
+        """
+        # Status explícitos de parcela paga
+        paid_statuses = {
+            "compensado",
+            "caixa clínica",
+            "negociação concluída",
+        }
+
+        # Gateways/bancos que também significam "já pago"
+        payment_gateways = {
+            "banco bradesco",
+            "banco inter",
+            "cora bank",
+            "pagseguro",
+            "pagseguro 2",
+        }
+
+        raw = getattr(dto, "nomeStatusFinanceiro", "") or ""
+        status_txt = raw.strip().lower()
+
+        # Extrai a due_date como date
+        venc = dto.dataVencimento
+        venc_date = venc.date() if hasattr(venc, "date") else venc
+
+        # É pago se:
+        # 1) status_txt bate com um dos paid_statuses
+        # 2) OU bate com um dos payment_gateways
+        # 3) E o vencimento não é posterior ao mês corrente
+        is_success_status = (
+            status_txt in paid_statuses
+            or status_txt in payment_gateways
+        )
+        not_future_due = venc_date <= date.today()
+
+        return is_success_status and not_future_due
+        
+        
     @classmethod
     def map_installments(
         cls,
@@ -233,6 +277,13 @@ class OralsinPayloadMapper:
 
         out: list[InstallmentEntity] = []
         for p in parcelas:
+            pm = None
+            if p.nomeFormaPagamento:
+                pm = PaymentMethodEntity(
+                    id=cls._uuid(),
+                    oralsin_payment_method_id=0,
+                    name=p.nomeFormaPagamento,
+                )
             out.append(
                 InstallmentEntity(
                     id=cls._uuid(),
@@ -242,7 +293,8 @@ class OralsinPayloadMapper:
                     oralsin_installment_id=p.idContratoParcela,
                     due_date=p.dataVencimento.date(),
                     installment_amount=float(p.valorParcela),
-                    received=p.possivelCompensado,
+                    received=cls._is_paid(p),
+                    payment_method=pm,
                     installment_status=p.nomeStatusFinanceiro,
                     is_current=p.idContratoParcela == current_id,
                 )
@@ -281,6 +333,14 @@ class OralsinPayloadMapper:
         contract_version = getattr(dto, "versaoContrato", 1)
         oralsin_installment_id = getattr(dto, "idContratoParcela", None)
         due_date = dto.dataVencimento.date() if hasattr(dto.dataVencimento, "date") else dto.dataVencimento
+        
+        pm = None
+        if getattr(dto, "nomeFormaPagamento", None):
+            pm = PaymentMethodEntity(
+                id=cls._uuid(),
+                oralsin_payment_method_id=0,
+                name=dto.nomeFormaPagamento,
+            )
 
         return InstallmentEntity(
             id=cls._uuid(),
@@ -291,6 +351,7 @@ class OralsinPayloadMapper:
             due_date=due_date,
             installment_amount=float(valor_parcela),
             received=possivel_compensado,
+            payment_method=pm,
             installment_status=nome_status_financeiro,
             is_current=bool(isinstance(dto, OralsinParcelaAtualDetalheDTO)),
         )

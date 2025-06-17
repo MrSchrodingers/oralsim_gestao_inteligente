@@ -67,16 +67,6 @@ class BulkScheduleContactsHandler(CommandHandler[BulkScheduleContactsCommand]):
             if not inst or inst.received:
                 continue
 
-            # 2️⃣ já existe agendamento pendente? pula
-            if self.schedule_repo.has_pending(contract.patient_id, contract.id):
-                total_skipped += 1
-                self.logger.debug(
-                    "schedule_already_exists",
-                    patient_id=contract.patient_id,
-                    contract_id=contract.id,
-                )
-                continue
-
             # 3️⃣ cria agendamento inicial
             sched: ContactScheduleEntity | None = (
                 self.schedule_repo.schedule_first_contact(

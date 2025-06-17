@@ -1,4 +1,5 @@
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import Count
@@ -15,6 +16,8 @@ from oralsin_core.adapters.observability.metrics import (
 from oralsin_core.core.application.dtos.dashboard_dto import (
     CollectionSummaryDTO,
     DashboardDTO,
+    MonthlyReceivableDTO,
+    NotificationActivityDTO,
     NotificationSummaryDTO,
     PaymentSummaryDTO,
     StatsDTO,
@@ -65,6 +68,51 @@ class DashboardService:
             status=status,
         )
 
+    # ▶ notificação
+    def _build_notification_activity(self, h: ContactHistory) -> NotificationActivityDTO:
+        patient = self.patient_repo.find_by_id(h.patient_id)
+        patient_name = patient.name if patient else "Paciente desconhecido"
+        return NotificationActivityDTO(
+            id=str(h.id),
+            channel=h.contact_type,
+            patient=patient_name,
+            sent_at=self.formatter.format_date(h.sent_at),
+            success=h.success,
+        )
+
+    # ▶ agregador mensal (últimos 12 meses)
+    def _build_monthly_receivables(
+        self, installments: list[InstallmentEntity], months: int = 12
+    ) -> list[MonthlyReceivableDTO]:
+        today = date.today().replace(day=1)                  # primeiro dia do mês atual
+        first_month = (today - timedelta(days=months * 30)).replace(day=1)
+
+        buckets: dict[date, dict[str, Decimal]] = defaultdict(
+            lambda: {"paid": Decimal("0"), "receivable": Decimal("0")}
+        )
+
+        for inst in installments:
+            if inst.due_date < first_month:
+                continue
+            month_key = inst.due_date.replace(day=1)
+            buckets[month_key]["receivable"] += inst.installment_amount
+            if inst.received:
+                buckets[month_key]["paid"] += inst.installment_amount
+
+        # ordena crescente para o gráfico
+        out: list[MonthlyReceivableDTO] = []
+        for month_date in sorted(buckets):
+            iso_month = month_date.strftime("%Y-%m")         # "2025-06"
+            data = buckets[month_date]
+            out.append(
+                MonthlyReceivableDTO(
+                    month=iso_month,
+                    paid=float(data["paid"]),
+                    receivable=float(data["receivable"]),
+                )
+            )
+        return out or None
+    
     def get_summary(self, user_id: str) -> DashboardDTO:  # noqa: PLR0912, PLR0915
         # 1) pega clínicas do usuário
         user_clinics = self.user_clinic_repo.find_by_user(user_id)
@@ -147,7 +195,8 @@ class DashboardService:
         
         # 4) top-3 recentes e pendentes
         recent = sorted(paid_list, key=lambda i: i.due_date, reverse=True)[:3]
-        upcoming = sorted(pending_list, key=lambda i: i.due_date)[:3]
+        future_pending = [i for i in pending_list if i.due_date >= today]
+        upcoming = sorted(future_pending, key=lambda i: i.due_date)[:3]
 
         recent_dtos = [self._build_payment_summary(i, "paid") for i in recent]
         pending_dtos = [self._build_payment_summary(i, "pending") for i in upcoming]
@@ -193,16 +242,17 @@ class DashboardService:
             clinic_id=clinic_id, deal_id__isnull=True
         ).count()
 
+         # 6) construindo os conjuntos de IDs de pacientes
         overdue_min_days_patients: set[str] = set()
         overdue_patients: set[str] = set()
         pre_overdue_patients: set[str] = set()
         contract_map = {c.id: c.patient_id for c in contracts}
+
         for inst in all_installments:
             patient_id = contract_map.get(inst.contract_id)
-            if not patient_id:
+            if not patient_id or inst.received:
                 continue
-            if inst.received:
-                continue
+
             if inst.due_date < today:
                 overdue_patients.add(patient_id)
                 if (today - inst.due_date).days >= billing_settings:
@@ -210,14 +260,41 @@ class DashboardService:
             else:
                 pre_overdue_patients.add(patient_id)
 
+        # -- CORREÇÃO DA LÓGICA DE CATEGORIZAÇÃO --
+
+        # Pacientes vencidos (têm pelo menos uma parcela atrasada)
+        vencidos_set = overdue_patients
+
+        # Pacientes pré-vencidos (têm parcelas a vencer, mas NENHUMA vencida)
+        pre_vencidos_set = pre_overdue_patients - vencidos_set
+
+        # Pacientes em cobrança ativa (subconjunto dos vencidos)
+        em_cobranca_set = overdue_min_days_patients
+
+        # Pacientes que não estão nem vencidos nem pré-vencidos (em dia)
+        todos_pacientes_com_parcelas_pendentes = vencidos_set | pre_vencidos_set
+        todos_pacientes_da_clinica = {c.patient_id for c in contracts}
+        sem_cobranca_set = todos_pacientes_da_clinica - todos_pacientes_com_parcelas_pendentes
+
         collection_summary = CollectionSummaryDTO(
             totalCases=total_cases,
             withPipeboard=with_pipe,
             withoutPipeboard=without_pipe,
-            overdueMinDaysPlus=len(overdue_min_days_patients),
-            overduePatients=len(overdue_patients),
-            preOverduePatients=len(pre_overdue_patients),
+            overdueMinDaysPlus=len(em_cobranca_set),
+            overduePatients=len(vencidos_set), 
+            preOverduePatients=len(pre_vencidos_set), 
+            noBilling=len(sem_cobranca_set)
         )
+
+        # 6) monthly receivables (últimos 12 meses)
+        monthly_dtos = self._build_monthly_receivables(all_installments)
+
+        # 7) últimas notificações
+        hist_qs = (
+            ContactHistory.objects.filter(clinic_id=clinic_id)
+            .order_by("-sent_at")[:5]
+        )
+        last_notifs = [self._build_notification_activity(h) for h in hist_qs]
 
         return DashboardDTO(
             stats=stats,
@@ -225,4 +302,6 @@ class DashboardService:
             pendingPayments=pending_dtos,
             notification=notification_summary,
             collection=collection_summary,
+            monthlyReceivables=monthly_dtos,
+            lastNotifications=last_notifs or None,
         )

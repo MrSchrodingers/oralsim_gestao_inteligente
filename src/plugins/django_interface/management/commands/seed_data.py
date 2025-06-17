@@ -135,21 +135,32 @@ class Command(BaseCommand):
                 ContractModel.objects.filter(clinic__oralsin_clinic_id=oralsin_id)
             )
 
-            # 2) calcula metade
+            # 2) embaralha a lista para randomizar
+            random.shuffle(all_contracts)
+
+            # 3) divide em dois grupos (metade para billing, metade para notification)
             half = len(all_contracts) // 2
+            billing_group      = all_contracts[:half]
+            notification_group = all_contracts[half:]
 
-            # 3) seleciona aleatoriamente metade para ativar as flags
-            to_enable = random.sample(all_contracts, half)
+            # 4) atualiza em batch cada grupo, garantindo exclusividade das flags
+            billing_ids      = [c.id for c in billing_group]
+            notification_ids = [c.id for c in notification_group]
 
-            # 4) atualiza em batch
-            ids = [c.id for c in to_enable]
-            ContractModel.objects.filter(id__in=ids).update(
+            # contratos que fazem billing: billing=True, notification=False
+            ContractModel.objects.filter(id__in=billing_ids).update(
                 do_billings=True,
+                do_notifications=False,
+            )
+
+            # contratos que fazem notification: billing=False, notification=True
+            ContractModel.objects.filter(id__in=notification_ids).update(
+                do_billings=False,
                 do_notifications=True,
             )
 
             self.stdout.write(self.style.SUCCESS(
-                f"✅ Flags ativadas em {len(ids)} contratos (de {len(all_contracts)})"
+                f"✅ Flags ativadas em {len(billing_ids)}/{len(notification_ids)} (Billing/Notification) contratos (de {len(all_contracts)})"
             ))
 
         self.stdout.write(self.style.SUCCESS("🎉 Seed finalizado com sucesso."))

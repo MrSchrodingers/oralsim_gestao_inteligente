@@ -25,6 +25,7 @@ from oralsin_core.adapters.observability.metrics import (
     SYNC_PATIENTS,
     SYNC_RUNS,
 )
+from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import CommandHandler
 from oralsin_core.core.application.dtos.oralsin_dtos import (
@@ -233,6 +234,15 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         )
         if not entities:
             return
+        
+        pm_repo = PaymentMethodRepoImpl()
+        for ent in entities:
+            if ent.payment_method:
+                pm = pm_repo.get_or_create_by_name(ent.payment_method.name)
+                ent.payment_method.id = pm.id
+                ent.payment_method.oralsin_payment_method_id = (
+                    pm.oralsin_payment_method_id
+                )
 
         # 1) Agrupa por (contract_id, contract_version)
         cv_groups: dict[tuple[uuid.UUID, int | None], list] = defaultdict(list)
@@ -286,11 +296,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
             if model:
                 dirty = False
                 for f in UPDATE_FIELDS:
-                    val = (
-                        getattr(ent, f)
-                        if f != "payment_method_id"
-                        else _pm(ent)
-                    )
+                    val = getattr(ent, f) if f != "payment_method_id" else _pm(ent)
                     if getattr(model, f) != val:
                         setattr(model, f, val)
                         dirty = True

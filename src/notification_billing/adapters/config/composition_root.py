@@ -16,9 +16,11 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # API client, mappers e infra de mensageria...
     from oralsin_core.adapters.repositories.address_repo_impl import AddressRepoImpl
+    from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
     from oralsin_core.adapters.repositories.contract_repo_impl import ContractRepoImpl
     from oralsin_core.adapters.repositories.installment_repo_impl import InstallmentRepoImpl
     from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
+    from oralsin_core.core.application.handlers.query_messages_handler import GetMessageHandler, ListMessagesHandler
     from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 
     # Mensageria e notificadores    
@@ -82,7 +84,9 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     )
     from notification_billing.core.application.handlers.pending_call_handlers import GetPendingCallHandler, ListPendingCallsHandler, SetPendingCallDoneHandler
     from notification_billing.core.application.handlers.sync_handlers import BulkScheduleContactsHandler
+    from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
     from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
+    from notification_billing.core.application.queries.message_queries import GetMessageQuery, ListMessagesQuery
 
     # Queries
     from notification_billing.core.application.queries.notification_queries import ListPendingSchedulesQuery
@@ -120,6 +124,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         notifier_registry = providers.Object(get_notifier)
 
         # Implementações de Repositórios (Ports → Adapters)
+        billing_settings_repo = providers.Singleton(BillingSettingsRepoImpl)
         address_repo        = providers.Singleton(AddressRepoImpl)
         oralsin_mapper      = providers.Singleton(OralsinPayloadMapper)
         flow_step_config_repo   = providers.Singleton(FlowStepConfigRepoImpl)
@@ -133,6 +138,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         contact_schedule_repo   = providers.Singleton(
             ContactScheduleRepoImpl,
             installment_repo=installment_repo,
+            billing_settings_repo=billing_settings_repo,
         )
         patient_repo            = providers.Singleton(
             PatientRepoImpl,
@@ -200,7 +206,19 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         list_flow_step_config_handler = providers.Factory( 
             ListFlowStepConfigHandler
         )
-
+        
+        list_due_contacts_handler = providers.Factory( 
+            ListPendingSchedulesHandler,
+            schedule_repo=contact_schedule_repo
+        )
+        
+        list_message_handler = providers.Factory(
+            ListMessagesHandler
+        )
+        get_message_handler = providers.Factory(
+            GetMessageHandler
+        )
+        
         # Handlers de fluxo de contato/notificação
         advance_contact_step_handler = providers.Factory(
             AdvanceContactStepHandler,
@@ -307,6 +325,11 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             
             qb.register(ListFlowStepConfigsQuery, self.list_flow_step_config_handler()) 
             qb.register(GetFlowStepConfigQuery, self.get_flow_step_config_handler())
+            
+            qb.register(ListDueContactsQuery, self.list_due_contacts_handler()) 
+            
+            qb.register(ListMessagesQuery, self.list_message_handler())
+            qb.register(GetMessageQuery, self.get_message_handler())
             
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()

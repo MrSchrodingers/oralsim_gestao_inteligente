@@ -1,11 +1,21 @@
+from typing import Any
+
 from django.core.exceptions import ObjectDoesNotExist
 
+from notification_billing.core.application.cqrs import PagedResult
 from notification_billing.core.domain.entities.message_entity import MessageEntity
 from notification_billing.core.domain.repositories.message_repository import MessageRepository
 from plugins.django_interface.models import Message as MessageModel
 
 
 class MessageRepoImpl(MessageRepository):
+    def find_by_id(self, message_id: int) -> MessageEntity | None:
+        try:
+            m = MessageModel.objects.get(id=message_id)
+            return MessageEntity.from_model(m)
+        except MessageModel.DoesNotExist:
+            return None
+        
     def find_default(self, channel: str, step: int) -> MessageEntity:
         try:
             m = MessageModel.objects.get(
@@ -34,3 +44,22 @@ class MessageRepoImpl(MessageRepository):
 
     def delete(self, message_id: str) -> None:
         MessageModel.objects.filter(id=message_id).delete()
+        
+        
+    def list(
+        self, filtros: dict[str, Any] | None, page: int, page_size: int
+    ) -> PagedResult[MessageEntity]:
+        """
+        lista com paginação genérica.
+
+        """
+        qs = MessageModel.objects.all()
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        objs_page = qs.order_by("step")[offset : offset + page_size]
+
+        items = [MessageEntity.from_model(obj) for obj in objs_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

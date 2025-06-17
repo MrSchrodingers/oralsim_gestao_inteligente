@@ -49,6 +49,7 @@ class DealRepoImpl(DealRepository):
             add_time=dto.add_time,
             update_time=dto.update_time,
             expected_close_date=dto.expected_close_date,
+            cpf_text=cpf_clean
         )
         return deal_entity
     

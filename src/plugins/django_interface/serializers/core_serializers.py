@@ -117,6 +117,7 @@ class PatientSerializer(serializers.Serializer):
     address                  = AddressSerializer(allow_null=True)
     email                    = serializers.EmailField(allow_blank=True, allow_null=True)
     is_notification_enabled  = serializers.BooleanField()
+    flow_type                = serializers.CharField(allow_null=True)
     phones                   = PatientPhoneSerializer(many=True, required=False)
     created_at               = serializers.DateTimeField()
     updated_at               = serializers.DateTimeField()

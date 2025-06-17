@@ -11,6 +11,11 @@ class ContractRepository(ABC):
         ...
 
     @abstractmethod
+    def qs(self):
+        """Recupera todos contratos."""
+        ...
+        
+    @abstractmethod
     def list_by_clinic(self, clinic_id: str) -> list[ContractEntity]:
         """Lista contratos de uma clínica."""
         ...

@@ -5,6 +5,11 @@ from notification_billing.core.domain.entities.message_entity import MessageEnti
 
 class MessageRepository(ABC):
     @abstractmethod
+    def find_by_id(self, message_id: int) -> MessageEntity | None:
+        """Retorna a mensagem filtrada pelo id."""
+        ...
+        
+    @abstractmethod
     def find_default(self, channel: str, step: int) -> MessageEntity:
         """Retorna a mensagem default para canal e passo."""
         ...

@@ -1,3 +1,5 @@
+from django.db.models import Max
+
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.entities.payment_method_entity import PaymentMethodEntity
 from oralsin_core.core.domain.repositories.payment_method_repository import PaymentMethodRepository
@@ -19,24 +21,46 @@ class PaymentMethodRepoImpl(PaymentMethodRepository):
         except PaymentMethodModel.DoesNotExist:
             return None
 
-    def list(self, filtros: dict, page: int, page_size: int) -> PagedResult[PaymentMethodEntity]:
-            """
-            Retorna PagedResult contendo lista de UserClinicEntity e total,
-            aplicando paginação sobre UserClinicModel.
+    def list(
+        self, filtros: dict, page: int, page_size: int
+    ) -> PagedResult[PaymentMethodEntity]:
+        """
+        Retorna PagedResult contendo lista de UserClinicEntity e total,
+        aplicando paginação sobre UserClinicModel.
 
-            - filtros: dicionário de filtros 
-            - page: número da página (1-based)
-            - page_size: quantidade de itens por página
-            """
-            qs = PaymentMethodModel.objects.all()
+        - filtros: dicionário de filtros
+        - page: número da página (1-based)
+        - page_size: quantidade de itens por página
+        """
+        qs = PaymentMethodModel.objects.all()
 
-            # Aplica filtros simples se houver campos em `filtros`
-            if filtros:
-                qs = qs.filter(**filtros)
+        # Aplica filtros simples se houver campos em `filtros`
+        if filtros:
+            qs = qs.filter(**filtros)
 
-            total = qs.count()
-            offset = (page - 1) * page_size
-            usuarios_clinica_page = qs.order_by('id')[offset: offset + page_size]
+        total = qs.count()
+        offset = (page - 1) * page_size
+        usuarios_clinica_page = qs.order_by("id")[offset : offset + page_size]
+        
+        items = [PaymentMethodEntity.from_model(m) for m in usuarios_clinica_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)
+    
+    
+    def get_or_create_by_name(self, name: str) -> PaymentMethodModel:
+        """Retorna o PaymentMethodModel existente ou cria um novo."""
+        pm = PaymentMethodModel.objects.filter(name__iexact=name).first()
+        if pm:
+            return pm
 
-            items = [PaymentMethodEntity.from_model(m) for m in usuarios_clinica_page]
-            return PagedResult(items=items, total=total, page=page, page_size=page_size)
+        next_id = (
+            PaymentMethodModel.objects.aggregate(Max("oralsin_payment_method_id")).get(
+                "oralsin_payment_method_id__max"
+            )
+            or 0
+        ) + 1
+
+        pm = PaymentMethodModel.objects.create(
+            oralsin_payment_method_id=next_id,
+            name=name,
+        )
+        return pm
