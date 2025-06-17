@@ -8,6 +8,7 @@ from oralsin_core.core.application.services.dashboard_service import DashboardSe
 @dataclass(frozen=True, slots=True)
 class GetDashboardSummaryQuery(QueryDTO):
     user_id: str
+    filtros: dict[str, str]
     
 class GetDashboardSummaryQueryHandler:
     """Handler registrado no QueryBus."""
@@ -15,7 +16,11 @@ class GetDashboardSummaryQueryHandler:
     def __init__(self, dashboard_service: DashboardService):
         self._svc = dashboard_service
 
-    def __call__(self, query: GetDashboardSummaryQuery) -> DashboardDTO:
-        return self._svc.get_summary_sync(query.user_id)
+    def __call__(self, q: GetDashboardSummaryQuery) -> DashboardDTO:
+        return self._svc.get_summary(
+            user_id=q.user_id,
+            start_date=q.filtros.get("start_date"),
+            end_date=q.filtros.get("end_date"),
+        )
 
     handle = __call__ 

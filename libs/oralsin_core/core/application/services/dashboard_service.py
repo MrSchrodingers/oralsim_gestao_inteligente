@@ -38,7 +38,7 @@ from plugins.django_interface.models import (
 
 
 class DashboardService:
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         user_clinic_repo: UserClinicRepository,
         contract_repo: ContractRepository,
@@ -113,7 +113,12 @@ class DashboardService:
             )
         return out or None
     
-    def get_summary(self, user_id: str) -> DashboardDTO:  # noqa: PLR0912, PLR0915
+    def get_summary(  # noqa: PLR0912, PLR0915
+            self, 
+            user_id: str, 
+            start_date: str | None = None,
+            end_date: str   | None = None
+        ) -> DashboardDTO:  # noqa: PLR0912, PLR0915
         # 1) pega clínicas do usuário
         user_clinics = self.user_clinic_repo.find_by_user(user_id)
         if not user_clinics:
@@ -132,6 +137,14 @@ class DashboardService:
 
         clinic_id = user_clinics[0].clinic_id
 
+        # 1.1) converte datas
+        try:
+            start_date_dt = date.fromisoformat(start_date) if start_date else None
+            end_date_dt   = date.fromisoformat(end_date)   if end_date   else None
+        except ValueError as e:
+            raise ValueError("start_date/end_date inválidos (YYYY-MM-DD)") from e
+        
+        
         # 2) busca todos os contratos e calcula tot. contratos/pacientes
         contracts = self.contract_repo.list_by_clinic(clinic_id)
         total_contracts = len(contracts)
@@ -143,6 +156,14 @@ class DashboardService:
         else:
             contract_ids = [c.id for c in contracts]
             all_installments = self.installment_repo.find_by_contract_ids(contract_ids)
+        
+        if start_date_dt or end_date_dt:
+            def in_window(inst):
+                return ((start_date_dt is None or inst.due_date >= start_date_dt) and
+                        (end_date_dt   is None or inst.due_date <= end_date_dt))
+            installments_window = [i for i in all_installments if in_window(i)]
+        else:
+            installments_window = all_installments
 
         today = date.today()
         month_start = today.replace(day=1)
@@ -153,7 +174,7 @@ class DashboardService:
         days_overdue: list[int] = []
         overdue_contracts = set()
 
-        for inst in all_installments:
+        for inst in installments_window:
             amt = inst.installment_amount
             total_amount += amt
             if inst.received:
@@ -248,7 +269,7 @@ class DashboardService:
         pre_overdue_patients: set[str] = set()
         contract_map = {c.id: c.patient_id for c in contracts}
 
-        for inst in all_installments:
+        for inst in installments_window:
             patient_id = contract_map.get(inst.contract_id)
             if not patient_id or inst.received:
                 continue
@@ -259,8 +280,6 @@ class DashboardService:
                     overdue_min_days_patients.add(patient_id)
             else:
                 pre_overdue_patients.add(patient_id)
-
-        # -- CORREÇÃO DA LÓGICA DE CATEGORIZAÇÃO --
 
         # Pacientes vencidos (têm pelo menos uma parcela atrasada)
         vencidos_set = overdue_patients

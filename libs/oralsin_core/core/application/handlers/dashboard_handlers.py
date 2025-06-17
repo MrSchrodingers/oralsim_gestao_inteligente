@@ -18,8 +18,18 @@ class GetDashboardSummaryHandler:
         formatter: FormatterService,
     ):
         self.service = DashboardService(
-            user_clinic_repo, contract_repo, installment_repo, patient_repo, formatter
+            user_clinic_repo,
+            contract_repo,
+            installment_repo,
+            patient_repo,
+            formatter,
         )
 
     def handle(self, query: GetDashboardSummaryQuery) -> DashboardDTO:
-        return self.service.get_summary(query.user_id)
+        filtros = query.filtros or {}
+
+        return self.service.get_summary(
+            user_id=query.user_id,
+            start_date=filtros.get("start_date"),
+            end_date=filtros.get("end_date"),
+        )

@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from datetime import date, timedelta
 
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
@@ -52,6 +53,15 @@ class DashboardSummaryView(PaginationFilterMixin, APIView):
     
     def get(self, request):
         filtros = self._filters(request)
+
+        # ───── novo: converte string → date ─────
+        period_days = int(request.query_params.get("period_days", 0))
+        if period_days:
+            filtros["start_date"] = (date.today() - timedelta(days=period_days)).isoformat()
+            filtros["end_date"]   = date.today().isoformat()
+        else:
+            filtros["start_date"] = request.query_params.get("start_date")  
+            filtros["end_date"]   = request.query_params.get("end_date")    
         
         q = GetDashboardSummaryQuery(filtros=filtros, user_id=str(request.user.id))
         res = core_query_bus.dispatch(q)
