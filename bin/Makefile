@@ -37,7 +37,8 @@ seed-complete:
 	$(MANAGE) seed_messages
 	$(MANAGE) seed_data --clinic-name "Bauru" \
 	                    --admin-email matheus@admin.com \
-	                    --admin-pass  matheus@admin 
+	                    --admin-pass  matheus@admin \
+											--skip-admin
 	$(MANAGE) seed_test_contacts --email mrschrodingers@gmail.com \
 	                             --phone 5543991938235 
 	$(MANAGE) seed_scheduling --clinic-id 47 --min-days 1 --verbosity 2
@@ -66,5 +67,5 @@ rebuild-all:
 # 5) Sincronizar dívidas antigas para a clínica 47
 # ------------------------------------------------------------
 sync-old-debts:
-	$(MANAGE) sync_old_debts --clinic-id 2
+	$(MANAGE) sync_old_debts --clinic-id 47
 	@echo "✅ Executado às $$(date '+%H:%M:%S')"
