@@ -19,6 +19,14 @@ class ContactHistoryRepository(ABC):
         ...
     
     @abstractmethod
+    def find_by_channel(self, contact_type: str) -> list[ContactHistoryEntity]:
+        ...
+
+    @abstractmethod
+    def filter(self, **filtros: Any) -> list[ContactHistoryEntity]:
+        ...
+        
+    @abstractmethod
     def save_from_schedule(  # noqa: PLR0913
         self,
         schedule: ScheduleLike,

@@ -10,6 +10,8 @@ from .views.auth_views import HealthCheckView, LoginView, LogoutView
 from .views.extra_views import (
     DashboardReportView,
     DashboardSummaryView,
+    LetterListView,
+    LetterPreviewView,
     MeView,
     RunAutomatedNotificationsView,
     SendManualNotificationView,
@@ -42,7 +44,9 @@ urlpatterns = [
     path("notifications/run-automated/", RunAutomatedNotificationsView.as_view(), name="run-automated"),
     path("notifications/send-manual/", SendManualNotificationView.as_view(), name="send-manual"),
     path("users-data/", UsersFullDataView.as_view(), name="users-data"),
-
+    path('letters/', LetterListView.as_view(), name='letter-list'),
+    path('letters/<uuid:item_id>/<str:item_type>/preview/', LetterPreviewView.as_view(), name='letter-preview'),
+    
     path("swagger/",     schema_view.with_ui("swagger", cache_timeout=0), name="swagger-ui"),
     path("swagger.json", schema_view.without_ui(cache_timeout=0),         name="swagger-json"),
     path("redoc/",       schema_view.with_ui("redoc",   cache_timeout=0), name="redoc-ui"),

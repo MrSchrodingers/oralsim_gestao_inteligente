@@ -41,6 +41,7 @@ from notification_billing.core.application.dtos.whatsapp_notification_dto import
 from notification_billing.core.application.queries.notification_queries import (
     ListPendingSchedulesQuery,
 )
+from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
 from notification_billing.core.domain.events.events import NotificationSentEvent
 from notification_billing.core.domain.repositories import (
     ContactHistoryRepository,
@@ -215,6 +216,7 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         notification_service: NotificationSenderService,
         pending_call_repo: PendingCallRepository,
         contract_repo: ContractRepository,
+        context_builder: LetterContextBuilder,
         dispatcher: EventDispatcher,
         query_bus: Any,
     ):
@@ -225,6 +227,7 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         self.pending_call_repo = pending_call_repo
         self.contract_repo = contract_repo
         self.dispatcher = dispatcher
+        self.context_builder = context_builder
         self.query_bus = query_bus
 
     # ------------------------------------------------------------------ #
@@ -297,7 +300,54 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
                             }
                         )
                         continue
+                    elif channel == "letter":
+                        try:
+                            context = self.context_builder.build(
+                                patient_id  = sched.patient_id,
+                                contract_id = sched.contract_id,
+                                clinic_id   = sched.clinic_id,
+                                current_installment = True,
+                            )
+                            notifier = get_notifier("letter")
+                            notifier.send(context)
+                            send_ok = True
+                        except Exception as err:
+                            send_ok = False
+                            err_msg = str(err)
 
+                        # A lógica de registrar histórico e avançar o fluxo é a mesma
+                        hist = self.history_repo.save_from_schedule(
+                            schedule=sched,
+                            sent_at=now,
+                            success=send_ok,
+                            channel=channel,
+                            feedback=None,
+                            observation="Carta gerada e enviada por e-mail" if send_ok else f"error: {err_msg}",
+                            message=None, # Não há um Message template para a carta
+                        )
+                        NOTIFICATIONS_SENT.labels("automated", channel, str(send_ok)).inc()
+
+                        if send_ok:
+                            self.dispatcher.dispatch(
+                                NotificationSentEvent(
+                                    schedule_id=sched.id,
+                                    message_id=None, # Sem message_id para cartas
+                                    sent_at=hist.sent_at,
+                                    channel=channel,
+                                )
+                            )
+                        results.append(
+                            {
+                                "patient_id": str(sched.patient_id),
+                                "contract_id": str(sched.contract_id),
+                                "step": sched.current_step,
+                                "channel": channel,
+                                "success": send_ok,
+                                "pending_call": False
+                            }
+                        )
+                        continue
+                
                     # ②  Demais canais – envia normalmente
                     msg = self.notification_service.message_repo.get_message(
                         channel, sched.current_step, sched.clinic_id

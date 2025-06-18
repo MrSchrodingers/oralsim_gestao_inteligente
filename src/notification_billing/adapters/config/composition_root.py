@@ -17,6 +17,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     # API client, mappers e infra de mensageria...
     from oralsin_core.adapters.repositories.address_repo_impl import AddressRepoImpl
     from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
+    from oralsin_core.adapters.repositories.clinic_data_repo_impl import ClinicDataRepoImpl
+    from oralsin_core.adapters.repositories.clinic_repo_impl import ClinicRepoImpl
     from oralsin_core.adapters.repositories.contract_repo_impl import ContractRepoImpl
     from oralsin_core.adapters.repositories.installment_repo_impl import InstallmentRepoImpl
     from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
@@ -76,6 +78,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         UpdateMessageHandler,
     )
     from notification_billing.core.application.handlers.flow_step_config_handlers import GetFlowStepConfigHandler, ListFlowStepConfigHandler
+    from notification_billing.core.application.handlers.letter_handlers import GetLetterPreviewHandler, ListLettersHandler
     from notification_billing.core.application.handlers.list_pending_schedules_handler import ListPendingSchedulesHandler
     from notification_billing.core.application.handlers.notification_handlers import (
         NotificationSenderService,
@@ -86,6 +89,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from notification_billing.core.application.handlers.sync_handlers import BulkScheduleContactsHandler
     from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
     from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
+    from notification_billing.core.application.queries.letter_queries import GetLetterPreviewQuery, ListLettersQuery
     from notification_billing.core.application.queries.message_queries import GetMessageQuery, ListMessagesQuery
 
     # Queries
@@ -95,6 +99,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # Serviços de aplicação
     from notification_billing.core.application.services.formatter_service import FormatterService
+    from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
+    from notification_billing.core.application.services.letter_service import CordialLetterService
     from notification_billing.core.application.services.notification_service import NotificationFacadeService
 
     # Event Dispatcher
@@ -145,6 +151,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             address_repo=address_repo
         )
         pending_call_repo   = providers.Singleton(PendingCallRepoImpl)
+        clinic_repo = providers.Singleton(ClinicRepoImpl)
+        clinic_data_repo = providers.Singleton(ClinicDataRepoImpl, address_repo=address_repo)
         
         # Serviços de negócio
         formatter_service        = providers.Singleton(FormatterService, currency_symbol="R$")
@@ -169,7 +177,11 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
                                           query_bus=query_bus,
                                       )
         notification_service = notification_facade_service
-
+        letter_service = providers.Factory(
+            CordialLetterService,
+            template_path="ModeloCartaAmigavel.docx"
+        )
+        
         # Handlers CRUD
         list_pending_schedules_handler = providers.Factory(
             ListPendingSchedulesHandler,
@@ -219,7 +231,18 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             GetMessageHandler
         )
         
+        
         # Handlers de fluxo de contato/notificação
+        context_builder = providers.Singleton(
+            LetterContextBuilder,
+            patient_repo=patient_repo,
+            contract_repo=contract_repo,
+            installment_repo=installment_repo,
+            clinic_repo=clinic_repo,
+            clinic_data_repo=clinic_data_repo,
+            address_repo=address_repo,
+        )
+
         advance_contact_step_handler = providers.Factory(
             AdvanceContactStepHandler,
             schedule_repo=contact_schedule_repo,
@@ -249,11 +272,28 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             history_repo=contact_history_repo,
             pending_call_repo=pending_call_repo,
             notification_service=notification_sender_service,
+            context_builder=context_builder,
             contract_repo=contract_repo,
             dispatcher=event_dispatcher,
             query_bus=query_bus,
         )
+        list_letters_handler = providers.Factory(
+            ListLettersHandler,
+            history_repo=contact_history_repo,
+            schedule_repo=contact_schedule_repo,
+            patient_repo=patient_repo,
+            contract_repo=contract_repo,
+            config_repo=flow_step_config_repo,
+        )
 
+        # Handler de preview de carta
+        get_letter_preview_handler = providers.Factory(
+            GetLetterPreviewHandler,
+            history_repo=contact_history_repo,
+            schedule_repo=contact_schedule_repo,
+            context_builder=context_builder,
+            letter_service=letter_service,
+        )
         # Handlers de sync (inadimplência)
         advance_contact_step_handler = providers.Factory(
             AdvanceContactStepHandler,
@@ -330,6 +370,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             
             qb.register(ListMessagesQuery, self.list_message_handler())
             qb.register(GetMessageQuery, self.get_message_handler())
+            qb.register(ListLettersQuery, self.list_letters_handler())
+            qb.register(GetLetterPreviewQuery, self.get_letter_preview_handler())
             
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()

@@ -11,6 +11,11 @@ class ClinicDataRepository(ABC):
         ...
 
     @abstractmethod
+    def find_by_clinic(self, clinic_id: str) -> ClinicDataEntity | None:
+        """Retorna um dado de clínica pelo ID da Clínica."""
+        ...
+        
+    @abstractmethod
     def list_by_clinic(self, clinic_id: str) -> list[ClinicDataEntity]:
         """Lista todos os dados associados a uma clínica."""
         ...

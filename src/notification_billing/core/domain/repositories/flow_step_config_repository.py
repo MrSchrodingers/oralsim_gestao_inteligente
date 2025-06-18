@@ -14,6 +14,11 @@ class FlowStepConfigRepository(ABC):
         ...
         
     @abstractmethod
+    def all(self) -> list[FlowStepConfigEntity]:  
+        """Retorna todos os FlowStepConfig."""
+        ...
+          
+    @abstractmethod
     def find_by_step(self, step_number: int) -> FlowStepConfigEntity | None:
         """Retorna o FlowStepConfigEntity por step_number."""
         ...    

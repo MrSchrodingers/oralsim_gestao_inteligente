@@ -27,7 +27,7 @@ class FlowStepConfigRepoImpl(FlowStepConfigRepository):
         except FlowStepConfigModel.DoesNotExist:
             return None
 
-    def _all(self) -> list[FlowStepConfigEntity]:
+    def all(self) -> list[FlowStepConfigEntity]:
         return [FlowStepConfigEntity.from_model(m) for m in FlowStepConfigModel.objects.all()]
 
     def list_active_steps(self) -> Sequence[FlowStepConfigEntity]:

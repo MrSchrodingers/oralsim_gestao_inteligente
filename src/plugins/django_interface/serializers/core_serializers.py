@@ -302,3 +302,12 @@ class CollectionCaseSerializer(serializers.Serializer):
         choices=CollectionCase.Status.choices
     )
     
+
+class LetterListItemSerializer(serializers.Serializer):
+    """Serializer para exibir um item na lista de cartas."""
+    id = serializers.UUIDField(read_only=True)
+    patient_name = serializers.CharField(max_length=200)
+    contract_id = serializers.CharField(max_length=50)
+    status = serializers.CharField(max_length=50)
+    relevant_date = serializers.DateTimeField()
+    item_type = serializers.CharField(max_length=20)

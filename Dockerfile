@@ -11,12 +11,14 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libpq-dev curl libpq5 tini && \
+    apt-get install -y --no-install-recommends build-essential libpq-dev curl libpq5 tini locales && \
     curl -sSL https://install.python-poetry.org | python3 - && \
     poetry --version && \
     poetry config virtualenvs.create false && \
     mkdir -p /tmp/prometheus && \
-    chmod 0777 /tmp/prometheus 
+    chmod 0777 /tmp/prometheus && \
+    sed -i -e 's/# pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/' /etc/locale.gen && \
+    dpkg-reconfigure --frontend=noninteractive locales
 
 COPY libs/oralsin_core ./libs/oralsin_core
 COPY pyproject.toml poetry.lock ./
@@ -33,9 +35,15 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 tini curl && \
-    mkdir -p /tmp/prometheus && \
+    apt-get install -y --no-install-recommends libpq5 tini curl locales && \
+    mkdir -p /tmp/prometheus && \ 
+    sed -i -e 's/# pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/' /etc/locale.gen && \
+    dpkg-reconfigure --frontend=noninteractive locales && \ 
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ENV LANG pt_BR.UTF-8
+ENV LANGUAGE pt_BR:pt
+ENV LC_ALL pt_BR.UTF-8
 
 COPY --from=builder /usr/local/lib/python3.13/site-packages \
                   /usr/local/lib/python3.13/site-packages
@@ -46,6 +54,7 @@ COPY src/         src/
 COPY tests/       tests/
 COPY bin/         bin/
 COPY static/      static/
+COPY ModeloCartaAmigavel.docx      ModeloCartaAmigavel.docx
 COPY manage.py    manage.py
 COPY README.md    README.md
 COPY docker-compose.yml docker-compose.yml

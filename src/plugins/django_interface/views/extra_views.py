@@ -2,7 +2,7 @@ import io
 from dataclasses import asdict
 from datetime import date, timedelta
 
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
@@ -16,13 +16,15 @@ from notification_billing.core.application.commands.notification_commands import
     RunAutomatedNotificationsCommand,
     SendManualNotificationCommand,
 )
+from notification_billing.core.application.queries.letter_queries import GetLetterPreviewQuery, ListLettersQuery
 from plugins.django_interface.models import User
 from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
-from plugins.django_interface.serializers.core_serializers import UserFullDataSerializer, UserSerializer
+from plugins.django_interface.serializers.core_serializers import LetterListItemSerializer, UserFullDataSerializer, UserSerializer
 from plugins.django_interface.views.core_views import PaginationFilterMixin
 
-core_query_bus = core_container.query_bus()
-nb_command_bus = nb_container.command_bus()
+core_query_bus  = core_container.query_bus()
+nb_query_bus    = nb_container.query_bus()
+nb_command_bus  = nb_container.command_bus()
 
 # ─── TTLs em segundos ───────────────────────────────────────────────────────
 DASHBOARD_TTL      = 60    # resumo do dashboard, muda com frequência moderada
@@ -175,3 +177,69 @@ class UsersFullDataView(APIView):
         serializer = UserFullDataSerializer(users, many=True)
         
         return Response({"results": serializer.data, "total": len(serializer.data)})
+    
+class LetterListView(APIView, PaginationFilterMixin):
+    """
+    View para listar todas as cartas enviadas e agendadas, com suporte a paginação.
+    Exemplo: /api/letters/?page=1&page_size=20
+    """
+    # Adicionamos a permissão para garantir que o usuário está autenticado
+    permission_classes = [IsClinicUser]
+
+    def get(self, request, *args, **kwargs):
+        filtros = self._filters(request)
+        page, page_size = self._pagination(request)
+
+        if getattr(request.user, "clinic_id", None):
+            filtros["clinic_id"] = str(request.user.clinic_id)
+
+        query = ListLettersQuery(filtros=filtros, page=page, page_size=page_size)
+        try:
+            paged_result = nb_query_bus.dispatch(query)
+            
+            serializer = LetterListItemSerializer(paged_result.items, many=True)
+            
+            payload = {
+                "results": serializer.data,
+                "total_items": paged_result.total,
+                "page": paged_result.page,
+                "page_size": paged_result.page_size,
+                "total_pages": paged_result.total_pages,
+                "items_on_page": len(paged_result.items),
+            }
+            
+            return Response(payload, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class LetterPreviewView(APIView, PaginationFilterMixin):
+    """
+    View para gerar e retornar o arquivo .docx de uma carta específica.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request, item_id, item_type, *args, **kwargs):
+        filtros = self._filters(request)
+        if getattr(request.user, "clinic_id", None):
+            filtros["clinic_id"] = str(request.user.clinic_id)
+
+        query = GetLetterPreviewQuery(filtros=filtros, item_id=item_id, item_type=item_type)
+
+        try:
+            docx_stream = nb_query_bus.dispatch(query)
+
+            response = HttpResponse(
+                docx_stream.read(),
+                content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
+            filename = f"preview_{item_type}_{item_id}.docx"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+            return response
+        except FileNotFoundError as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

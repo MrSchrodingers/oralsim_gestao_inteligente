@@ -25,13 +25,14 @@ from plugins.django_interface.models import (
 from plugins.django_interface.models import Patient as PatientModel
 
 ScheduleLike = Union[ContactScheduleModel, ContactScheduleEntity]  # noqa: UP007
-ContactType = Literal["phonecall", "sms", "whatsapp", "email"]
+ContactType = Literal["phonecall", "sms", "whatsapp", "email", "letter"]
 
 _CONTACT_TYPE_DESC: dict[ContactType, str] = {
     "phonecall": "Ligação telefônica",
     "sms": "SMS",
-    "whatsapp": "Mensagem via WhatsApp",
+    "whatsapp": "WhatsApp",
     "email": "E-mail",
+    "letter": "Carta Amigável"
 }
 
 class ContactHistoryRepoImpl(ContactHistoryRepository):
@@ -172,7 +173,22 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
         return entity
 
     # ------------------------------------------------------------------  find_by_id
+    def find_by_channel(self, contact_type: str) -> list[ContactHistoryEntity]:
+        """Busca todos os históricos de um determinado canal/tipo de contato."""
+        models = ContactHistoryModel.objects.filter(contact_type=contact_type).order_by("-sent_at")
+        return [ContactHistoryEntity.from_model(model) for model in models]
+    
+    def filter(self, **filtros: Any) -> list[ContactHistoryEntity]:
+        """
+        Filtra o histórico de contatos com base em um dicionário de critérios.
+        """
+        channel = filtros.pop('channel', None)
+        if channel:
+            filtros['contact_type'] = channel
 
+        qs = ContactHistoryModel.objects.filter(**filtros).order_by("-sent_at")
+        return [ContactHistoryEntity.from_model(m) for m in qs]
+        
     def find_by_id(self, history_id: str) -> ContactHistoryEntity | None:
         try:
             model = ContactHistoryModel.objects.get(id=history_id)
