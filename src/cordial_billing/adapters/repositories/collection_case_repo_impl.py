@@ -1,5 +1,6 @@
 from typing import Any
 
+from django.db.models import Count, Sum
 from oralsin_core.core.application.cqrs import PagedResult
 
 from cordial_billing.core.domain.entities.collection_case_entity import (
@@ -99,3 +100,45 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
 
         items = [CollectionCaseEntity.from_model(obj) for obj in objs_page]
         return PagedResult(items=items, total=total, page=page, page_size=page_size)
+    
+    
+    def get_summary_by_clinic(self, clinic_id: str) -> dict[str, Any]:
+        """
+        Calcula um sumário de casos de cobrança para uma clínica específica,
+        agrupando por status e totalizando valores.
+
+        Este método realiza uma única consulta ao banco de dados para agregar
+        os dados de forma eficiente.
+
+        Args:
+            clinic_id: O ID da clínica para a qual o sumário será gerado.
+
+        Returns:
+            Um dicionário contendo:
+            - "total_cases": O número total de casos de cobrança para a clínica.
+            - "by_status": Uma lista de dicionários, onde cada um contém
+              'status', 'count' (número de casos) e 'total_value' (soma dos valores).
+        """
+        # Filtra os casos da clínica especificada
+        cases_for_clinic = CaseModel.objects.filter(clinic_id=clinic_id)
+
+        # 1. Calcula o total de casos
+        total_cases = cases_for_clinic.count()
+
+        # 2. Agrupa por status, contando o número de casos e somando os valores
+        summary_by_status = (
+            cases_for_clinic.values("status")
+            .annotate(
+                count=Count("id"),
+                total_value=Sum("amount"),
+            )
+            .order_by("-count")  # Ordena para mostrar os status com mais casos primeiro
+        )
+
+        # 3. Monta o dicionário de resultado final
+        result = {
+            "total_cases": total_cases,
+            "by_status": list(summary_by_status),
+        }
+
+        return result

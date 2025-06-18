@@ -11,6 +11,7 @@ class ContactScheduleDTO(BaseModel):
     patient_id: str
     contract_id: str | None
     clinic_id: str
+    installment_id: str
     current_step: int
     channel: str
     scheduled_date: datetime

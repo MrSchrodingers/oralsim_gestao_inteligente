@@ -38,3 +38,11 @@ class ContactHistoryRepository(ABC):
     def find_by_id(self, history_id: str) -> ContactHistoryEntity | None:
         """Recupera um histórico de contato pelo seu ID."""
         ...
+    
+    @abstractmethod
+    def get_latest_by_clinic(self, clinic_id: str, limit: int = 5) -> list[ContactHistoryEntity]:
+        """
+        Busca os últimos N registros de histórico de contato para uma clínica,
+        ordenados pelo mais recente.
+        """
+        ...

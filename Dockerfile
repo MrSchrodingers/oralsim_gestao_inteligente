@@ -45,6 +45,7 @@ COPY config/      config/
 COPY src/         src/
 COPY tests/       tests/
 COPY bin/         bin/
+COPY static/      static/
 COPY manage.py    manage.py
 COPY README.md    README.md
 COPY docker-compose.yml docker-compose.yml

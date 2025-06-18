@@ -2,6 +2,7 @@ from datetime import datetime, time, timedelta
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.repositories.billing_settings_repository import BillingSettingsRepository
@@ -292,3 +293,44 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
 
         items = [ContactScheduleEntity.from_model(obj) for obj in objs_page]
         return PagedResult(items=items, total=total, page=page, page_size=page_size)
+
+    def get_status_summary_by_clinic(self, clinic_id: str) -> dict[str, Any]:
+        """
+        Calcula um sumário de agendamentos de contato para uma clínica,
+        agrupando tanto por status quanto por canal de comunicação.
+
+        Args:
+            clinic_id: O ID da clínica para a qual o sumário será gerado.
+
+        Returns:
+            Um dicionário contendo agregações. Exemplo:
+            {
+                "PENDING": 50,
+                "SENT": 250,
+                "ERROR": 5,
+                "by_channel": [
+                    {'channel': 'whatsapp', 'count': 200},
+                    {'channel': 'sms', 'count': 105}
+                ]
+            }
+        """
+        schedules_for_clinic = ContactScheduleModel.objects.filter(clinic_id=clinic_id)
+
+        # 1. Agrega por status para obter a contagem de cada um
+        status_counts = schedules_for_clinic.values('status').annotate(count=Count('id'))
+
+        # Converte a lista de dicionários em um único dicionário para fácil acesso
+        summary = {item['status']: item['count'] for item in status_counts}
+
+        # 2. Agrega por canal para a análise de canais mais usados
+        channel_counts = (
+            schedules_for_clinic.values('channel')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+
+        # Adiciona a análise por canal ao resultado principal
+        summary['by_channel'] = list(channel_counts)
+
+        return summary
+    

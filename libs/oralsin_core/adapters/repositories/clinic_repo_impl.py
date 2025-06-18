@@ -15,7 +15,7 @@ class ClinicRepoImpl(ClinicRepository):
             return ClinicEntity.from_model(ClinicModel.objects.get(id=clinic_id))
         except ClinicModel.DoesNotExist:
             return None
-
+        
     def find_by_oralsin_id(self, oralsin_id: int) -> ClinicEntity | None:
         try:
             return ClinicEntity.from_model(

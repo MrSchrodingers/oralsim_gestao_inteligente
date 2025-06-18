@@ -7,7 +7,7 @@ from plugins.django_interface.models import FlowStepConfig
 FLOW_STEP_CONFIG = [
     { 'step_number': 0,  'channels': ['whatsapp' ], 'active': True,  'description': 'Semana 0: WhatsApp',         'cooldown_days': 7 },
     { 'step_number': 1,  'channels': ['whatsapp', 'sms'], 'active': True,  'description': 'Semana 1: WhatsApp + SMS',         'cooldown_days': 7 },
-    { 'step_number': 2,  'channels': ['whatsapp'],        'active': True,  'description': 'Semana 2: WhatsApp',               'cooldown_days': 7 },
+    { 'step_number': 2,  'channels': ['phonecall'],        'active': True,  'description': 'Semana 2: WhatsApp',               'cooldown_days': 7 },
     { 'step_number': 3,  'channels': ['email'],           'active': True,  'description': 'Semana 3: E-mail',                 'cooldown_days': 7 },
     { 'step_number': 4,  'channels': ['whatsapp'],        'active': True,  'description': 'Semana 4: WhatsApp',               'cooldown_days': 7 },
     { 'step_number': 5,  'channels': ['phonecall'],       'active': True,  'description': 'Semana 5: Ligação',                'cooldown_days': 7 },
@@ -17,8 +17,8 @@ FLOW_STEP_CONFIG = [
     { 'step_number': 9,  'channels': ['phonecall'],       'active': True,  'description': 'Semana 9: Ligação',                'cooldown_days': 7 },
     { 'step_number': 10, 'channels': ['phonecall'],       'active': True,  'description': 'Semana 10: Ligação',               'cooldown_days': 7 },
     { 'step_number': 11, 'channels': ['phonecall'],       'active': True,  'description': 'Semana 11: Ligação',               'cooldown_days': 7 },
-    { 'step_number': 12, 'channels': ['sms'],             'active': True,  'description': 'Semana 12: SMS',                   'cooldown_days': 7 },
-    { 'step_number': 13, 'channels': ['sms'],             'active': True,  'description': 'Semana 13: Ligação',               'cooldown_days': 7 },
+    { 'step_number': 12, 'channels': ['phonecall'],             'active': True,  'description': 'Semana 12: SMS',                   'cooldown_days': 7 },
+    { 'step_number': 13, 'channels': ['phonecall'],             'active': True,  'description': 'Semana 13: Ligação',               'cooldown_days': 7 },
     { 'step_number': 14, 'channels': ['phonecall'],       'active': True,  'description': 'Cobrança Encerrada: SMS',         'cooldown_days': 7 },
 ]
 

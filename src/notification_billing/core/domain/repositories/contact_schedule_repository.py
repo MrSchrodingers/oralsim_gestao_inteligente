@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 
@@ -9,7 +10,8 @@ class ContactScheduleRepository(ABC):
         self,
         patient_id: str,
         contract_id: str,
-        clinic_id: str
+        clinic_id: str,
+        installment_id: str
     ) -> ContactScheduleEntity:
         """Cria o primeiro agendamento de contato."""
         ...
@@ -69,4 +71,12 @@ class ContactScheduleRepository(ABC):
     @abstractmethod
     def delete(self, schedule_id: str) -> None:
         """Remove um agendamento."""
+        ...
+
+    @abstractmethod
+    def get_status_summary_by_clinic(self, clinic_id: str) -> dict[str, Any]:
+        """
+        Calcula um sumário de agendamentos de contato para uma clínica,
+        agrupando tanto por status quanto por canal de comunicação.
+        """
         ...

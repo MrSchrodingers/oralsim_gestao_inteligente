@@ -16,6 +16,10 @@ class CollectionCaseRepository(ABC):
     def save(self, case: CollectionCaseEntity) -> CollectionCaseEntity: ...
 
     @abstractmethod
+    def get_summary_by_clinic(self, clinic_id: str) -> dict[str, Any]:
+        ...
+        
+    @abstractmethod
     def exists_for_installment(self, installment_id: str) -> bool: ...
 
     @abstractmethod

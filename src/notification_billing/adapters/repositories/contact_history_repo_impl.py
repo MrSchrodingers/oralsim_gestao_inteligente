@@ -179,3 +179,39 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
             return ContactHistoryEntity.from_model(model)
         except ContactHistoryModel.DoesNotExist:
             return None
+
+    def get_latest_by_clinic(self, clinic_id: str, limit: int = 5) -> list[ContactHistoryEntity]:
+        """
+        Busca os últimos N registros de histórico de contato para uma clínica,
+        ordenados pelo mais recente.
+
+        Args:
+            clinic_id: O ID da clínica a ser consultada.
+            limit: O número máximo de registros a serem retornados.
+
+        Returns:
+            Uma lista de entidades `ContactHistoryEntity`. O nome do paciente
+            é adicionado dinamicamente ao atributo `patient_name` de cada
+            entidade para uso no relatório.
+        """
+        latest_models = (
+            ContactHistoryModel.objects
+            .filter(clinic_id=clinic_id)
+            .select_related('patient')  # Otimização para pré-buscar dados do paciente
+            .order_by("-sent_at")
+            [:limit]
+        )
+
+        entities = []
+        for model in latest_models:
+            entity = ContactHistoryEntity.from_model(model)
+
+            # Adiciona dinamicamente o nome do paciente à entidade para fácil acesso no PDF
+            if model.patient and hasattr(model.patient, 'name'):
+                entity.patient_name = model.patient.name
+            else:
+                entity.patient_name = "Paciente Desconhecido"
+            
+            entities.append(entity)
+
+        return entities

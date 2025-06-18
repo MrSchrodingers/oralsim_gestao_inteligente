@@ -9,7 +9,12 @@ from oralsin_core.core.application.services.dashboard_service import DashboardSe
 class GetDashboardSummaryQuery(QueryDTO):
     user_id: str
     filtros: dict[str, str]
-    
+
+@dataclass(frozen=True, slots=True)
+class GetDashboardReportQuery(QueryDTO):
+    user_id: str
+    filtros: dict[str, str]
+        
 class GetDashboardSummaryQueryHandler:
     """Handler registrado no QueryBus."""
 

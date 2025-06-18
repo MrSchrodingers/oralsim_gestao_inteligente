@@ -1,10 +1,12 @@
+import io
 from dataclasses import asdict
 from datetime import date, timedelta
 
+from django.http import FileResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
-from oralsin_core.core.application.queries.dashboard_queries import GetDashboardSummaryQuery
+from oralsin_core.core.application.queries.dashboard_queries import GetDashboardReportQuery, GetDashboardSummaryQuery
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -68,6 +70,22 @@ class DashboardSummaryView(PaginationFilterMixin, APIView):
         return Response(asdict(res))
 
 
+class DashboardReportView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        filtros = {
+            "start_date": request.query_params.get("start_date"),
+            "end_date": request.query_params.get("end_date"),
+        }
+        q = GetDashboardReportQuery(user_id=str(request.user.id), filtros=filtros)
+        pdf_bytes = core_query_bus.dispatch(q)
+
+        filename = f"relatorio_dashboard_{date.today().isoformat()}.pdf"
+        response = FileResponse(io.BytesIO(pdf_bytes), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    
 # ╭──────────────────────────────────────────────╮
 # │      RUN / SEND NOTIFICATIONS (POST)        │
 # ╰──────────────────────────────────────────────╯

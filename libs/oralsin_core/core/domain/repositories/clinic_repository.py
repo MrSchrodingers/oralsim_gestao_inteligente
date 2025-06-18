@@ -9,7 +9,7 @@ class ClinicRepository(ABC):
     def find_by_id(self, clinic_id: str) -> ClinicEntity | None:
         """Retorna uma clínica pelo seu ID interno."""
         ...
-
+        
     @abstractmethod
     def find_by_oralsin_id(self, oralsin_id: int) -> ClinicEntity | None:
         """Retorna uma clínica pelo seu ID na Oralsin."""

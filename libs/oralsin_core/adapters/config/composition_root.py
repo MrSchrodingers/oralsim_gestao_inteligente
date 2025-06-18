@@ -1,5 +1,9 @@
 from dependency_injector import containers, providers
 
+from cordial_billing.adapters.repositories.collection_case_repo_impl import CollectionCaseRepoImpl
+from notification_billing.adapters.repositories.contact_history_repo_impl import ContactHistoryRepoImpl
+from notification_billing.adapters.repositories.contact_schedule_repo_impl import ContactScheduleRepoImpl
+
 container = None
 
 def setup_di_container_from_settings(settings):  # noqa: PLR0915
@@ -101,6 +105,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         RegisterCoverageClinicHandler,
     )
     from oralsin_core.core.application.handlers.dashboard_handlers import (
+        GetDashboardReportHandler,
         GetDashboardSummaryHandler,
     )
 
@@ -146,12 +151,14 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.core.application.queries.contract_queries import GetContractQuery, ListContractsQuery
     from oralsin_core.core.application.queries.coverage_queries import ListCoveredClinicsQuery, ListUserClinicsQuery
     from oralsin_core.core.application.queries.covered_clinic_queries import GetCoveredClinicQuery
+    from oralsin_core.core.application.queries.dashboard_queries import GetDashboardReportQuery
     from oralsin_core.core.application.queries.installment_queries import GetInstallmentQuery, ListInstallmentsQuery
     from oralsin_core.core.application.queries.patient_phone_queries import GetPatientPhoneQuery, ListPatientPhonesQuery
     from oralsin_core.core.application.queries.patient_queries import GetPatientQuery, ListPatientsQuery
     from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
     from oralsin_core.core.application.queries.user_clinic_queries import GetUserClinicQuery
     from oralsin_core.core.application.queries.user_queries import GetUserQuery, ListUsersQuery
+    from oralsin_core.core.application.services.dashboard_pdf_service import DashboardPDFService
     from oralsin_core.core.application.services.dashboard_service import (
         DashboardService,
     )
@@ -172,7 +179,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     class Container(containers.DeclarativeContainer):
         config = providers.Configuration()
-
+        logo_path = "/app/static/OralsinGestaoInteligenteLogo.png"
+        
         # Infra & integração
         logger           = providers.Singleton(structlog.get_logger)
         event_dispatcher = providers.Singleton(
@@ -217,7 +225,13 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         user_clinic_repo    = providers.Singleton(UserClinicRepoImpl)
         billing_settings_repo = providers.Singleton(BillingSettingsRepoImpl)
         payment_method_repo = providers.Singleton(PaymentMethodRepoImpl)
-
+        
+        collection_case_repo = providers.Singleton(CollectionCaseRepoImpl)
+        contact_history_repo = providers.Singleton(ContactHistoryRepoImpl)
+        contact_schedule_repo = providers.Singleton(ContactScheduleRepoImpl, 
+                                                    installment_repo=installment_repo, 
+                                                    billing_settings_repo=billing_settings_repo
+                                                    )
         # Hash
         hash_service = providers.Singleton(HashService)
 
@@ -293,6 +307,11 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             patient_repo=patient_repo,
             formatter=formatter_service,
         )
+        dashboard_pdf_service = providers.Singleton(
+            DashboardPDFService,
+            formatter=formatter_service,
+            logo_path=logo_path,
+        )
         sync_inadimplencia_handler = providers.Factory(
             SyncInadimplenciaHandler,
             api_client=oralsin_client,
@@ -311,6 +330,19 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             installment_repo=installment_repo,
             patient_repo=patient_repo,
             formatter=formatter_service,
+        )
+        dashboard_report_handler = providers.Singleton(
+            GetDashboardReportHandler,
+            dashboard_service=dashboard_service,
+            pdf_service=dashboard_pdf_service,
+            user_repo=user_repo,
+            user_clinic_repo=user_clinic_repo,
+            clinic_repo=clinic_repo,
+            clinic_data_repo=clinic_data_repo,
+            clinic_phone_repo=clinic_phone_repo,
+            collection_case_repo = collection_case_repo,
+            contact_history_repo = contact_history_repo,
+            contact_schedule_repo = contact_schedule_repo
         )
 
         # Handlers de Queries (core)
@@ -423,6 +455,9 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
                 ListBillingSettingsQuery,
                 self.list_billing_settings_handler(),
             )
+            
+            qry_bus.register(GetDashboardReportQuery, self.dashboard_report_handler())
+
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()
     container.config.rabbitmq_url.from_value(settings.RABBITMQ_URL)

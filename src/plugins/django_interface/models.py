@@ -474,6 +474,14 @@ class ContactSchedule(models.Model):
     patient = models.ForeignKey(
         Patient, on_delete=models.CASCADE, related_name="schedules"
     )
+    installment = models.ForeignKey(
+        Installment,
+        on_delete=models.SET_NULL,   
+        blank=True,
+        null=True,
+        related_name="schedules",
+        db_index=True,
+    )
     contract = models.ForeignKey(
         Contract,
         on_delete=models.SET_NULL,
@@ -499,11 +507,12 @@ class ContactSchedule(models.Model):
         db_table = "contact_schedules"
         indexes = [
             Index(fields=["clinic", "scheduled_date"]),
+            models.Index(fields=["installment"]),
             BrinIndex(fields=["scheduled_date"], autosummarize=True),
         ]
         constraints = [
             UniqueConstraint(
-                fields=["patient", "contract", "current_step", "channel"],
+                fields=["patient", "contract", "current_step", "channel", "installment"],
                 condition=Q(notification_trigger="automated"),
                 name="uq_contact_schedule_per_step_pending"
             ),

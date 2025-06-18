@@ -13,6 +13,7 @@ class ContactScheduleEntity(EntityMixin):
     patient_id: uuid.UUID
     contract_id: uuid.UUID | None
     clinic_id: uuid.UUID
+    installment_id: uuid.UUID | None
     current_step: int
     scheduled_date: datetime
     notification_trigger: str | None = None
