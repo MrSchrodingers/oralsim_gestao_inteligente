@@ -9,10 +9,11 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 
-from django.db.models import Q
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
+from django.core.cache import cache
+from django.db.models import Avg, DecimalField, FloatField, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from oralsin_core.adapters.config.composition_root import container as core_container
 from oralsin_core.adapters.observability.decorators import track_http
 from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
@@ -37,6 +38,7 @@ from notification_billing.core.application.queries.flow_step_config_queries impo
 from notification_billing.core.application.queries.pending_call_queries import GetPendingCallQuery, ListPendingCallsQuery
 from plugins.django_interface.models import Message as MessageModel
 from plugins.django_interface.models import Patient as PatientModel
+from plugins.django_interface.models import PendingCall as PendingCallModel
 from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
 
 # ────────────────────────────────  Serializers  ───────────────────────────────
@@ -241,22 +243,23 @@ from notification_billing.core.application.queries.message_queries import (  # n
 # Cache Helper: gera um key_prefix incluindo o clinic_id do usuário
 # ===========================================================================
 def cache_key_prefix_for(prefix: str):
+    """
+    Gera um prefixo do tipo:
+      {prefix}_clinic_{id}_v{version}
+    onde `version` é um inteiro armazenado em cache e
+    incrementado sempre que houver update.
+    """
     def _key(request, *args, **kwargs):
         clinic_id = getattr(request.user, "clinic_id", "anon")
-        return f"{prefix}_clinic_{clinic_id}"
+        version_key = f"{prefix}_v_clinic_{clinic_id}"
+        version = cache.get(version_key) or 0
+        return f"{prefix}_clinic_{clinic_id}_v{version}"
     return _key
 
 # ╭──────────────────────────────────────────────╮
 # │  Core Domain ViewSets                        │
 # ╰──────────────────────────────────────────────╯
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("patients_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("patient_detail")),
-    name="retrieve",
-)
+
 class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -346,14 +349,7 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("addresses_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("address_detail")),
-    name="retrieve",
-)
+
 class AddressViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -406,14 +402,7 @@ class AddressViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("clinics_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("clinic_detail")),
-    name="retrieve",
-)
+
 class ClinicViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsAdminUser]
 
@@ -466,14 +455,7 @@ class ClinicViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("clinica_datas_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("clinica_data_detail")),
-    name="retrieve",
-)
+
 class ClinicDataViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -525,14 +507,7 @@ class ClinicDataViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("clinic_phones_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("clinic_phone_detail")),
-    name="retrieve",
-)
+
 class ClinicPhoneViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -593,14 +568,7 @@ class ClinicPhoneViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("covered_clinics_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("covered_clinic_detail")),
-    name="retrieve",
-)
+
 class CoveredClinicViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -643,14 +611,7 @@ class CoveredClinicViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("patient_phones_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("patient_phone_detail")),
-    name="retrieve",
-)
+
 class PatientPhoneViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -699,14 +660,6 @@ class PatientPhoneViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("contracts_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("contract_detail")),
-    name="retrieve",
-)
 class ContractViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -777,14 +730,6 @@ class ContractViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("installments_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("cinstallment_detail")),
-    name="retrieve",
-)
 class InstallmentViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -831,14 +776,6 @@ class InstallmentViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("user_clinics_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("user_clinic_detail")),
-    name="retrieve",
-)
 class UserClinicViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsAdminUser]
 
@@ -876,14 +813,6 @@ class UserClinicViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("users_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("user_detail")),
-    name="retrieve",
-)
 class UserViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsAdminUser]
 
@@ -936,14 +865,6 @@ class UserViewSet(PaginationFilterMixin, viewsets.ViewSet):
 # ╭──────────────────────────────────────────────╮
 # │  Billing Domain ViewSets                     │
 # ╰──────────────────────────────────────────────╯
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("contact_schedules_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("contact_schedule_detail")),
-    name="retrieve",
-)
 class ContactScheduleViewSet(PaginationFilterMixin, viewsets.ViewSet):
     """Agendamentos de contato."""
     permission_classes = [IsClinicUser]
@@ -997,14 +918,6 @@ class ContactScheduleViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("contact_histories_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("contact_history_detail")),
-    name="retrieve",
-)
 class ContactHistoryViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -1038,14 +951,6 @@ class ContactHistoryViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
 
 # ───────────────────────────────────────────────────────────────────────────
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("messages_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("message_detail")),
-    name="retrieve",
-)
 class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -1103,14 +1008,6 @@ class MessageViewSet(PaginationFilterMixin, viewsets.ViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=cache_key_prefix_for("pending_calls_list")),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=cache_key_prefix_for("pending_call_detail")),
-    name="retrieve",
-)
 class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
     """
     Ligações pendentes (phonecall).  
@@ -1133,12 +1030,38 @@ class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
             ListPendingCallsQuery(filtros=filtros, page=page, page_size=page_size)
         )
 
+        qs = PendingCallModel.objects.filter(**filtros).select_related("patient", "contract").prefetch_related("patient__phones")
+
+        summary = {
+            "high": qs.filter(Q(attempts__gte=2) | Q(contract__overdue_amount__gt=1000)).count(),
+            "medium": qs.filter(
+                (Q(attempts__gte=1, attempts__lt=2))
+                | (Q(contract__overdue_amount__gt=500) & Q(contract__overdue_amount__lte=1000))
+            ).count(),
+            "normal": qs.filter(attempts=0, contract__overdue_amount__lte=500).count(),
+            "total_overdue": str(
+                qs.aggregate(
+                    total=Coalesce(
+                        Sum("contract__overdue_amount"),
+                        Value(
+                            Decimal("0.00"),
+                            output_field=DecimalField(max_digits=14, decimal_places=2),
+                        ),
+                    )
+                )["total"]
+            ),
+            "avg_attempts": float(
+                qs.aggregate(avg=Coalesce(Avg("attempts"), Value(0, output_field=FloatField())))["avg"]
+            ),
+        }
+        
         total_items = res.total
         total_pages = math.ceil(total_items / page_size) if page_size else 1
 
         payload = {
             "results": PendingCallSerializer(res.items, many=True).data,
             "total_items": total_items,
+            "summary": summary,
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
@@ -1181,16 +1104,10 @@ class PendingCallViewSet(PaginationFilterMixin, viewsets.ViewSet):
                 user_id=str(request.user.id),
             )
         )
+        
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-@method_decorator(
-    cache_page(LIST_TTL, key_prefix=lambda req,*a,**k: f"bs_list_user_{req.user.id}"),
-    name="list",
-)
-@method_decorator(
-    cache_page(RETRIEVE_TTL, key_prefix=lambda req,*a,**k: f"bs_detail_user_{req.user.id}"),
-    name="retrieve",
-)
+
 class BillingSettingsViewSet(PaginationFilterMixin, viewsets.ViewSet):
     """
     Visualiza e atualiza as configurações de cobrança por clínica.
@@ -1241,8 +1158,7 @@ class BillingSettingsViewSet(PaginationFilterMixin, viewsets.ViewSet):
             status=status.HTTP_200_OK
         )
         
-@method_decorator(cache_page(LIST_TTL, key_prefix="pm_list"), name="list")
-@method_decorator(cache_page(RETRIEVE_TTL, key_prefix="pm_detail"), name="retrieve")
+
 class PaymentMethodViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -1273,8 +1189,7 @@ class PaymentMethodViewSet(PaginationFilterMixin, viewsets.ViewSet):
         pm = core_query_bus.dispatch(GetPaymentMethodQuery(filtros=filtros, payment_method_id=str(pk)))
         return Response(PaymentMethodSerializer(pm).data)
 
-@method_decorator(cache_page(LIST_TTL, key_prefix="flowcfg_list"), name="list")
-@method_decorator(cache_page(RETRIEVE_TTL, key_prefix="flowcfg_detail"), name="retrieve")
+
 class FlowStepConfigViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 
@@ -1305,8 +1220,7 @@ class FlowStepConfigViewSet(PaginationFilterMixin, viewsets.ViewSet):
         return Response(FlowStepConfigSerializer(cfg).data)
 
 
-@method_decorator(cache_page(LIST_TTL, key_prefix="collect_list"), name="list")
-@method_decorator(cache_page(RETRIEVE_TTL, key_prefix="collect_detail"), name="retrieve")
+
 class CollectionCaseViewSet(PaginationFilterMixin, viewsets.ViewSet):
     permission_classes = [IsClinicUser]
 

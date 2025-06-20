@@ -254,10 +254,12 @@ class UserFullDataSerializer(UserSerializer):
     """
     clinics = ClinicWithDetailsSerializer(many=True, read_only=True)
     
+
+
 class PendingCallSerializer(serializers.Serializer):
     id              = serializers.UUIDField()
-    patient_id      = serializers.UUIDField()
-    contract_id     = serializers.UUIDField()
+    patient         = PatientSerializer(read_only=True)
+    contract        = ContractSerializer(read_only=True)
     clinic_id       = serializers.UUIDField()
     schedule_id     = serializers.UUIDField(allow_null=True)
     current_step    = serializers.IntegerField()

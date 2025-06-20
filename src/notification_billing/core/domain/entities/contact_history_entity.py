@@ -16,6 +16,7 @@ class ContactHistoryEntity(EntityMixin):
     contact_type: str
     sent_at: datetime | None
     notification_trigger: str
+    success: str | None = None
     advance_flow: bool = False
     feedback_status: str | None = None
     observation: str | None = None
