@@ -5,8 +5,9 @@ Helper functions for formatting currency, dates, numbers, and text.
 
 import locale
 from datetime import date, datetime
-from decimal import Decimal
-from typing import Union
+from decimal import Decimal, InvalidOperation
+import re
+from typing import Any, Union
 
 # Setting locale for Brazilian Portuguese
 try:
@@ -17,6 +18,44 @@ except locale.Error:
     except locale.Error:
         print("Warning: pt_BR locale not available. Using default settings.")
 
+def to_number(value) -> float:
+    """
+    Converte valores em string (ex.: 'R$ 4.526.541,60', '4.526.541,60%', '1 234,56')
+    ou numéricos para float. Retorna 0.0 em caso de falha.
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float, Decimal)):
+        return float(value)
+
+    # String normalizada
+    s = str(value).strip()
+    if not s:
+        return 0.0
+
+    # Remove qualquer caractere que não seja dígito, vírgula, ponto ou sinal
+    s = re.sub(r"[^\d,.\-]", "", s)
+
+    # Decidir qual é o separador decimal
+    if "," in s and "." in s:
+        # O separador decimal é o ÚLTIMO que aparece entre , ou .
+        last_comma = s.rfind(",")
+        last_dot   = s.rfind(".")
+        if last_comma > last_dot:
+            # vírgula é decimal → remove pontos
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # ponto é decimal → remove vírgulas
+            s = s.replace(",", "")
+    elif "," in s:
+        # Apenas vírgula → assume vírgula decimal
+        s = s.replace(".", "").replace(",", ".")
+    # else: só ponto ou nenhum → nada a fazer
+
+    try:
+        return float(s)
+    except (InvalidOperation, ValueError):
+        return 0.0
 
 class BrazilianFormatter:
     """Class for formatting data according to Brazilian standards."""

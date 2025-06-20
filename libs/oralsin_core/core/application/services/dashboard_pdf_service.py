@@ -12,11 +12,19 @@ from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import cm
 from reportlab.platypus import Flowable, NextPageTemplate, PageBreak, Paragraph, Spacer, Table, TableStyle
-from utils.formatters import formatter
 
+from oralsin_core.core.application.dtos.dashboard_dto import DashboardDTO
 from oralsin_core.core.application.services.utils.design_system import COLORS, get_advanced_styles
+from oralsin_core.core.application.services.utils.formatters import (
+    BrazilianFormatter,
+    to_number,
+)
+from oralsin_core.core.application.services.utils.formatters import (
+    formatter as default_formatter,
+)
 from oralsin_core.core.application.services.utils.kpi_cards import KPICardGenerator
 from oralsin_core.core.application.services.utils.template import ModernDocumentTemplate
+from plugins.django_interface.models import Clinic, ClinicData, ClinicPhone, User
 
 
 class DashboardPDFService:
@@ -31,20 +39,28 @@ class DashboardPDFService:
     - Complete Brazilian formatting
     """
     
-    def __init__(self, logo_path: Optional[str] = None):
+    def __init__(self, formatter: BrazilianFormatter | None = None, logo_path: str | None = None):
         """
         Initializes the report service.
         
         Args:
             logo_path: Path to the logo file.
         """
+        self.formatter = formatter or default_formatter
         self.logo_path = logo_path
         self.styles = get_advanced_styles()
         self.kpi_card_generator = KPICardGenerator()
         self.report_date = date.today()
     
-    def generate_complete_report(self, user: Any, clinic: Any, clinic_data: Any,
-                                     clinic_phones: Any, dashboard: Any, **kwargs: Any) -> bytes:
+    def build(
+        self,
+        user: User,
+        clinic: Clinic,
+        clinic_data: ClinicData,
+        clinic_phones: ClinicPhone,
+        dashboard: DashboardDTO,
+        **kwargs: Any,
+    ) -> bytes:
         """
         Generates the complete PDF report with all sections.
         
@@ -68,7 +84,7 @@ class DashboardPDFService:
         period_days = kwargs.get("periodDays", 30)
         
         # Configure document
-        formatted_date = formatter.formatar_data(self.report_date, "curto")
+        formatted_date = self.formatter.format_date(self.report_date, "curto")
         period_text = f"Últimos {period_days} dias"
         
         doc = ModernDocumentTemplate(
@@ -78,7 +94,7 @@ class DashboardPDFService:
             subject=f"Dashboard Financeiro e Operacional - {formatted_date}",
             logo_path=self.logo_path,
             clinic_name=clinic.name,
-            report_date=formatter.formatar_data(self.report_date, "numerico"),
+            report_date=self.formatter.format_date(self.report_date, "numerico"),
             report_period=period_text,
             report_title="Relatório Gerencial",
             report_subtitle="Análise Financeira e Operacional",
@@ -186,10 +202,10 @@ class DashboardPDFService:
         stats = dashboard.stats
         
         # Calculate important metrics
-        collection_rate = getattr(stats, 'collectionRate', 0)
-        total_receivables = getattr(stats, 'totalReceivables', 0)
-        received_in_period = getattr(stats, 'paidThisMonth', 0)
-        overdue_amount = getattr(stats, 'overduePayments', 0)
+        collection_rate = to_number(getattr(stats, 'collectionRate', 0))
+        total_receivables = to_number(getattr(stats, 'totalReceivables', 0))
+        received_in_period = to_number(getattr(stats, 'paidThisMonth', 0))
+        overdue_amount = to_number(getattr(stats, 'overduePayments', 0))
         
         # General clinic status
         if collection_rate >= 80:
@@ -210,10 +226,10 @@ class DashboardPDFService:
         <b>Status Financeiro Geral:</b> <font color="{status_color}"><b>{financial_status}</b></font><br/><br/>
         
         <b>Principais Indicadores:</b><br/>
-        • <b>Taxa de Cobrança:</b> {formatter.formatar_percentual(collection_rate/100)}<br/>
-        • <b>Total a Receber:</b> {formatter.formatar_moeda(total_receivables)}<br/>
-        • <b>Recebido no Período:</b> {formatter.formatar_moeda(received_in_period)}<br/>
-        • <b>Valores em Atraso:</b> {formatter.formatar_moeda(overdue_amount)}<br/><br/>
+        • <b>Taxa de Cobrança:</b> {self.formatter.format_percentage(collection_rate/100)}<br/>
+        • <b>Total a Receber:</b> {self.formatter.format_currency(total_receivables)}<br/>
+        • <b>Recebido no Período:</b> {self.formatter.format_currency(received_in_period)}<br/>
+        • <b>Valores em Atraso:</b> {self.formatter.format_currency(overdue_amount)}<br/><br/>
         
         <b>Observações Importantes:</b><br/>
         """
@@ -229,7 +245,9 @@ class DashboardPDFService:
         
         if collection_summary and collection_summary.get('total_cases', 0) > 0:
             collection_cases = collection_summary.get('total_cases', 0)
-            observations.append(f"• {formatter.pluralizar(collection_cases, 'caso de cobrança ativo', 'casos de cobrança ativos')}")
+            observations.append(
+                f"• {self.formatter.pluralize(collection_cases, 'caso de cobrança ativo', 'casos de cobrança ativos')}"
+            )
         
         if not observations:
             observations.append("• <font color='#059669'>Situação financeira dentro dos parâmetros esperados</font>")
@@ -253,22 +271,30 @@ class DashboardPDFService:
         main_kpis = [
             (
                 "Total a Receber",
-                formatter.formatar_moeda(getattr(stats, 'totalReceivables', 0), formato_curto=True),
+                self.formatter.format_currency(
+                    getattr(stats, 'totalReceivables', 0), short_format=True
+                ),
                 COLORS.PRIMARY_BLUE
             ),
             (
                 "Recebido no Período",
-                formatter.formatar_moeda(getattr(stats, 'paidThisMonth', 0), formato_curto=True),
+                self.formatter.format_currency(
+                    getattr(stats, 'paidThisMonth', 0), short_format=True
+                ),
                 COLORS.SUCCESS
             ),
             (
                 "Em Atraso",
-                formatter.formatar_moeda(getattr(stats, 'overduePayments', 0), formato_curto=True),
+                self.formatter.format_currency(
+                    getattr(stats, 'overduePayments', 0), short_format=True
+                ),
                 COLORS.ERROR
             ),
             (
                 "Taxa de Cobrança",
-                formatter.formatar_percentual(getattr(stats, 'collectionRate', 0)/100),
+                self.formatter.format_percentage(
+                    getattr(stats, 'collectionRate', 0) / 100
+                ),
                 COLORS.INFO
             ),
             (
@@ -373,10 +399,10 @@ class DashboardPDFService:
             
             data_rows.append([
                 Paragraph(f"{icon} {status_name}", self.styles["TableCell"]),
-                Paragraph(formatter.formatar_numero(quantity), self.styles["TableCellCenter"]),
-                Paragraph(formatter.formatar_moeda(total_value), self.styles["TableCellRight"]),
-                Paragraph(formatter.formatar_percentual(percentage/100), self.styles["TableCellCenter"]),
-                Paragraph(formatter.formatar_moeda(average_value), self.styles["TableCellRight"]),
+                Paragraph(self.formatter.format_number(quantity), self.styles["TableCellCenter"]),
+                Paragraph(self.formatter.format_currency(total_value), self.styles["TableCellRight"]),
+                Paragraph(self.formatter.format_percentage(percentage/100), self.styles["TableCellCenter"]),
+                Paragraph(self.formatter.format_currency(average_value), self.styles["TableCellRight"]),
             ])
         
         # Total row
@@ -385,10 +411,10 @@ class DashboardPDFService:
 
         data_rows.append([
             Paragraph("<b>TOTAL GERAL</b>", self.styles["TableCellHighlight"]),
-            Paragraph(f"<b>{formatter.formatar_numero(total_quantity)}</b>", self.styles["TableCellCenter"]),
-            Paragraph(f"<b>{formatter.formatar_moeda(grand_total_value)}</b>", self.styles["TableCellRight"]),
+            Paragraph(f"<b>{self.formatter.format_number(total_quantity)}</b>", self.styles["TableCellCenter"]),
+            Paragraph(f"<b>{self.formatter.format_currency(grand_total_value)}</b>", self.styles["TableCellRight"]),
             Paragraph("<b>100%</b>", self.styles["TableCellCenter"]),
-            Paragraph(f"<b>{formatter.formatar_moeda(total_avg_value)}</b>", self.styles["TableCellRight"]),
+            Paragraph(f"<b>{self.formatter.format_currency(total_avg_value)}</b>", self.styles["TableCellRight"]),
         ])
         
         # Column widths
@@ -471,15 +497,15 @@ class DashboardPDFService:
                 
                 notification_rows.append([
                     Paragraph(f"{config['icon']} {config['name']}", self.styles["TableCell"]),
-                    Paragraph(formatter.formatar_numero(quantity), self.styles["TableCellCenter"]),
-                    Paragraph(formatter.formatar_percentual(percentage/100), self.styles["TableCellCenter"]),
+                    Paragraph(self.formatter.format_number(quantity), self.styles["TableCellCenter"]),
+                    Paragraph(self.formatter.format_percentage(percentage/100), self.styles["TableCellCenter"]),
                     Paragraph(f"<font color='{rate_color}'>{success_rate}</font>", self.styles["TableCellCenter"]),
                 ])
             
             # Total row
             notification_rows.append([
                 Paragraph("<b>TOTAL</b>", self.styles["TableCellHighlight"]),
-                Paragraph(f"<b>{formatter.formatar_numero(total_notifications)}</b>", self.styles["TableCellCenter"]),
+                Paragraph(f"<b>{self.formatter.format_number(total_notifications)}</b>", self.styles["TableCellCenter"]),
                 Paragraph("<b>100%</b>", self.styles["TableCellCenter"]),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
             ])
@@ -572,7 +598,10 @@ class DashboardPDFService:
                 
                 paid_rows.append([
                     Paragraph(getattr(payment, 'patient', 'N/A'), self.styles["TableCell"]),
-                    Paragraph(formatter.formatar_moeda(numeric_value), self.styles["TableCellRight"]),
+                    Paragraph(
+                        self.formatter.format_currency(numeric_value),
+                        self.styles["TableCellRight"],
+                    ),
                     Paragraph(getattr(payment, 'date', 'N/A'), self.styles["TableCellCenter"]),
                     Paragraph(getattr(payment, 'method', 'N/A'), self.styles["TableCellCenter"]),
                     Paragraph(f"✅ {getattr(payment, 'status', 'Confirmado')}", self.styles["TableCellCenter"]),
@@ -582,7 +611,10 @@ class DashboardPDFService:
             # Total row
             paid_rows.append([
                 Paragraph("<b>TOTAL RECEBIDO</b>", self.styles["TableCellHighlight"]),
-                Paragraph(f"<b>{formatter.formatar_moeda(total_received)}</b>", self.styles["TableCellRight"]),
+                Paragraph(
+                    f"<b>{self.formatter.format_currency(total_received)}</b>",
+                    self.styles["TableCellRight"],
+                ),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
@@ -645,7 +677,10 @@ class DashboardPDFService:
                 
                 pending_rows.append([
                     Paragraph(getattr(payment, 'patient', 'N/A'), self.styles["TableCell"]),
-                    Paragraph(f"<font color='{value_color}'>{formatter.formatar_moeda(numeric_value)}</font>", self.styles["TableCellRight"]),
+                    Paragraph(
+                        f"<font color='{value_color}'>{self.formatter.format_currency(numeric_value)}</font>",
+                        self.styles["TableCellRight"],
+                    ),
                     Paragraph(getattr(payment, 'date', 'N/A'), self.styles["TableCellCenter"]),
                     Paragraph(days_overdue, self.styles["TableCellCenter"]),
                     Paragraph(f"{status_icon} {getattr(payment, 'status', 'N/A')}", self.styles["TableCellCenter"]),
@@ -655,7 +690,10 @@ class DashboardPDFService:
             # Total row
             pending_rows.append([
                 Paragraph("<b>TOTAL PENDENTE</b>", self.styles["TableCellHighlight"]),
-                Paragraph(f"<b>{formatter.formatar_moeda(total_pending)}</b>", self.styles["TableCellRight"]),
+                Paragraph(
+                    f"<b>{self.formatter.format_currency(total_pending)}</b>",
+                    self.styles["TableCellRight"],
+                ),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
                 Paragraph("<b>-</b>", self.styles["TableCellCenter"]),
@@ -683,9 +721,9 @@ class DashboardPDFService:
         
         # Automatic data analysis
         stats = dashboard.stats
-        collection_rate = getattr(stats, 'collectionRate', 0)
-        overdue_amount = getattr(stats, 'overduePayments', 0)
-        total_receivables = getattr(stats, 'totalReceivables', 0)
+        collection_rate = to_number(getattr(stats, 'collectionRate', 0))
+        overdue_amount = to_number(getattr(stats, 'overduePayments', 0))
+        total_receivables = to_number(getattr(stats, 'totalReceivables', 0))
         
         insights = []
         recommendations = []
@@ -835,7 +873,7 @@ class DashboardPDFService:
             max_value = max(max(forecasted_values), max(received_values))
             chart.valueAxis.valueMin = 0
             chart.valueAxis.valueMax = max_value * 1.15
-            chart.valueAxis.labelTextFormat = lambda v: formatter.formatar_moeda(v, formato_curto=True)
+            chart.valueAxis.labelTextFormat = lambda v: self.formatter.format_currency(v, short_format=True)
             chart.valueAxis.labels.fontName = 'Roboto-Regular'
             chart.valueAxis.strokeColor = COLORS.DARK_GRAY
             
@@ -882,13 +920,13 @@ class DashboardPDFService:
                 variation = ((received_values[-1] - received_values[-2]) / received_values[-2] * 100)
                 
                 if variation > 10:
-                    trend = f"📈 <font color='{COLORS.SUCCESS}'>Crescimento significativo</font> de {formatter.formatar_percentual(variation/100)} no último mês"
+                    trend = f"📈 <font color='{COLORS.SUCCESS}'>Crescimento significativo</font> de {self.formatter.format_percentage(variation/100)} no último mês"
                 elif variation > 0:
-                    trend = f"📊 <font color='{COLORS.INFO}'>Crescimento moderado</font> de {formatter.formatar_percentual(variation/100)} no último mês"
+                    trend = f"📊 <font color='{COLORS.INFO}'>Crescimento moderado</font> de {self.formatter.format_percentage(variation/100)} no último mês"
                 elif variation < -10:
-                    trend = f"📉 <font color='{COLORS.ERROR}'>Queda significativa</font> de {formatter.formatar_percentual(abs(variation)/100)} no último mês"
+                    trend = f"📉 <font color='{COLORS.ERROR}'>Queda significativa</font> de {self.formatter.format_percentage(abs(variation)/100)} no último mês"
                 else:
-                    trend = f"➡️ <font color='{COLORS.SECONDARY_TEXT}'>Estabilidade</font> nos recebimentos (variação de {formatter.formatar_percentual(abs(variation)/100)})"
+                    trend = f"➡️ <font color='{COLORS.SECONDARY_TEXT}'>Estabilidade</font> nos recebimentos (variação de {self.formatter.format_percentage(abs(variation)/100)})"
                 
                 elements.append(Paragraph(f"<b>Tendência:</b> {trend}", self.styles["BodyText"]))
             
@@ -904,7 +942,7 @@ class DashboardPDFService:
                 average_efficiency = sum(efficiencies) / len(efficiencies)
                 elements.append(
                     Paragraph(
-                        f"<b>Eficiência Média de Cobrança:</b> {formatter.formatar_percentual(average_efficiency/100)}",
+                        f"<b>Eficiência Média de Cobrança:</b> {self.formatter.format_percentage(average_efficiency/100)}",
                         self.styles["BodyText"]
                     )
                 )
@@ -915,7 +953,3 @@ class DashboardPDFService:
             print(f"Error in textual analysis: {e}")
         
         return elements
-
-
-# Global service instance
-report_service = DashboardPDFService()

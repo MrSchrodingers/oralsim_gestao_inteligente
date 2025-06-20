@@ -28,6 +28,8 @@ class BillingConfig(AppConfig):
         from oralsin_core.core.application.queries.dashboard_queries import (
             GetDashboardSummaryQuery,
         )
+        from oralsin_core.core.application.services.utils.fonts import register_roboto_family
+        register_roboto_family()
 
         core_container.query_bus().register(
             GetDashboardSummaryQuery,

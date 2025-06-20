@@ -309,7 +309,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         )
         dashboard_pdf_service = providers.Singleton(
             DashboardPDFService,
-            formatter=formatter_service,
             logo_path=logo_path,
         )
         sync_inadimplencia_handler = providers.Factory(
