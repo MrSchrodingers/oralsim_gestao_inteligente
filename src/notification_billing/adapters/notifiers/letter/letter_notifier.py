@@ -33,7 +33,6 @@ class LetterNotifier(BaseNotifier):
         encoded_file = base64.b64encode(letter_bytes).decode()
         
         # --- CORREÇÃO ---
-        # Atualizamos as chaves para corresponder ao novo formato do dicionário `context`.
         patient_name = context.get("patient_name", "paciente")
         contract_id = context.get("contract_oralsin_id", "s/n")
         # ----------------

@@ -34,7 +34,7 @@ from notification_billing.core.application.commands.notification_commands import
     RunAutomatedNotificationsCommand,
     SendManualNotificationCommand,
 )
-from notification_billing.core.application.cqrs import CommandHandler, PagedResult
+from notification_billing.core.application.cqrs import CommandBus, CommandHandler, PagedResult
 from notification_billing.core.application.dtos.whatsapp_notification_dto import (
     WhatsappNotificationDTO,
 )
@@ -42,6 +42,7 @@ from notification_billing.core.application.queries.notification_queries import (
     ListPendingSchedulesQuery,
 )
 from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
+from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 from notification_billing.core.domain.events.events import NotificationSentEvent
 from notification_billing.core.domain.repositories import (
     ContactHistoryRepository,
@@ -219,6 +220,7 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         context_builder: LetterContextBuilder,
         dispatcher: EventDispatcher,
         query_bus: Any,
+        command_bus: CommandBus,
     ):
         self.schedule_repo = schedule_repo
         self.history_repo = history_repo
@@ -229,6 +231,7 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         self.dispatcher = dispatcher
         self.context_builder = context_builder
         self.query_bus = query_bus
+        self.command_bus = command_bus
 
     # ------------------------------------------------------------------ #
     @publish(exchange="notifications", routing_key="automated")
@@ -252,22 +255,17 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
 
             for sched in schedules.items:
                 # ------------------------------------------------------------------
-                inst_page = self.notification_service.installment_repo.list_overdue(
-                    contract_id=sched.contract_id,
-                    min_days_overdue=0,
-                    offset=0,
-                    limit=1,
-                )
-                if not inst_page.items:
+                sched: ContactScheduleEntity
+                if not sched.installment_id:
                     continue
-                inst = inst_page.items[0]
-                if inst.received:
+
+                inst = self.notification_service.installment_repo.find_by_id(sched.installment_id)
+
+                if not inst or inst.received:
                     continue
-                
-                # busca o contrato para checar a flag do_notification
+
                 contract = self.contract_repo.find_by_id(sched.contract_id)
                 if not contract or not contract.do_notifications:
-                    # pula todo o fluxo de notificação
                     continue
                 
                 patient = self.notification_service.patient_repo.find_by_id(
@@ -297,53 +295,6 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
                                 "channel": channel,
                                 "success": True,
                                 "pending_call": True,
-                            }
-                        )
-                        continue
-                    elif channel == "letter":
-                        try:
-                            context = self.context_builder.build(
-                                patient_id  = sched.patient_id,
-                                contract_id = sched.contract_id,
-                                clinic_id   = sched.clinic_id,
-                                current_installment = True,
-                            )
-                            notifier = get_notifier("letter")
-                            notifier.send(context)
-                            send_ok = True
-                        except Exception as err:
-                            send_ok = False
-                            err_msg = str(err)
-
-                        # A lógica de registrar histórico e avançar o fluxo é a mesma
-                        hist = self.history_repo.save_from_schedule(
-                            schedule=sched,
-                            sent_at=now,
-                            success=send_ok,
-                            channel=channel,
-                            feedback=None,
-                            observation="Carta gerada e enviada por e-mail" if send_ok else f"error: {err_msg}",
-                            message=None, # Não há um Message template para a carta
-                        )
-                        NOTIFICATIONS_SENT.labels("automated", channel, str(send_ok)).inc()
-
-                        if send_ok:
-                            self.dispatcher.dispatch(
-                                NotificationSentEvent(
-                                    schedule_id=sched.id,
-                                    message_id=None, # Sem message_id para cartas
-                                    sent_at=hist.sent_at,
-                                    channel=channel,
-                                )
-                            )
-                        results.append(
-                            {
-                                "patient_id": str(sched.patient_id),
-                                "contract_id": str(sched.contract_id),
-                                "step": sched.current_step,
-                                "channel": channel,
-                                "success": send_ok,
-                                "pending_call": False
                             }
                         )
                         continue
@@ -397,12 +348,13 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
                 # Avança step se **qualquer** canal “automático” foi bem-sucedido
                 if any(
                     r["success"]
-                    and r["channel"] != "phonecall"
+                    and r.get("pending_call") is not True 
                     and r["patient_id"] == str(sched.patient_id)
                     and r["step"] == sched.current_step
                     for r in results
                 ):
-                    self.dispatcher.dispatch(AdvanceContactStepCommand(schedule_id=sched.id))
+                    self.command_bus.dispatch(AdvanceContactStepCommand(schedule_id=str(sched.id)))
+        
 
             return {
                 "clinic_id": cmd.clinic_id,

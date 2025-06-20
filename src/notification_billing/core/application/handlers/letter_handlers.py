@@ -1,10 +1,19 @@
+import base64
 import io
 
+import structlog
+from django.utils import timezone
+from oralsin_core.core.domain.repositories.clinic_repository import ClinicRepository
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 
+from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
+from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
+from notification_billing.core.application.commands.contact_commands import AdvanceContactStepCommand
+from notification_billing.core.application.commands.letter_commands import SendPendingLettersCommand
+
 # Imports de notification_billing
-from notification_billing.core.application.cqrs import PagedResult, QueryHandler
+from notification_billing.core.application.cqrs import CommandBus, CommandHandler, PagedResult, QueryHandler
 from notification_billing.core.application.dtos.letter_dto import LetterListItemDTO
 from notification_billing.core.application.queries.letter_queries import GetLetterPreviewQuery, ListLettersQuery
 from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
@@ -16,6 +25,9 @@ from notification_billing.core.domain.repositories.contact_schedule_repository i
 from notification_billing.core.domain.repositories.flow_step_config_repository import FlowStepConfigRepository
 from plugins.django_interface.models import ContactSchedule
 
+BATCH_LETTER_RECIPIENT = "mrschrodingers@gmail.com" 
+
+logger = structlog.get_logger(__name__)
 
 class ListLettersHandler(QueryHandler[ListLettersQuery, PagedResult[LetterListItemDTO]]):
     """Handler para listar cartas enviadas e agendadas de forma precisa e paginada."""
@@ -121,3 +133,94 @@ class GetLetterPreviewHandler(QueryHandler[GetLetterPreviewQuery, io.BytesIO]):
             installment_id = getattr(item, "installment_id", None),
         )
         return self.letter_service.generate_letter(context)
+    
+    
+class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
+    def __init__(  # noqa: PLR0913
+        self,
+        schedule_repo: ContactScheduleRepository,
+        history_repo: ContactHistoryRepository,
+        clinic_repo: ClinicRepository,
+        context_builder: LetterContextBuilder,
+        letter_notifier: LetterNotifier,
+        command_bus: CommandBus,
+    ):
+        self.schedule_repo = schedule_repo
+        self.history_repo = history_repo
+        self.clinic_repo = clinic_repo
+        self.context_builder = context_builder
+        self.letter_notifier = letter_notifier
+        self.email_sender: SendGridEmail = letter_notifier.email_notifier
+        self.command_bus = command_bus
+
+    def handle(self, command: SendPendingLettersCommand) -> None:
+        logger.info("letter_batch.started", clinic_id=command.clinic_id)
+
+        pending_schedules = self.schedule_repo.find_pending_by_channel(
+            clinic_id=command.clinic_id, channel="letter"
+        )
+
+        if not pending_schedules:
+            logger.info("letter_batch.no_pending_letters", clinic_id=command.clinic_id)
+            return
+
+        all_attachments = []
+        processed_schedules = []
+
+        for schedule in pending_schedules:
+            try:
+                context = self.context_builder.build(
+                    patient_id=str(schedule.patient_id),
+                    contract_id=str(schedule.contract_id),
+                    clinic_id=str(schedule.clinic_id),
+                )
+                
+                letter_stream = self.letter_notifier.letter_service.generate_letter(context)
+                encoded_file = base64.b64encode(letter_stream.read()).decode()
+                
+                patient_name = context.get("patient_name", "paciente").replace(" ", "_")
+                contract_id = context.get("contract_oralsin_id", "SN")
+                
+                clinic_name = self.clinic_repo.find_by_id(command.clinic_id).name
+
+                all_attachments.append({
+                    "content": encoded_file,
+                    "filename": f"Carta_{patient_name}_{contract_id}.docx",
+                    "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "disposition": "attachment"
+                })
+                processed_schedules.append(schedule)
+            except Exception as e:
+                logger.error("letter_batch.generation.failed", schedule_id=schedule.id, error=str(e))
+
+        if not all_attachments:
+            logger.warn("letter_batch.no_attachments_generated", clinic_id=command.clinic_id)
+            return
+
+        try:
+            subject = f"Lote de Cartas para Impressão - Clínica {clinic_name} (Oralsin-DEBT)"
+            html_content = f"<p>Segue em anexo um lote de {len(all_attachments)} cartas para impressão.</p>"
+            
+            self.email_sender.send(
+                recipients=[BATCH_LETTER_RECIPIENT],
+                subject=subject,
+                html=html_content,
+                attachments=all_attachments
+            )
+            logger.info("letter_batch.email.sent", count=len(all_attachments), recipient=BATCH_LETTER_RECIPIENT)
+
+            now = timezone.now()
+            for schedule in processed_schedules:
+                self.history_repo.save_from_schedule(
+                    schedule=schedule,
+                    success=True,
+                    channel="letter",
+                    sent_at=now,
+                    feedback=None,
+                    observation=f"Enviado em lote para {BATCH_LETTER_RECIPIENT}",
+                    message=None
+                )
+                self.command_bus.dispatch(AdvanceContactStepCommand(schedule_id=str(schedule.id)))
+                
+        except Exception as e:
+            logger.error("letter_batch.email.failed", error=str(e))

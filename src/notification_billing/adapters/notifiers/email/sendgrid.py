@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 import structlog
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
@@ -32,31 +33,44 @@ class SendGridEmail(BaseNotifier):
         html: str,
         attachments: list[dict] | None = None,
     ) -> None:
-        if not recipients:
-            return
+        
+        try: 
+            if not recipients:
+                return
 
-        payload = {
-            "from": {"email": self._from_email},
-            "subject": subject,
-            "content": [{"type": "text/html", "value": html}],
-            "personalizations": [{"to": [{"email": r} for r in recipients]}],
-        }
-        if attachments:
-            payload["attachments"] = attachments
+            payload = {
+                "from": {"email": self._from_email},
+                "subject": subject,
+                "content": [{"type": "text/html", "value": html}],
+                "personalizations": [{"to": [{"email": r} for r in recipients]}],
+            }
+            if attachments:
+                payload["attachments"] = attachments
 
-        self._request(
-            "POST",
-            self._endpoint,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-        logger.info(
-            "email.sent",
-            provider=self.provider,
-            from_=self._from_email,
-            recipients=len(recipients),
-            subject=subject,
-        )
+            self._request(
+                "POST",
+                self._endpoint,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            logger.info(
+                "email.sent",
+                provider=self.provider,
+                from_=self._from_email,
+                recipients=len(recipients),
+                subject=subject,
+            )
+        except httpx.HTTPStatusError as exc:
+            try:
+                detail = exc.response.json()
+            except Exception:
+                detail = exc.response.text
+            logger.error(
+                "sendgrid.error",
+                status=exc.response.status_code,
+                detail=detail,
+            )
+            raise

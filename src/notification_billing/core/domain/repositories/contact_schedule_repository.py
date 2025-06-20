@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any
+from uuid import UUID
 
 from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 
@@ -20,7 +21,17 @@ class ContactScheduleRepository(ABC):
     def get_by_patient_contract(self, patient_id: str, contract_id: str) -> ContactScheduleEntity | None:
         """Recupera um agendamento pelo ID do paciente e do contrato."""
         ...
-        
+
+    @abstractmethod
+    def find_pending_by_channel(self, clinic_id: str, channel: str) -> list[ContactScheduleEntity]:
+        """Busca agendamentos pendentes para uma clínica e canal específicos."""
+        ...
+
+    @abstractmethod
+    def bulk_update_status(self, schedule_ids: list[UUID], new_status: str) -> None:
+        """Atualiza o status de múltiplos agendamentos em lote."""
+        ...
+    
     @abstractmethod
     def find_by_id(self, schedule_id: str) -> ContactScheduleEntity | None:
         """Recupera um agendamento pelo seu ID."""

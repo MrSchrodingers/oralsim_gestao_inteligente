@@ -22,10 +22,12 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.adapters.repositories.contract_repo_impl import ContractRepoImpl
     from oralsin_core.adapters.repositories.installment_repo_impl import InstallmentRepoImpl
     from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
+
+    # Queries
     from oralsin_core.core.application.handlers.query_messages_handler import GetMessageHandler, ListMessagesHandler
     from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 
-    # Mensageria e notificadores    
+    # Mensageria e notificadores
     from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ
     from notification_billing.adapters.notifiers.registry import get_notifier
 
@@ -47,6 +49,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         DeleteContactScheduleCommand,
         UpdateContactScheduleCommand,
     )
+    from notification_billing.core.application.commands.letter_commands import SendPendingLettersCommand
     from notification_billing.core.application.commands.message_commands import (
         CreateMessageCommand,
         DeleteMessageCommand,
@@ -78,26 +81,32 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         UpdateMessageHandler,
     )
     from notification_billing.core.application.handlers.flow_step_config_handlers import GetFlowStepConfigHandler, ListFlowStepConfigHandler
-    from notification_billing.core.application.handlers.letter_handlers import GetLetterPreviewHandler, ListLettersHandler
+    from notification_billing.core.application.handlers.letter_handlers import (
+        GetLetterPreviewHandler,
+        ListLettersHandler,
+        SendPendingLettersHandler,
+    )
     from notification_billing.core.application.handlers.list_pending_schedules_handler import ListPendingSchedulesHandler
     from notification_billing.core.application.handlers.notification_handlers import (
         NotificationSenderService,
         RunAutomatedNotificationsHandler,
         SendManualNotificationHandler,
     )
-    from notification_billing.core.application.handlers.pending_call_handlers import GetPendingCallHandler, ListPendingCallsHandler, SetPendingCallDoneHandler
+    from notification_billing.core.application.handlers.pending_call_handlers import (
+        GetPendingCallHandler,
+        ListPendingCallsHandler,
+        SetPendingCallDoneHandler,
+    )
     from notification_billing.core.application.handlers.sync_handlers import BulkScheduleContactsHandler
     from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
     from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
     from notification_billing.core.application.queries.letter_queries import GetLetterPreviewQuery, ListLettersQuery
     from notification_billing.core.application.queries.message_queries import GetMessageQuery, ListMessagesQuery
-
-    # Queries
     from notification_billing.core.application.queries.notification_queries import ListPendingSchedulesQuery
     from notification_billing.core.application.queries.pending_call_queries import GetPendingCallQuery, ListPendingCallsQuery
-    from notification_billing.core.application.services.contact_service import ContactSchedulingService
 
     # Serviços de aplicação
+    from notification_billing.core.application.services.contact_service import ContactSchedulingService
     from notification_billing.core.application.services.formatter_service import FormatterService
     from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
     from notification_billing.core.application.services.letter_service import CordialLetterService
@@ -111,58 +120,57 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         config = providers.Configuration()
 
         # Infra & integração
-        logger           = providers.Singleton(structlog.get_logger)
+        logger = providers.Singleton(structlog.get_logger)
         event_dispatcher = providers.Singleton(EventDispatcher)
 
         # CQRS
         command_bus = providers.Singleton(CommandBusImpl, dispatcher=event_dispatcher)
-        query_bus   = providers.Singleton(QueryBusImpl)
+        query_bus = providers.Singleton(QueryBusImpl)
 
         # Redis, RabbitMQ, Notifier Registry
-        rabbit            = providers.Singleton(RabbitMQ, url=config.rabbitmq_url)
-        redis_client      = providers.Singleton(
-                                redis.Redis,
-                                host=config.redis.host,
-                                port=config.redis.port,
-                                db=config.redis.db,
-                                password=config.redis.password,
-                            )
-        notifier_registry = providers.Object(get_notifier)
+        rabbit = providers.Singleton(RabbitMQ, url=config.rabbitmq_url)
+        redis_client = providers.Singleton(
+            redis.Redis,
+            host=config.redis.host,
+            port=config.redis.port,
+            db=config.redis.db,
+            password=config.redis.password,
+        )
+        letter_notifier = providers.Singleton(get_notifier, channel="letter")
 
         # Implementações de Repositórios (Ports → Adapters)
         billing_settings_repo = providers.Singleton(BillingSettingsRepoImpl)
-        address_repo        = providers.Singleton(AddressRepoImpl)
-        oralsin_mapper      = providers.Singleton(OralsinPayloadMapper)
-        flow_step_config_repo   = providers.Singleton(FlowStepConfigRepoImpl)
-        message_repo            = providers.Singleton(MessageRepoImpl)
-        contact_history_repo    = providers.Singleton(ContactHistoryRepoImpl)
-        contract_repo           = providers.Singleton(ContractRepoImpl)
-        installment_repo        = providers.Singleton(
+        address_repo = providers.Singleton(AddressRepoImpl)
+        oralsin_mapper = providers.Singleton(OralsinPayloadMapper)
+        flow_step_config_repo = providers.Singleton(FlowStepConfigRepoImpl)
+        message_repo = providers.Singleton(MessageRepoImpl)
+        contact_history_repo = providers.Singleton(ContactHistoryRepoImpl)
+        contract_repo = providers.Singleton(ContractRepoImpl)
+        installment_repo = providers.Singleton(
             InstallmentRepoImpl,
             mapper=oralsin_mapper,
         )
-        contact_schedule_repo   = providers.Singleton(
+        contact_schedule_repo = providers.Singleton(
             ContactScheduleRepoImpl,
             installment_repo=installment_repo,
             billing_settings_repo=billing_settings_repo,
         )
-        patient_repo            = providers.Singleton(
+        patient_repo = providers.Singleton(
             PatientRepoImpl,
             address_repo=address_repo
         )
-        pending_call_repo   = providers.Singleton(PendingCallRepoImpl)
+        pending_call_repo = providers.Singleton(PendingCallRepoImpl)
         clinic_repo = providers.Singleton(ClinicRepoImpl)
         clinic_data_repo = providers.Singleton(ClinicDataRepoImpl, address_repo=address_repo)
         
         # Serviços de negócio
-        formatter_service        = providers.Singleton(FormatterService, currency_symbol="R$")
+        formatter_service = providers.Singleton(FormatterService, currency_symbol="R$")
         notification_sender_service = providers.Singleton(
-                                          NotificationSenderService,
-                                          message_repo=message_repo,
-                                          patient_repo=patient_repo,
-                                          installment_repo=installment_repo,
-                                      )
-
+            NotificationSenderService,
+            message_repo=message_repo,
+            patient_repo=patient_repo,
+            installment_repo=installment_repo,
+        )
         contact_scheduling_service = providers.Singleton(
             ContactSchedulingService,
             schedule_repo=contact_schedule_repo,
@@ -170,69 +178,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             flow_cfg_repo=flow_step_config_repo,
             dispatcher=event_dispatcher,
         )
-        # Facade exposto aos controllers/CLI
-        notification_facade_service = providers.Singleton(
-                                          NotificationFacadeService,
-                                          command_bus=command_bus,
-                                          query_bus=query_bus,
-                                      )
-        notification_service = notification_facade_service
-        letter_service = providers.Factory(
-            CordialLetterService,
-            template_path="ModeloCartaAmigavel.docx"
-        )
-        
-        # Handlers CRUD
-        list_pending_schedules_handler = providers.Factory(
-            ListPendingSchedulesHandler,
-            schedule_repo=contact_schedule_repo,
-        )
-        create_message_handler = providers.Factory(
-            CreateMessageHandler,
-            repo=message_repo,
-        )
-        update_message_handler = providers.Factory(
-            UpdateMessageHandler,
-            repo=message_repo,
-        )
-        delete_message_handler = providers.Factory(
-            DeleteMessageHandler,
-            repo=message_repo,
-        )
-        create_contact_schedule_handler = providers.Factory(
-            CreateContactScheduleHandler,
-            repo=contact_schedule_repo,
-        )
-        update_contact_schedule_handler = providers.Factory(
-            UpdateContactScheduleHandler,
-            repo=contact_schedule_repo,
-        )
-        delete_contact_schedule_handler = providers.Factory(
-            DeleteContactScheduleHandler,
-            repo=contact_schedule_repo,
-        )
-        
-        get_flow_step_config_handler = providers.Factory( 
-            GetFlowStepConfigHandler
-        )
-        list_flow_step_config_handler = providers.Factory( 
-            ListFlowStepConfigHandler
-        )
-        
-        list_due_contacts_handler = providers.Factory( 
-            ListPendingSchedulesHandler,
-            schedule_repo=contact_schedule_repo
-        )
-        
-        list_message_handler = providers.Factory(
-            ListMessagesHandler
-        )
-        get_message_handler = providers.Factory(
-            GetMessageHandler
-        )
-        
-        
-        # Handlers de fluxo de contato/notificação
         context_builder = providers.Singleton(
             LetterContextBuilder,
             patient_repo=patient_repo,
@@ -242,7 +187,51 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             clinic_data_repo=clinic_data_repo,
             address_repo=address_repo,
         )
-
+        letter_service = providers.Factory(
+            CordialLetterService,
+            template_path="ModeloCartaAmigavel.docx"
+        )
+        
+        # Facade exposto aos controllers/CLI
+        notification_facade_service = providers.Singleton(
+            NotificationFacadeService,
+            command_bus=command_bus,
+            query_bus=query_bus,
+        )
+        notification_service = notification_facade_service
+        
+        # Handlers CRUD
+        list_pending_schedules_handler = providers.Factory(ListPendingSchedulesHandler, schedule_repo=contact_schedule_repo)
+        create_message_handler = providers.Factory(CreateMessageHandler, repo=message_repo)
+        update_message_handler = providers.Factory(UpdateMessageHandler, repo=message_repo)
+        delete_message_handler = providers.Factory(DeleteMessageHandler, repo=message_repo)
+        create_contact_schedule_handler = providers.Factory(CreateContactScheduleHandler, repo=contact_schedule_repo)
+        update_contact_schedule_handler = providers.Factory(UpdateContactScheduleHandler, repo=contact_schedule_repo)
+        delete_contact_schedule_handler = providers.Factory(DeleteContactScheduleHandler, repo=contact_schedule_repo)
+        
+        # Handlers de Queries
+        get_flow_step_config_handler = providers.Factory(GetFlowStepConfigHandler)
+        list_flow_step_config_handler = providers.Factory(ListFlowStepConfigHandler)
+        list_due_contacts_handler = providers.Factory(ListPendingSchedulesHandler, schedule_repo=contact_schedule_repo)
+        list_message_handler = providers.Factory(ListMessagesHandler)
+        get_message_handler = providers.Factory(GetMessageHandler)
+        list_letters_handler = providers.Factory(
+            ListLettersHandler,
+            history_repo=contact_history_repo,
+            schedule_repo=contact_schedule_repo,
+            patient_repo=patient_repo,
+            contract_repo=contract_repo,
+            config_repo=flow_step_config_repo,
+        )
+        get_letter_preview_handler = providers.Factory(
+            GetLetterPreviewHandler,
+            history_repo=contact_history_repo,
+            schedule_repo=contact_schedule_repo,
+            context_builder=context_builder,
+            letter_service=letter_service,
+        )
+        
+        # Handlers de fluxo de contato/notificação
         advance_contact_step_handler = providers.Factory(
             AdvanceContactStepHandler,
             schedule_repo=contact_schedule_repo,
@@ -254,8 +243,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             history_repo=contact_history_repo,
             dispatcher=event_dispatcher,
         )
-
-        # Handlers de notificação
         send_manual_notification_handler = providers.Factory(
             SendManualNotificationHandler,
             schedule_repo=contact_schedule_repo,
@@ -276,31 +263,21 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             contract_repo=contract_repo,
             dispatcher=event_dispatcher,
             query_bus=query_bus,
-        )
-        list_letters_handler = providers.Factory(
-            ListLettersHandler,
-            history_repo=contact_history_repo,
-            schedule_repo=contact_schedule_repo,
-            patient_repo=patient_repo,
-            contract_repo=contract_repo,
-            config_repo=flow_step_config_repo,
-        )
-
-        # Handler de preview de carta
-        get_letter_preview_handler = providers.Factory(
-            GetLetterPreviewHandler,
-            history_repo=contact_history_repo,
-            schedule_repo=contact_schedule_repo,
-            context_builder=context_builder,
-            letter_service=letter_service,
-        )
-        # Handlers de sync (inadimplência)
-        advance_contact_step_handler = providers.Factory(
-            AdvanceContactStepHandler,
-            schedule_repo=contact_schedule_repo,
-            dispatcher=event_dispatcher,
+            command_bus=command_bus,
         )
         
+        # Handler do novo fluxo de cartas em lote
+        send_pending_letters_handler = providers.Factory(
+            SendPendingLettersHandler,
+            schedule_repo=contact_schedule_repo,
+            history_repo=contact_history_repo,
+            context_builder=context_builder,
+            letter_notifier=letter_notifier,
+            clinic_repo=clinic_repo,
+            command_bus=command_bus,
+        )
+
+        # Handlers de sync e chamadas pendentes
         bulk_schedule_contacts_handler = providers.Factory(
             BulkScheduleContactsHandler,
             contract_repo=contract_repo,
@@ -309,27 +286,23 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             config_repo=flow_step_config_repo,
             pending_call_repo=pending_call_repo,
             dispatcher=event_dispatcher,
-            logger=logger(),  
+            logger=logger,
         )
-        list_pending_calls_handler = providers.Factory(
-            ListPendingCallsHandler, repo=pending_call_repo
-        )
-        get_pending_call_handler = providers.Factory(
-            GetPendingCallHandler, repo=pending_call_repo
-        )
+        list_pending_calls_handler = providers.Factory(ListPendingCallsHandler, repo=pending_call_repo)
+        get_pending_call_handler = providers.Factory(GetPendingCallHandler, repo=pending_call_repo)
         set_pending_call_done_handler = providers.Factory(
             SetPendingCallDoneHandler, 
             repo=pending_call_repo, 
             history_repo=contact_history_repo,
             schedule_repo=contact_schedule_repo,
-            logger=logger(),
+            logger=logger,
             dispatcher=event_dispatcher
         )
 
         def init(self):
             # Registrar comandos no CommandBus
             bus = self.command_bus()
-
+            
             # ContactSchedule CRUD
             bus.register(CreateContactScheduleCommand, self.create_contact_schedule_handler())
             bus.register(UpdateContactScheduleCommand, self.update_contact_schedule_handler())
@@ -346,28 +319,17 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             bus.register(SendManualNotificationCommand, self.send_manual_notification_handler())
             bus.register(RunAutomatedNotificationsCommand, self.run_automated_notifications_handler())
             bus.register(BulkScheduleContactsCommand, self.bulk_schedule_contacts_handler())
-
-            bus.register(
-                SetPendingCallDoneCommand, self.set_pending_call_done_handler()
-            )
-                        
+            bus.register(SetPendingCallDoneCommand, self.set_pending_call_done_handler())
+            bus.register(SendPendingLettersCommand, self.send_pending_letters_handler())
+            
             # Registrar queries no QueryBus
             qb = self.query_bus()
             qb.register(ListPendingSchedulesQuery, self.list_pending_schedules_handler())
-
-            
-            qb.register(
-                ListPendingCallsQuery, self.list_pending_calls_handler()
-            )
-            qb.register(
-                GetPendingCallQuery, self.get_pending_call_handler()
-            )
-            
+            qb.register(ListPendingCallsQuery, self.list_pending_calls_handler())
+            qb.register(GetPendingCallQuery, self.get_pending_call_handler())
             qb.register(ListFlowStepConfigsQuery, self.list_flow_step_config_handler()) 
             qb.register(GetFlowStepConfigQuery, self.get_flow_step_config_handler())
-            
             qb.register(ListDueContactsQuery, self.list_due_contacts_handler()) 
-            
             qb.register(ListMessagesQuery, self.list_message_handler())
             qb.register(GetMessageQuery, self.get_message_handler())
             qb.register(ListLettersQuery, self.list_letters_handler())

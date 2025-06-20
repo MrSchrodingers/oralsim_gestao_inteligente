@@ -1,5 +1,6 @@
 from datetime import datetime, time, timedelta
 from typing import Any
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Count
@@ -276,7 +277,21 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
 
     def delete(self, schedule_id: str) -> None:
         ContactScheduleModel.objects.filter(id=schedule_id).delete()
+    
+    def find_pending_by_channel(self, clinic_id: str, channel: str) -> list[ContactScheduleEntity]:
+        now = timezone.now()
+        schedules = ContactScheduleModel.objects.filter(
+            clinic_id=clinic_id,
+            channel=channel,
+            status=ContactScheduleModel.Status.PENDING,
+            scheduled_date__lte=now
+        ).order_by('scheduled_date')
         
+        return [ContactScheduleEntity.from_model(s) for s in schedules]
+
+    def bulk_update_status(self, schedule_ids: list[UUID], new_status: str) -> None:
+        ContactScheduleModel.objects.filter(id__in=schedule_ids).update(status=new_status)
+
     def list(
         self, filtros: dict[str, Any] | None, page: int, page_size: int
     ) -> PagedResult[ContactScheduleModel]:
