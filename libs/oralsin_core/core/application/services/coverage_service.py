@@ -17,10 +17,10 @@ class CoverageService:
         self.queries = query_bus
 
     # ------------------------- API pública ------------------------- #
-    def register_clinic(self, clinic_name: str) -> None:
+    def register_clinic(self, clinic_name: str, owner_name:str) -> None:
         """Registra/atualiza cobertura para a clínica cujo Nome == `clinic_name`."""
         self.commands.dispatch(
-            RegisterCoverageClinicCommand(clinic_name=clinic_name)
+            RegisterCoverageClinicCommand(clinic_name=clinic_name, owner_name=owner_name)
         )
 
     def link_user(self, user_id: str, clinic_id: str) -> None:

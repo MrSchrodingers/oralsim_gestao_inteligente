@@ -6,7 +6,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Any
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.text import slugify
 from oralsin_core.adapters.config.composition_root import setup_di_container_from_settings
@@ -28,8 +28,14 @@ class Command(BaseCommand):
         parser.add_argument(
             "--clinic-name",
             type=str,
-            required=True,
+            required=False,
             help='Nome exato da clínica na Oralsin (ex.: "Bauru")',
+        )
+        parser.add_argument(
+            "--owner-name",
+            type=str,
+            required=False,
+            help='Nome do responsável',
         )
         parser.add_argument(
             "--admin-email",
@@ -64,49 +70,73 @@ class Command(BaseCommand):
             action="store_true",
             help="Não agenda ContactSchedule durante o sync (apenas persiste core).",
         )
+        parser.add_argument(
+           "--skip-clinic-user",
+           action="store_true",
+           help="Não cria o usuário da clínica (com e-mail gerado automaticamente)",
+        )
 
-    def handle(self, *args: Any, **options: Any) -> None:
-        # inicializa o container DI do core
+    def handle(self, *args: Any, **options: Any) -> None:  # noqa: PLR0915
         container = setup_di_container_from_settings(None)
         cmd_bus = container.command_bus()
 
-        clinic_name: str = options["clinic_name"]
+        clinic_name: str | None = options["clinic_name"]
+        owner_name: str | None = options["owner_name"]
         admin_email: str = options["admin_email"]
         admin_pass: str = options["admin_pass"]
-        min_days_billing = options["min_days_billing"]
         skip_admin: bool = options["skip_admin"]
+
+        # Se o nome da clínica não for fornecido, entramos no modo "apenas admin".
+        if not clinic_name:
+            if skip_admin:
+                self.stdout.write(self.style.WARNING("Nenhuma ação executada. Especifique --clinic-name ou não use --skip-admin."))
+                return
+
+            self.stdout.write(self.style.NOTICE(f"🚀 Criando apenas o usuário super_admin: {admin_email}"))
+            admin_id = self._create_or_get_admin(container, admin_email, admin_pass)
+            self.stdout.write(self.style.SUCCESS(f"🎉 Usuário super_admin criado com sucesso. ID: {admin_id}"))
+            return # Finaliza o comando aqui
+
+        # Se chegamos aqui, significa que clinic_name foi fornecido, então o owner_name também é obrigatório.
+        if not owner_name:
+            raise CommandError("O argumento --owner-name é obrigatório quando --clinic-name é fornecido.")
+
+        # O resto do comando continua como antes, para o fluxo completo de seed.
+        self.stdout.write(self.style.NOTICE("🚀 Seed dinâmico completo iniciado…"))
+        
+        min_days_billing = options["min_days_billing"]
         skip_sync: bool = options["skip_full_sync"]
         no_schedules: bool = options["no_schedules"]
-
-        self.stdout.write(self.style.NOTICE("🚀 Seed dinâmico iniciado…"))
-
-        # 1️⃣ Bloco transacional: cobertura + (opcional) super-admin + clinic-user + billing_config
+        skip_clinic_user: bool = options["skip_clinic_user"]
+        
+        # Bloco transacional para o seed completo
         with transaction.atomic():
-           covered_id, oralsin_id = self._register_coverage(container, clinic_name)
-           self.stdout.write(
-               self.style.SUCCESS(
-                   f"🏥 CoveredClinic={covered_id}  OralsinID={oralsin_id}"
-               )
-           )
-           cmd_bus.dispatch(
+            covered_id, oralsin_id = self._register_coverage(container, clinic_name, owner_name)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"🏥 CoveredClinic={covered_id}  OralsinID={oralsin_id}"
+                )
+            )
+            cmd_bus.dispatch(
                 UpdateBillingSettingsCommand(
                     clinic_id=str(covered_id),
                     min_days_overdue=min_days_billing,
                 )
             )
-           self.stdout.write(
+            self.stdout.write(
                 self.style.SUCCESS(
                     f"⚙️ BillingSettings.min_days_overdue={min_days_billing} para clinic {covered_id}"
                 )
-           )
-           if not skip_admin:
-               admin_id = self._create_or_get_admin(container, admin_email, admin_pass)
-               self.stdout.write(self.style.SUCCESS(f"👤 super_admin={admin_id}"))
-           clinic_user_id = self._create_or_get_clinic_user(
-               container, clinic_name, covered_id
-           )
-           self.stdout.write(self.style.SUCCESS(f"👤 clinic_user={clinic_user_id}"))
+            )
+            if not skip_admin:
+                admin_id = self._create_or_get_admin(container, admin_email, admin_pass)
+                self.stdout.write(self.style.SUCCESS(f"👤 super_admin={admin_id}"))
 
+            if not skip_clinic_user:
+                clinic_user_id = self._create_or_get_clinic_user(
+                    container, clinic_name, covered_id
+                )
+                self.stdout.write(self.style.SUCCESS(f"👤 clinic_user={clinic_user_id}"))
 
         # 2️⃣ Sincronização de inadimplência
         today = date.today()
@@ -223,11 +253,12 @@ class Command(BaseCommand):
         self,
         container,
         clinic_name: str,
+        owner_name:str
     ) -> tuple[uuid.UUID, int]:
         from plugins.django_interface.models import Clinic as ClinicModel
 
         # 1) cria o CoveredClinic no core e pega o oralsin_id
-        cmd = RegisterCoverageClinicCommand(clinic_name=clinic_name)
+        cmd = RegisterCoverageClinicCommand(clinic_name=clinic_name, owner_name=owner_name)
         covered = container.command_bus().dispatch(cmd)
 
         # 2) garante um registro na tabela de Clinics do Django

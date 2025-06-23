@@ -185,12 +185,30 @@ class CreateUserHandler(CommandHandler[CreateUserCommand]):
 
     def handle(self, command: CreateUserCommand) -> UserEntity:
         data = command.payload.dict()
-        data['id'] = uuid.uuid4()
-        data['password_hash'] = self.hash_service.hash_password(data.pop('password'))
+        email = data.get("email")
+
+        if self.repo.find_by_email(email):
+            raise ValueError(f"User with email '{email}' already exists.")
+
+        if command.payload.password_hash:
+            password_hash = command.payload.password_hash
+        elif command.payload.password:
+            password_hash = self.hash_service.hash_password(command.payload.password)
+        else:
+            raise ValueError("Either 'password' or 'password_hash' must be provided.")
+        
+        data.pop("password", None)
+        data.pop("password_hash", None)
         clinic_id = data.pop("clinic_id", None)
         
-        entity = UserEntity.from_dict(data)
-        user = self.repo.save(entity)
+        user_entity = UserEntity(
+            id=uuid.uuid4(),
+            **data,
+            password_hash=password_hash,
+            is_active=True,
+        )
+        
+        user = self.repo.save(user_entity)
 
         if user.role == "clinic" and clinic_id:
             self.user_clinic_repo.save(

@@ -48,7 +48,7 @@ class JWTAuthentication(BaseAuthentication):
         user_repo = UserRepoImpl()
         domain_user = user_repo.find_by_id(user_id)
         if not domain_user:
-            raise exceptions.AuthenticationFailed("Usuário não encontrado.")
+            return None
 
         # Cria um usuário simples para compatibilidade com DRF
         simple_user = SimpleUser(
@@ -83,7 +83,7 @@ class CookieJWTAuthentication(BaseAuthentication):
         user_repo = UserRepoImpl()
         domain_user = user_repo.find_by_id(user_id)
         if not domain_user:
-            raise exceptions.AuthenticationFailed("Usuário não encontrado.")
+            return None
 
         # Cria um usuário simples para compatibilidade com DRF
         simple_user = SimpleUser(

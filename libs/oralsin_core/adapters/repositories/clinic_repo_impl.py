@@ -57,6 +57,7 @@ class ClinicRepoImpl(ClinicRepository):
             defaults={
                 "name": clinic.name,
                 "cnpj": clinic.cnpj,
+                "owner_name": clinic.owner_name
             },
         )
         return ClinicEntity.from_model(model)

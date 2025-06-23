@@ -8,6 +8,7 @@ from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
 from oralsin_core.core.application.queries.dashboard_queries import GetDashboardReportQuery, GetDashboardSummaryQuery
 from rest_framework import permissions, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -134,21 +135,26 @@ class MeView(APIView):
     Se o usuário for do tipo 'clinic', anexa as informações
     detalhadas de suas clínicas (UserClinics, ClinicData, ClinicPhone).
     """
-    permission_classes = [IsClinicUser]
+    permission_classes = [IsAuthenticated & (IsAdminUser | IsClinicUser)]
 
     def get(self, request):
-        user = request.user
+        simple_user  = request.user
 
         # Se for um usuário de clínica, retorna os dados completos com clínicas
-        if user.role == "clinic":
+        if simple_user .role == "clinic":
             user_instance = User.objects.prefetch_related(
                 "clinics__clinic__data__address",  
                 "clinics__clinic__phones"
-            ).get(pk=user.id)
+            ).get(pk=simple_user.id)
             serializer = UserFullDataSerializer(user_instance)
             return Response(serializer.data)
+        
+        try:
+            user_instance = User.objects.get(pk=simple_user.id)
+        except User.DoesNotExist:
+            return Response({"detail": "Usuário não encontrado no banco de dados."}, status=404)
 
-        serializer = UserSerializer(user)
+        serializer = UserSerializer(user_instance)
         return Response(serializer.data)
 
 

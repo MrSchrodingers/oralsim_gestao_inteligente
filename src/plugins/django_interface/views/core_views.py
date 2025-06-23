@@ -17,10 +17,13 @@ from django.db.models.functions import Coalesce
 from oralsin_core.adapters.config.composition_root import container as core_container
 from oralsin_core.adapters.observability.decorators import track_http
 from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
+from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
 from oralsin_core.core.application.cqrs import CommandBusImpl, QueryBusImpl
+from oralsin_core.core.application.dtos.registration_request_dto import CreateRegistrationRequestDTO
 from oralsin_core.core.application.queries.billing_settings_queries import GetBillingSettingsQuery, ListBillingSettingsQuery
 from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
-from rest_framework import status, viewsets
+from oralsin_core.core.application.queries.registration_request_queries import ListRegistrationRequestsQuery
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -60,6 +63,7 @@ from ..serializers.core_serializers import (
     PatientSerializer,
     PaymentMethodSerializer,
     PendingCallSerializer,
+    RegistrationRequestSerializer,
     UserClinicSerializer,
     UserSerializer,
 )
@@ -1251,3 +1255,55 @@ class CollectionCaseViewSet(PaginationFilterMixin, viewsets.ViewSet):
             GetCollectionCaseQuery(collection_case_id=str(pk), filtros={"clinic_id": str(request.user.clinic_id)})
         )
         return Response(CollectionCaseSerializer(case).data)
+
+
+class RegistrationRequestViewSet(PaginationFilterMixin, viewsets.ViewSet):
+    
+    def get_permissions(self):
+        """
+        Instantiates and returns the list of permissions that this view requires.
+        """
+        if self.action == 'create':
+            self.permission_classes = [permissions.AllowAny]
+        else:
+            self.permission_classes = [IsAdminUser,]
+        return super().get_permissions()
+
+    @track_http("RegistrationRequestViewSet_create")
+    def create(self, request):
+        dto = CreateRegistrationRequestDTO(**request.data)
+        cmd = CreateRegistrationRequestCommand(payload=dto)
+        _result = core_command_bus.dispatch(cmd)
+        return Response(
+            {"message": "Solicitação de registro enviada com sucesso. Aguarde a aprovação do administrador."},
+            status=status.HTTP_201_CREATED
+        )
+
+    @track_http("RegistrationRequestViewSet_list")
+    def list(self, request):
+        filtros = self._filters(request)
+        page, page_size = self._pagination(request)
+        query = ListRegistrationRequestsQuery(filtros=filtros, page=page, page_size=page_size)
+        paged_result = core_query_bus.dispatch(query)
+        serializer = RegistrationRequestSerializer(paged_result.items, many=True)
+        return Response({
+            "results": serializer.data,
+            "total_items": paged_result.total,
+            "page": paged_result.page,
+            "page_size": paged_result.page_size,
+            "total_pages": paged_result.total_pages,
+        })
+        
+    @track_http("RegistrationRequestViewSet_approve")
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        cmd = ApproveRegistrationRequestCommand(request_id=pk)
+        core_command_bus.dispatch(cmd)
+        return Response({"message": "Registro aprovado e clínica configurada com sucesso."}, status=status.HTTP_200_OK)
+
+    @track_http("RegistrationRequestViewSet_reject")
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        cmd = RejectRegistrationRequestCommand(request_id=pk)
+        core_command_bus.dispatch(cmd)
+        return Response({"message": "Solicitação de registro rejeitada."}, status=status.HTTP_200_OK)

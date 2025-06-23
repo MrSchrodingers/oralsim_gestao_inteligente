@@ -101,6 +101,7 @@ class RegisterCoverageClinicHandler(
             oralsin_clinic_id=dto.idClinica,
             name=dto.nomeClinica,
             cnpj=dto.cnpj or "",
+            owner_name=command.owner_name
         )
         saved_clinic = self.clinic_repo.save(clinic_ent)
 

@@ -6,10 +6,15 @@ from pydantic import BaseModel, EmailStr
 
 class CreateUserDTO(BaseModel):
     email: EmailStr
-    password: str
+    password: str | None = None  
+    password_hash: str | None = None 
     name: str
     role: Literal["admin", "clinic"]
     clinic_id: str | None = None
+    
+    class Config:
+        from_attributes = True
+        validate_by_name = True
 
 
 class UpdateUserDTO(BaseModel):

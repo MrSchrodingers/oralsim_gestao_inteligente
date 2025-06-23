@@ -313,3 +313,12 @@ class LetterListItemSerializer(serializers.Serializer):
     status = serializers.CharField(max_length=50)
     relevant_date = serializers.DateTimeField()
     item_type = serializers.CharField(max_length=20)
+    
+class RegistrationRequestSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    email = serializers.EmailField()
+    name = serializers.CharField()
+    clinic_name = serializers.CharField()
+    status = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)

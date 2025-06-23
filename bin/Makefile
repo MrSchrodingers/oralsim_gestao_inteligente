@@ -35,13 +35,8 @@ rebuild-app:
 seed-complete:
 	$(MANAGE) seed_flow_step_config
 	$(MANAGE) seed_messages
-	$(MANAGE) seed_data --clinic-name "Londrina - Zona Norte" \
-	                    --admin-email matheus@admin.com \
+	$(MANAGE) seed_data --admin-email matheus@admin.com \
 	                    --admin-pass  matheus@admin \
-											--skip-admin
-	$(MANAGE) seed_test_contacts --email mrschrodingers@gmail.com \
-	                             --phone 5543991938235 
-	$(MANAGE) seed_scheduling --clinic-id 2 --min-days 1 --verbosity 2
 	$(TIME_ECHO)
 
 # ------------------------------------------------------------

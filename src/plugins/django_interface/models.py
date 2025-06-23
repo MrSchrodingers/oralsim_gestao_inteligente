@@ -80,6 +80,7 @@ class Clinic(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     oralsin_clinic_id = models.IntegerField(unique=True, db_index=True)
     name = models.CharField(max_length=255)
+    owner_name = models.CharField(max_length=255, blank=True, null=True)
     cnpj = models.CharField(max_length=18, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -762,3 +763,32 @@ class PipeboardActivitySent(models.Model):
 
     class Meta:
         db_table = "pipeboard_activity_sent"
+        
+        
+class RegistrationRequest(models.Model):
+    """Stores registration requests from new clinics for admin approval."""
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(max_length=128)
+    password_hash = models.CharField(max_length=128, help_text="Store hashed passwords only")
+    name = models.CharField(max_length=100, help_text="Full name of the requester")
+    clinic_name = models.CharField(max_length=255, help_text="The name of the clinic being registered")
+    cordial_billing_config = models.IntegerField(default=90, help_text="Dias mínimos para cobrança amigável")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = "registration_requests"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["email"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Request from {self.email} for {self.clinic_name} [{self.status}]"

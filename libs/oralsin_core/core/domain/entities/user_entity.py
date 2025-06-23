@@ -12,9 +12,9 @@ from oralsin_core.core.domain.entities._base import EntityMixin
 class UserEntity(EntityMixin):
     id: uuid.UUID
     email: str
-    password_hash: str
     name: str
     clinic_name: str | None = None
+    password_hash: str | None = None
     is_active: bool = True
     role: Literal['admin','clinic'] = 'clinic'
     created_at: datetime | None = None

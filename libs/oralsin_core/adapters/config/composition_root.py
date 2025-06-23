@@ -1,9 +1,5 @@
 from dependency_injector import containers, providers
 
-from cordial_billing.adapters.repositories.collection_case_repo_impl import CollectionCaseRepoImpl
-from notification_billing.adapters.repositories.contact_history_repo_impl import ContactHistoryRepoImpl
-from notification_billing.adapters.repositories.contact_schedule_repo_impl import ContactScheduleRepoImpl
-
 container = None
 
 def setup_di_container_from_settings(settings):  # noqa: PLR0915
@@ -18,6 +14,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     import redis
     import structlog
 
+    from cordial_billing.adapters.repositories.collection_case_repo_impl import CollectionCaseRepoImpl
+    from notification_billing.adapters.repositories.contact_history_repo_impl import ContactHistoryRepoImpl
+    from notification_billing.adapters.repositories.contact_schedule_repo_impl import ContactScheduleRepoImpl
+
     # API client, mappers e infra de mensageria...
     from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
     from oralsin_core.adapters.repositories.address_repo_impl import AddressRepoImpl
@@ -31,6 +31,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.adapters.repositories.patient_phone_repo_impl import PatientPhoneRepoImpl
     from oralsin_core.adapters.repositories.patient_repo_impl import PatientRepoImpl
     from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
+    from oralsin_core.adapters.repositories.registration_request_repo_impl import RegistrationRequestRepoImpl
     from oralsin_core.adapters.repositories.user_clinic_repo_impl import UserClinicRepoImpl
     from oralsin_core.adapters.repositories.user_repo_impl import UserRepoImpl
 
@@ -67,6 +68,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         DeletePatientPhoneCommand,
         UpdatePatientPhoneCommand,
     )
+    from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
     from oralsin_core.core.application.commands.sync_commands import (
         SyncInadimplenciaCommand,
     )
@@ -107,6 +109,13 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.core.application.handlers.dashboard_handlers import (
         GetDashboardReportHandler,
         GetDashboardSummaryHandler,
+    )
+    from oralsin_core.core.application.handlers.handlers.registration_request_handlers import (
+        ApproveRegistrationRequestHandler,
+        CreateRegistrationRequestHandler,
+        GetRegistrationRequestHandler,
+        ListRegistrationRequestsHandler,
+        RejectRegistrationRequestHandler,
     )
 
     # Handlers de Queries (core)
@@ -156,6 +165,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.core.application.queries.patient_phone_queries import GetPatientPhoneQuery, ListPatientPhonesQuery
     from oralsin_core.core.application.queries.patient_queries import GetPatientQuery, ListPatientsQuery
     from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
+    from oralsin_core.core.application.queries.registration_request_queries import GetRegistrationRequestQuery, ListRegistrationRequestsQuery
     from oralsin_core.core.application.queries.user_clinic_queries import GetUserClinicQuery
     from oralsin_core.core.application.queries.user_queries import GetUserQuery, ListUsersQuery
     from oralsin_core.core.application.services.dashboard_pdf_service import DashboardPDFService
@@ -232,6 +242,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
                                                     installment_repo=installment_repo, 
                                                     billing_settings_repo=billing_settings_repo
                                                     )
+        registration_request_repo = providers.Singleton(RegistrationRequestRepoImpl)
+        
         # Hash
         hash_service = providers.Singleton(HashService)
 
@@ -291,7 +303,24 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         list_payment_method_handler = providers.Factory( 
             ListPaymentMethodsHandler, repo=payment_method_repo
         )
-    
+
+        create_registration_request_handler = providers.Factory(
+            CreateRegistrationRequestHandler,
+            repo=registration_request_repo,
+            hash_service=hash_service,
+        )
+        approve_registration_request_handler = providers.Factory(
+            ApproveRegistrationRequestHandler,
+            repo=registration_request_repo,
+            command_bus=command_bus
+        )
+        reject_registration_request_handler = providers.Factory(
+            RejectRegistrationRequestHandler,
+            repo=registration_request_repo
+        )
+        list_registration_requests_handler = providers.Factory(ListRegistrationRequestsHandler, repo=registration_request_repo)
+        get_registration_request_handler = providers.Factory(GetRegistrationRequestHandler, repo=registration_request_repo)
+        
         # Serviços de negócio
         formatter_service    = providers.Singleton(FormatterService, currency_symbol="R$")
         oralsin_sync_service = providers.Singleton(
@@ -407,6 +436,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
                 UpdateBillingSettingsCommand,
                 self.update_billing_settings_handler(),
             )
+            
+            cmd_bus.register(CreateRegistrationRequestCommand, self.create_registration_request_handler())
+            cmd_bus.register(ApproveRegistrationRequestCommand, self.approve_registration_request_handler())
+            cmd_bus.register(RejectRegistrationRequestCommand, self.reject_registration_request_handler())
             # Bus de queries (core)
             qry_bus = self.query_bus()
 
@@ -456,6 +489,9 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             )
             
             qry_bus.register(GetDashboardReportQuery, self.dashboard_report_handler())
+            
+            qry_bus.register(ListRegistrationRequestsQuery, self.list_registration_requests_handler())
+            qry_bus.register(GetRegistrationRequestQuery, self.get_registration_request_handler())
 
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()
