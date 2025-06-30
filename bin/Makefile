@@ -35,8 +35,7 @@ rebuild-app:
 seed-complete:
 	$(MANAGE) seed_flow_step_config
 	$(MANAGE) seed_messages
-	$(MANAGE) seed_data --admin-email matheus@admin.com \
-	                    --admin-pass  matheus@admin \
+	$(MANAGE) seed_data --admin-email matheus@admin.com --admin-pass matheus@admin 
 	$(TIME_ECHO)
 
 # ------------------------------------------------------------
