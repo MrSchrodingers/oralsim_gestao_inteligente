@@ -2,7 +2,8 @@ from datetime import datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
-from django.db import transaction
+import structlog
+from django.db import IntegrityError, transaction
 from django.db.models import Count
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
@@ -15,6 +16,7 @@ from plugins.django_interface.models import ContactSchedule as ContactScheduleMo
 from plugins.django_interface.models import Contract as ContractModel
 from plugins.django_interface.models import FlowStepConfig
 
+logger = structlog.get_logger(__name__)
 
 class ContactScheduleRepoImpl(ContactScheduleRepository):
     def __init__(self, installment_repo: InstallmentRepository, billing_settings_repo: BillingSettingsRepository):
@@ -243,20 +245,23 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
 
             # 5) cria os novos schedules por canal
             new_models = []
-            for channel in cfg.channels:
-                new_m = ContactScheduleModel.objects.create(
-                    patient=m.patient,
-                    contract=m.contract,
-                    clinic=m.clinic,
-                    installment_id=m.installment_id,
-                    notification_trigger=m.notification_trigger,
-                    advance_flow=False,
-                    current_step=cfg.step_number,
-                    channel=channel,
-                    scheduled_date=scheduled_dt,
-                    status=ContactScheduleModel.Status.PENDING,
-                )
-                new_models.append(new_m)
+            try:
+                for channel in cfg.channels:
+                    new_m = ContactScheduleModel.objects.create(
+                        patient=m.patient,
+                        contract=m.contract,
+                        clinic=m.clinic,
+                        installment_id=m.installment_id,
+                        notification_trigger=m.notification_trigger,
+                        advance_flow=False,
+                        current_step=cfg.step_number,
+                        channel=channel,
+                        scheduled_date=scheduled_dt,
+                        status=ContactScheduleModel.Status.PENDING,
+                    )
+                    new_models.append(new_m)
+            except IntegrityError:
+                    logger.debug("schedule already exists, skipping", schedule=m.id)
 
             return ContactScheduleEntity.from_model(new_models[0] if new_models else m)
 

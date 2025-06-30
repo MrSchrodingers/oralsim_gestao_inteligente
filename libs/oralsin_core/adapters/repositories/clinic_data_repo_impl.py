@@ -50,16 +50,21 @@ class ClinicDataRepoImpl(ClinicDataRepository):
         # 2) preparar defaults para o update_or_create
         real_cols = {f.attname for f in ClinicDataModel._meta.get_fields()}
         raw = data.to_dict()
+
+        DROP_FIELDS = {"id", "address", "created_at", "updated_at"}
         defaults = {
             k: v
             for k, v in raw.items()
-            if k in real_cols and k not in ("id", "address")
+            if k in real_cols
+            and k not in DROP_FIELDS
+            and v is not None     
         }
         if data.address:
             defaults["address_id"] = data.address.id
 
         model, _ = ClinicDataModel.objects.update_or_create(
-            id=data.id, defaults=defaults
+            clinic_id=data.clinic_id,  
+            defaults=defaults,
         )
         return ClinicDataEntity.from_model(model)
 

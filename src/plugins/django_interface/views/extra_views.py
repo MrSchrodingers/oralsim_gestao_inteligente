@@ -3,9 +3,8 @@ from dataclasses import asdict
 from datetime import date, timedelta
 
 from django.http import FileResponse, HttpResponse
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
 from oralsin_core.adapters.config.composition_root import container as core_container
+from oralsin_core.core.application.queries.clinic_summary_queries import GetClinicSummaryQuery
 from oralsin_core.core.application.queries.dashboard_queries import GetDashboardReportQuery, GetDashboardSummaryQuery
 from rest_framework import permissions, status
 from rest_framework.permissions import IsAuthenticated
@@ -49,10 +48,6 @@ def patients_data_cache_key(request, *args, **kwargs):
 # ╭──────────────────────────────────────────────╮
 # │      DASHBOARD SUMMARY                     │
 # ╰──────────────────────────────────────────────╯
-@method_decorator(
-    cache_page(DASHBOARD_TTL, key_prefix=cache_key_prefix_for("dashboard_summary")),
-    name="get",
-)
 class DashboardSummaryView(PaginationFilterMixin, APIView):
     permission_classes = [IsClinicUser]
     
@@ -69,6 +64,24 @@ class DashboardSummaryView(PaginationFilterMixin, APIView):
             filtros["end_date"]   = request.query_params.get("end_date")    
         
         q = GetDashboardSummaryQuery(filtros=filtros, user_id=str(request.user.id))
+        res = core_query_bus.dispatch(q)
+        return Response(asdict(res))
+
+
+class AdminClinicSummaryView(PaginationFilterMixin, APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, clinic_id):
+        filtros = {
+            "start_date": request.query_params.get("start_date"),
+            "end_date": request.query_params.get("end_date"),
+        }
+        q = GetClinicSummaryQuery(
+            clinic_id=str(clinic_id),
+            start_date=filtros["start_date"],
+            end_date=filtros["end_date"],
+            filtros=filtros
+        )
         res = core_query_bus.dispatch(q)
         return Response(asdict(res))
 
@@ -125,10 +138,6 @@ class SendManualNotificationView(APIView):
 # ╭──────────────────────────────────────────────╮
 # │              ME / USERS INFO                 │
 # ╰──────────────────────────────────────────────╯
-@method_decorator(
-    cache_page(ME_TTL, key_prefix=cache_key_prefix_for("me")),
-    name="get",
-)
 class MeView(APIView):
     """
     View para retornar os dados do usuário logado.
@@ -158,10 +167,6 @@ class MeView(APIView):
         return Response(serializer.data)
 
 
-@method_decorator(
-    cache_page(USERS_FULL_TTL, key_prefix=cache_key_prefix_for("users_full")),
-    name="get",
-)
 class UsersFullDataView(APIView):
     """
     View para retornar os dados de todos os usuários com suas
@@ -172,17 +177,16 @@ class UsersFullDataView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        # Busca todos os usuários e otimiza a query para já trazer
-        # os dados relacionados de clínicas, data e phones.
         users = User.objects.prefetch_related(
             "clinics__clinic__data__address",
             "clinics__clinic__phones"
         ).all()
-
-        # O serializer agora cuida de toda a montagem dos dados aninhados
         serializer = UserFullDataSerializer(users, many=True)
         
-        return Response({"results": serializer.data, "total": len(serializer.data)})
+        return Response({
+            "results": serializer.data,
+            "total_items": len(serializer.data)
+        })
     
 class LetterListView(APIView, PaginationFilterMixin):
     """

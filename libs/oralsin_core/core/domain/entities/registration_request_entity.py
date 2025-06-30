@@ -13,6 +13,7 @@ class RegistrationRequestEntity(EntityMixin):
     id: uuid.UUID
     email: str
     password_hash: str
+    password_enc: str                     # AES/Fernet etc.
     name: str
     clinic_name: str
     cordial_billing_config: int

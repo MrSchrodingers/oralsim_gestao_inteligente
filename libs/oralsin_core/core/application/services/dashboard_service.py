@@ -13,6 +13,7 @@ from oralsin_core.adapters.observability.metrics import (
     BUSINESS_TOTAL_PATIENTS,
     BUSINESS_TOTAL_RECEIVABLES,
 )
+from oralsin_core.core.application.dtos.clinic_summary_dto import ClinicSummaryDTO
 from oralsin_core.core.application.dtos.dashboard_dto import (
     CollectionSummaryDTO,
     DashboardDTO,
@@ -23,6 +24,7 @@ from oralsin_core.core.application.dtos.dashboard_dto import (
     StatsDTO,
 )
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
+from oralsin_core.core.domain.repositories.clinic_repository import ClinicRepository
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.installment_repository import InstallmentRepository
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
@@ -45,12 +47,15 @@ class DashboardService:
         installment_repo: InstallmentRepository,
         patient_repo: PatientRepository,
         formatter: FormatterService,
+        clinic_repo: ClinicRepository | None = None,
     ):
         self.user_clinic_repo = user_clinic_repo
         self.contract_repo = contract_repo
         self.installment_repo = installment_repo
         self.patient_repo = patient_repo
         self.formatter = formatter
+        self.clinic_repo = clinic_repo
+
 
     def _build_payment_summary(self, inst: InstallmentEntity, status: str) -> PaymentSummaryDTO:
         contract = self.contract_repo.find_by_id(inst.contract_id)
@@ -323,4 +328,58 @@ class DashboardService:
             collection=collection_summary,
             monthlyReceivables=monthly_dtos,
             lastNotifications=last_notifs or None,
+        )
+
+    def get_clinic_summary(
+        self,
+        clinic_id: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> "ClinicSummaryDTO":
+        """Resumo simplificado para uma clínica específica."""
+        try:
+            start_date_dt = date.fromisoformat(start_date) if start_date else None
+            end_date_dt = date.fromisoformat(end_date) if end_date else None
+        except ValueError as e:
+            raise ValueError("start_date/end_date inválidos (YYYY-MM-DD)") from e
+
+        contracts = self.contract_repo.list_by_clinic(clinic_id)
+        total_patients = len({c.patient_id for c in contracts})
+        active_patients = len({c.patient_id for c in contracts if c.status == "ativo"})
+
+        if contracts:
+            contract_ids = [c.id for c in contracts]
+            installments = self.installment_repo.find_by_contract_ids(contract_ids)
+        else:
+            installments = []
+
+        if start_date_dt or end_date_dt:
+            def in_window(inst):
+                return ((start_date_dt is None or inst.due_date >= start_date_dt) and
+                        (end_date_dt is None or inst.due_date <= end_date_dt))
+            installments = [i for i in installments if in_window(i)]
+
+        today = date.today()
+        month_start = today.replace(day=1)
+        paid_month = Decimal("0.0")
+        receivables = 0
+        for inst in installments:
+            if inst.received:
+                if month_start <= inst.due_date <= today:
+                    paid_month += inst.installment_amount
+            else:
+                receivables += 1
+
+        collection_cases = CollectionCase.objects.filter(clinic_id=clinic_id).count()
+        clinic = self.clinic_repo.find_by_id(clinic_id) if self.clinic_repo else None
+        name = clinic.name if clinic else str(clinic_id)
+
+        return ClinicSummaryDTO(
+            id=str(clinic_id),
+            name=name,
+            total_patients=total_patients,
+            active_patients=active_patients,
+            receivables=receivables,
+            collection_cases=collection_cases,
+            monthly_revenue=self.formatter.format_currency(paid_month),
         )

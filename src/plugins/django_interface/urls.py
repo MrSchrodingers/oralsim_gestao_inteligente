@@ -7,16 +7,7 @@ from config import settings
 
 from .routers import build_router
 from .views.auth_views import HealthCheckView, LoginView, LogoutView
-from .views.extra_views import (
-    DashboardReportView,
-    DashboardSummaryView,
-    LetterListView,
-    LetterPreviewView,
-    MeView,
-    RunAutomatedNotificationsView,
-    SendManualNotificationView,
-    UsersFullDataView,
-)
+from .views.extra_views import AdminClinicSummaryView, DashboardReportView, DashboardSummaryView, LetterListView, LetterPreviewView, MeView, RunAutomatedNotificationsView, SendManualNotificationView, UsersFullDataView
 
 swagger_permissions = [permissions.IsAdminUser] if not settings.DEBUG else [permissions.AllowAny]
 
@@ -40,6 +31,7 @@ urlpatterns = [
     path("healthz/", HealthCheckView.as_view(), name="healthz"),
     path("me/", MeView.as_view(), name="me"),
     path("dashboard-summary/", DashboardSummaryView.as_view(), name="dashboard-summary"),
+    path("clinics/<uuid:clinic_id>/summary/", AdminClinicSummaryView.as_view(), name="clinic-summary"),
     path("dashboard-report/", DashboardReportView.as_view(), name="dashboard-report"),
     path("notifications/run-automated/", RunAutomatedNotificationsView.as_view(), name="run-automated"),
     path("notifications/send-manual/", SendManualNotificationView.as_view(), name="send-manual"),

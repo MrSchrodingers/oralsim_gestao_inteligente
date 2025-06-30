@@ -14,15 +14,17 @@ from decimal import Decimal
 from django.core.cache import cache
 from django.db.models import Avg, DecimalField, FloatField, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from oralsin_core.adapters.config.composition_root import container as core_container
 from oralsin_core.adapters.observability.decorators import track_http
 from oralsin_core.core.application.commands.billing_settings_commands import UpdateBillingSettingsCommand
 from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
 from oralsin_core.core.application.cqrs import CommandBusImpl, QueryBusImpl
 from oralsin_core.core.application.dtos.registration_request_dto import CreateRegistrationRequestDTO
+from oralsin_core.core.application.handlers.handlers.registration_request_handlers import FERNET
 from oralsin_core.core.application.queries.billing_settings_queries import GetBillingSettingsQuery, ListBillingSettingsQuery
 from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
-from oralsin_core.core.application.queries.registration_request_queries import ListRegistrationRequestsQuery
+from oralsin_core.core.application.queries.registration_request_queries import GetRegistrationRequestQuery, ListRegistrationRequestsQuery
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -30,6 +32,7 @@ from rest_framework.response import Response
 from cordial_billing.adapters.config.composition_root import (
     container as cordial_billing_container,
 )
+from cordial_billing.core.application.commands.create_deal_command import CreatePipedriveDealCommand
 from cordial_billing.core.application.queries.collection_case_queries import GetCollectionCaseQuery, ListCollectionCasesQuery
 from notification_billing.adapters.config.composition_root import (
     container as notification_billing_container,
@@ -42,6 +45,7 @@ from notification_billing.core.application.queries.pending_call_queries import G
 from plugins.django_interface.models import Message as MessageModel
 from plugins.django_interface.models import Patient as PatientModel
 from plugins.django_interface.models import PendingCall as PendingCallModel
+from plugins.django_interface.models import User
 from plugins.django_interface.permissions import IsAdminUser, IsClinicUser
 
 # ────────────────────────────────  Serializers  ───────────────────────────────
@@ -65,6 +69,7 @@ from ..serializers.core_serializers import (
     PendingCallSerializer,
     RegistrationRequestSerializer,
     UserClinicSerializer,
+    UserFullDataSerializer,
     UserSerializer,
 )
 
@@ -209,7 +214,6 @@ from oralsin_core.core.application.queries.user_clinic_queries import (  # noqa:
     ListUserClinicsQuery,
 )
 from oralsin_core.core.application.queries.user_queries import (  # noqa: E402
-    GetUserQuery,
     ListUsersQuery,
 )
 
@@ -845,8 +849,22 @@ class UserViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
     @track_http("UserViewSet_retrieve")
     def retrieve(self, request, pk=None):
-        user = core_query_bus.dispatch(GetUserQuery(filtros={}, user_id=str(pk)))
-        return Response(UserSerializer(user).data)
+        """
+        Retorna um único usuário com
+        - clínicas associadas,
+        - endereço,
+        - telefones,
+        usando o serializer expandido.
+        """
+        user = get_object_or_404(
+        User.objects.prefetch_related(
+                "clinics__clinic__data__address",
+                "clinics__clinic__phones",
+            ),
+            pk=pk,
+        )
+        serializer = UserFullDataSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @track_http("UserViewSet_create")
     def create(self, request):
@@ -1255,7 +1273,13 @@ class CollectionCaseViewSet(PaginationFilterMixin, viewsets.ViewSet):
             GetCollectionCaseQuery(collection_case_id=str(pk), filtros={"clinic_id": str(request.user.clinic_id)})
         )
         return Response(CollectionCaseSerializer(case).data)
-
+    
+    @action(detail=True, methods=["post"])  # POST /collection-case/{id}/create_deal
+    def create_deal(self, request, pk=None):
+        result = cordial_billing_command_bus.dispatch(
+            CreatePipedriveDealCommand(collection_case_id=str(pk))
+        )
+        return Response(result, status=status.HTTP_201_CREATED)
 
 class RegistrationRequestViewSet(PaginationFilterMixin, viewsets.ViewSet):
     
@@ -1294,12 +1318,24 @@ class RegistrationRequestViewSet(PaginationFilterMixin, viewsets.ViewSet):
             "total_pages": paged_result.total_pages,
         })
         
-    @track_http("RegistrationRequestViewSet_approve")
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        cmd = ApproveRegistrationRequestCommand(request_id=pk)
+        # 1. carrega a registration_request
+        rr = core_query_bus.dispatch(GetRegistrationRequestQuery(filtros={} ,request_id=pk))
+
+        # 2. descriptografa a senha
+        raw_password = FERNET.decrypt(rr.password_enc.encode()).decode()
+
+        # 3. manda tudo para o Command
+        cmd = ApproveRegistrationRequestCommand(
+            request_id=pk,
+            raw_password=raw_password,
+        )
         core_command_bus.dispatch(cmd)
-        return Response({"message": "Registro aprovado e clínica configurada com sucesso."}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "Registro aprovado e processo de configuração da clínica iniciado."},
+            status=status.HTTP_200_OK,
+        )
 
     @track_http("RegistrationRequestViewSet_reject")
     @action(detail=True, methods=["post"])

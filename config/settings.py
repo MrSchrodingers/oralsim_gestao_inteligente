@@ -67,6 +67,12 @@ CELERY_TASK_QUEUES = {
     "sync_process":{"exchange":"sync_process","routing_key":"sync_process"},
 }
 
+CELERY_TASK_ROUTES = { 
+                      "oralsin_core.adapters.message_broker.tasks.seed_data_task": {"queue": "sync_process"}, 
+                      "oralsin_core.adapters.message_broker.tasks.post_seed_setup_task": {"queue": "sync_process"}, 
+                      "oralsin_core.adapters.message_broker.tasks.run_sync_command_task": {"queue": "sync_process"}, 
+}
+
 # -------------------------------
 # Redis
 # -------------------------------
@@ -83,6 +89,45 @@ ORALSIN_API_TOKEN = config('ORALSIN_API_TOKEN')
 ORALSIN_TIMEOUT  = int(config('ORALSIN_TIMEOUT'))
 
 # -------------------------------
+# Pipedrive API
+# -------------------------------
+PIPEDRIVE_API_BASE  = config('PIPEDRIVE_API_BASE', default='')
+PIPEDRIVE_API_TOKEN = config('PIPEDRIVE_API_TOKEN', default='')
+# settings.py
+PIPEDRIVE_CF_MAP: dict[str, str] = {
+    # ─── Clínica ──────────────────────────────────────────
+    "clinic_name":            "f95891793f9e919fa9d29be3a6c82edd2ff6400f",  # Nome da Clínica
+    "clinic_city":            "756c57e4a6e7df5ca8d01a73160b9199ccfe35ab",  # Clínica - Cidade
+    "clinic_cnpj":            "",  # ➜ crie um campo “CNPJ da Clínica” e cole aqui a key
+    "clinic_address":         "",  # ➜ idem endereço completo da clínica
+    "clinic_phone":           "",  # ➜ telefone fixo da clínica
+
+    # ─── Paciente / Deal tipo “Paciente” ─────────────────
+    "patient_type":           "2c754a784e3114a5d9b69cf8851837ddcd5ccbba",  # enum Tipo (id 28 = Paciente)
+    "patient_first_name":     "",  # ➜ crie “Primeiro nome” (varchar)   e cole a key
+    "patient_last_name":      "",  # ➜ crie “Sobrenome”
+    "patient_cpf":            "",  # ➜ crie “CPF”
+    "patient_address":        "",  # ➜ crie “Endereço do Paciente”
+    "patient_payment_method": "39c2c93a9a020b1f515557bb4faa9efdccfed474",  # Paciente – Forma de Pagamento
+    "patient_status":         "e037f6d531c01dc45fb26fc6563ae1df46cd95fe",  # Paciente – Status Tratamento
+
+    # ─── Contrato / Parcelas ─────────────────────────────
+    "contract_numbers":       "df11fb8b42382035e521de220bf2503a1b85a0a7",  # Contratos
+    "oldest_due_date":        "286dd062f81694d085b197db7deb3b8ebf7b06ed",  # Vencimento mais antigo
+    "newest_due_date":        "f57b985a8cb239495d04c7ff30a17785a958bc59",  # Vencimento mais recente
+    "overdue_count":          "91359d6aae291631544a6c2c6b477ab1c5c2317b",  # Qtde parcelas vencidas
+    "future_count":           "14f3c3fe363ed953a35c3b43ddbb3b8a2083abc0",  # Qtde parcelas a vencer
+    "total_debt":             "eca89462dc3083e721c3ae1f3fe8ff59d05c950b",  # Total da dívida
+    "future_value":           "4c59ca4ea36cdf0d786cdf5dbaf55803241ab432",  # Valor a vencer
+    "overdue_value_plain":    "04595b98f37c393d084afc861f547874e741a1b5",  # Soma vencidas s/ juros
+    # "overdue_value_interest": "58a42c02721f74c122a4c4bb959d2d1403c5613e",  # Soma vencidas c/ juros
+
+    # ─── Operações internas ──────────────────────────────
+    "processing_date":        "246fb3d2ad2655a764181818155cc20b511b8cc4",  # Data de Processamento
+    "cleaned_flag":           "1a7fcd19468cf0876c1632d1e5eec0e795f6a8aa",  # Higienizado (enum 46/47)
+}
+
+# -------------------------------
 # Assertiva SMS
 # -------------------------------
 ASSERTIVA_BASE_URL   = config('ASSERTIVA_BASE_URL')
@@ -93,6 +138,7 @@ ASSERTIVA_WEBHOOK    = config('ASSERTIVA_WEBHOOK_URL')
 # Mailchimp / SendGrid
 # -------------------------------
 SENDGRID_API_KEY   = config('SENDGRID_API_KEY')
+BREVO_API_KEY = config('BREVO_API_KEY')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
 
 # -------------------------------
@@ -113,6 +159,7 @@ HASH_SECRET    = config('HASH_SECRET')
 JWT_SECRET    = config('JWT_SECRET')
 JWT_ALGORITHM = config('JWT_ALGORITHM')
 JWT_EXPIRES_IN = config('JWT_EXPIRES_IN')
+REGISTRATION_KEY = config('REGISTRATION_KEY')
 
 # -------------------------------
 # Channels / Redis

@@ -12,6 +12,7 @@ class CreateRegistrationRequestCommand(CommandDTO):
 @dataclass(frozen=True)
 class ApproveRegistrationRequestCommand(CommandDTO):
     request_id: uuid.UUID
+    raw_password: str   
 
 @dataclass(frozen=True)
 class RejectRegistrationRequestCommand(CommandDTO):

@@ -20,6 +20,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # API client, mappers e infra de mensageria...
     from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+    from oralsin_core.adapters.message_broker.rabbitmq import MessagingService
     from oralsin_core.adapters.repositories.address_repo_impl import AddressRepoImpl
     from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
     from oralsin_core.adapters.repositories.clinic_data_repo_impl import ClinicDataRepoImpl
@@ -157,6 +158,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from oralsin_core.core.application.queries.clinic_data_queries import GetClinicDataQuery, ListClinicDataQuery
     from oralsin_core.core.application.queries.clinic_phone_queries import GetClinicPhoneQuery, ListClinicPhonesQuery
     from oralsin_core.core.application.queries.clinic_queries import GetClinicQuery, ListClinicsQuery
+    from oralsin_core.core.application.queries.clinic_summary_queries import (
+        GetClinicSummaryQuery,
+        GetClinicSummaryQueryHandler,
+    )
     from oralsin_core.core.application.queries.contract_queries import GetContractQuery, ListContractsQuery
     from oralsin_core.core.application.queries.coverage_queries import ListCoveredClinicsQuery, ListUserClinicsQuery
     from oralsin_core.core.application.queries.covered_clinic_queries import GetCoveredClinicQuery
@@ -208,6 +213,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             port=config.redis.port,
             db=config.redis.db,
             password=config.redis.password,
+        )
+        messaging_service = providers.Singleton(
+            MessagingService,
+            rabbitmq_url=config.rabbitmq_url,
         )
         oralsin_client      = providers.Singleton(OralsinAPIClient)
         oralsin_mapper      = providers.Singleton(OralsinPayloadMapper)
@@ -312,7 +321,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         approve_registration_request_handler = providers.Factory(
             ApproveRegistrationRequestHandler,
             repo=registration_request_repo,
-            command_bus=command_bus
+            messaging_service=messaging_service,
         )
         reject_registration_request_handler = providers.Factory(
             RejectRegistrationRequestHandler,
@@ -335,6 +344,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             installment_repo=installment_repo,
             patient_repo=patient_repo,
             formatter=formatter_service,
+            clinic_repo=clinic_repo,
         )
         dashboard_pdf_service = providers.Singleton(
             DashboardPDFService,
@@ -371,6 +381,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             collection_case_repo = collection_case_repo,
             contact_history_repo = contact_history_repo,
             contact_schedule_repo = contact_schedule_repo
+        )
+        clinic_summary_handler = providers.Singleton(
+            GetClinicSummaryQueryHandler,
+            dashboard_service=dashboard_service,
         )
 
         # Handlers de Queries (core)
@@ -489,6 +503,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             )
             
             qry_bus.register(GetDashboardReportQuery, self.dashboard_report_handler())
+            qry_bus.register(GetClinicSummaryQuery, self.clinic_summary_handler())
             
             qry_bus.register(ListRegistrationRequestsQuery, self.list_registration_requests_handler())
             qry_bus.register(GetRegistrationRequestQuery, self.get_registration_request_handler())

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import structlog
 from django.db.models import Q
 from django.utils import timezone
@@ -26,12 +28,27 @@ class ContractRepoImpl(ContractRepository):
         Recebe `clinic_id` da Oralsin → resolve o UUID interno da `Clinic`
         a partir de `CoveredClinic` e devolve os contratos.
         """
+        covered = None
+        
+        # 1. Verifica se o identificador fornecido é um UUID válido.
+        #    Isso nos ajuda a decidir qual campo do banco de dados consultar.
         try:
-            covered = CoveredClinic.objects.get(
-                Q(clinic_id=clinic_id) | Q(oralsin_clinic_id=clinic_id)
+            uuid.UUID(str(clinic_id))
+            is_uuid = True
+        except ValueError:
+            is_uuid = False
+
+        # 2. Usa um objeto Q para uma consulta mais limpa e eficiente.
+        query = Q(clinic_id=clinic_id) if is_uuid else Q(oralsin_clinic_id=int(clinic_id))
+            
+        covered = CoveredClinic.objects.filter(query).first()
+
+        if not covered:
+            logger.warning(
+                "covered_clinic_not_found",
+                searched_id=clinic_id,
+                message="Nenhuma clínica coberta (CoveredClinic) foi encontrada com o ID fornecido."
             )
-        except CoveredClinic.DoesNotExist:
-            logger.warning("covered_clinic_not_found", clinic_id=clinic_id)
             return []
 
         qs = ContractModel.objects.filter(clinic_id=covered.clinic)

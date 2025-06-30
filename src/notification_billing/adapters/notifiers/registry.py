@@ -6,7 +6,9 @@ from functools import lru_cache
 from typing import Literal
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
-from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
+from notification_billing.adapters.notifiers.email.brevo import BrevoEmail
+
+# from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
 from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
 from notification_billing.adapters.notifiers.sms.assertiva import AssertivaSMS
 from notification_billing.adapters.notifiers.whatsapp.debtapp import DebtAppWhatsapp
@@ -23,7 +25,7 @@ def get_sms_notifier(key: str = "assertiva") -> BaseNotifier:
 
 @lru_cache
 def get_email_notifier(key: str = "sendgrid") -> BaseNotifier:
-    return SendGridEmail(
+    return BrevoEmail(
         api_key=os.getenv("SENDGRID_API_KEY", ""),
         from_email=os.getenv("DEFAULT_FROM_EMAIL", ""),
     )

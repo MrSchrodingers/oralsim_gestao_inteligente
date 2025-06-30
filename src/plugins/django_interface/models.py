@@ -776,6 +776,10 @@ class RegistrationRequest(models.Model):
     email = models.EmailField(max_length=128)
     password_hash = models.CharField(max_length=128, help_text="Store hashed passwords only")
     name = models.CharField(max_length=100, help_text="Full name of the requester")
+    password_enc  = models.CharField(    
+        max_length=256,
+        help_text="Senha em texto-claro, cifrada com Fernet; será apagada após aprovação.",
+    )
     clinic_name = models.CharField(max_length=255, help_text="The name of the clinic being registered")
     cordial_billing_config = models.IntegerField(default=90, help_text="Dias mínimos para cobrança amigável")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)

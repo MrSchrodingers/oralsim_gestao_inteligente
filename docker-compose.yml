@@ -76,9 +76,8 @@ services:
   # Django / Daphne + Uvicorn (API e métricas)
   # --------------------------------------------------------------------------
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
+    image: oralsim_core:latest
     container_name: oralsin_app
     restart: unless-stopped
     env_file: .env
@@ -193,9 +192,7 @@ services:
   # Rabbit Consumer (Pika)
   # --------------------------------------------------------------------------
   rabbit-consumer:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: oralsim_core:latest 
     container_name: oralsin_rabbit_consumer
     restart: on-failure
     env_file: .env
@@ -217,6 +214,48 @@ services:
     networks:
       - oralsin_network
 
+  registration-consumer:
+    image: oralsim_core:latest              # mesma imagem local do serviço app
+    restart: unless-stopped
+    working_dir: /app
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
+      PYTHONPATH: /app:/app/libs:/app/src
+    command: >
+      python -m oralsin_core.adapters.message_broker.registration_pipeline_consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    networks:
+      - oralsin_network
+
+  sync-consumer:
+    image: oralsim_core:latest
+    restart: unless-stopped
+    working_dir: /app
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
+      PYTHONPATH: /app:/app/libs:/app/src
+    command: >
+      python -m oralsin_core.adapters.message_broker.sync_consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    networks:
+      - oralsin_network
+  
   # --------------------------------------------------------------------------
   # Pushgateway (Prometheus)
   # --------------------------------------------------------------------------

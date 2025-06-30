@@ -25,12 +25,27 @@ def _serialize_message(msg: dict) -> dict:
 
 class RabbitMQ:
     def __init__(self, url: str):
-        self._params = pika.URLParameters(url)
-        self._conn = None
+        self._base_params = pika.URLParameters(url) 
+        self._conn: pika.BlockingConnection | None = None
 
-    def connect(self):
+    def _merge_params(self, **overrides) -> pika.URLParameters:
+        """Clona os parâmetros padrão e aplica overrides recebidos do caller."""
+        if not overrides:
+            return self._base_params
+        merged = pika.URLParameters(self._base_params) 
+        for k, v in overrides.items():
+            setattr(merged, k, v)
+        return merged
+
+    def connect(self, **overrides) -> pika.BlockingConnection:
+        """
+        Abre (ou reutiliza) uma conexão.  Parâmetros extras como
+        `heartbeat=600`, `blocked_connection_timeout=600` podem ser
+        passados pelo caller.
+        """
         if self._conn is None or self._conn.is_closed:
-            self._conn = pika.BlockingConnection(self._params)
+            params = self._merge_params(**overrides)
+            self._conn = pika.BlockingConnection(params)
         return self._conn
 
     def channel(self) -> BlockingChannel:

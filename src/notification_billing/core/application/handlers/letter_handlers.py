@@ -7,9 +7,10 @@ from oralsin_core.core.domain.repositories.clinic_repository import ClinicReposi
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 
-from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
+from notification_billing.adapters.notifiers.email.brevo import BrevoEmail
+
+# from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
 from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
-from notification_billing.core.application.commands.contact_commands import AdvanceContactStepCommand
 from notification_billing.core.application.commands.letter_commands import SendPendingLettersCommand
 
 # Imports de notification_billing
@@ -150,7 +151,7 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
         self.clinic_repo = clinic_repo
         self.context_builder = context_builder
         self.letter_notifier = letter_notifier
-        self.email_sender: SendGridEmail = letter_notifier.email_notifier
+        self.email_sender: BrevoEmail = letter_notifier.email_notifier
         self.command_bus = command_bus
 
     def handle(self, command: SendPendingLettersCommand) -> None:
@@ -220,7 +221,7 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
                     observation=f"Enviado em lote para {BATCH_LETTER_RECIPIENT}",
                     message=None
                 )
-                self.command_bus.dispatch(AdvanceContactStepCommand(schedule_id=str(schedule.id)))
+                # self.command_bus.dispatch(AdvanceContactStepCommand(schedule_id=str(schedule.id)))
                 
         except Exception as e:
             logger.error("letter_batch.email.failed", error=str(e))
