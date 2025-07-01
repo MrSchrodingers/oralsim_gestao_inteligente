@@ -186,7 +186,7 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
 
                 all_attachments.append({
                     "content": encoded_file,
-                    "filename": f"Carta_{patient_name}_{contract_id}.docx",
+                    "name": f"Carta_{patient_name}_{contract_id}.docx",
                     "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     "disposition": "attachment"
                 })

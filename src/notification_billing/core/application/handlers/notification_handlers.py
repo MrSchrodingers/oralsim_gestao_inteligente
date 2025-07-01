@@ -41,7 +41,6 @@ from notification_billing.core.application.dtos.whatsapp_notification_dto import
 from notification_billing.core.application.queries.notification_queries import (
     ListPendingSchedulesQuery,
 )
-from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
 from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 from notification_billing.core.domain.events.events import NotificationSentEvent
 from notification_billing.core.domain.repositories import (
@@ -55,7 +54,7 @@ from notification_billing.core.domain.repositories.pending_call_repository impor
 )
 from notification_billing.core.domain.services.event_dispatcher import EventDispatcher
 from notification_billing.core.utils.template_utils import render_message
-from plugins.django_interface.models import ContactSchedule
+from plugins.django_interface.models import ContactSchedule, FlowStepConfig
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -92,7 +91,7 @@ class NotificationSenderService:
         notifier = get_notifier(msg.type)
 
         if msg.type == "email":
-            notifier.send(recipients=[patient.email], subject=content[:50], html=content)
+            notifier.send(recipients=[patient.email], subject="Notificaão de Atraso de Parcelas.", html=content)
         elif msg.type == "sms":
             notifier.send(phones=[patient.phones[0].phone_number], message=content)
         elif msg.type == "whatsapp":
@@ -216,8 +215,9 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         config_repo: FlowStepConfigRepository,
         notification_service: NotificationSenderService,
         pending_call_repo: PendingCallRepository,
+        patient_repo: PatientRepository,
+        message_repo: MessageRepository,
         contract_repo: ContractRepository,
-        context_builder: LetterContextBuilder,
         dispatcher: EventDispatcher,
         query_bus: Any,
         command_bus: CommandBus,
@@ -225,20 +225,21 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
         self.schedule_repo = schedule_repo
         self.history_repo = history_repo
         self.config_repo = config_repo
+        self.patient_repo = patient_repo
+        self.message_repo = message_repo
         self.notification_service = notification_service
         self.pending_call_repo = pending_call_repo
         self.contract_repo = contract_repo
         self.dispatcher = dispatcher
-        self.context_builder = context_builder
         self.query_bus = query_bus
         self.command_bus = command_bus
 
-    # ------------------------------------------------------------------ #
     @publish(exchange="notifications", routing_key="automated")
-    def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR0915
+    def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:  # noqa: PLR0912, PLR0915
         start = time.perf_counter()
         success = True
         try:
+            # 1) Recupera todos os agendamentos pendentes
             filters = {"clinic_id": cmd.clinic_id}
             if cmd.only_pending:
                 filters["status"] = ContactSchedule.Status.PENDING
@@ -246,121 +247,113 @@ class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsC
             query = ListPendingSchedulesQuery(
                 filtros=filters, page=1, page_size=cmd.batch_size
             )
-            schedules: PagedResult[Any] = self.query_bus.dispatch(query)
+            schedules: PagedResult[ContactScheduleEntity] = self.query_bus.dispatch(query)
             now = timezone.now()
             results: list[dict[str, Any]] = []
 
             if not schedules.items:
                 return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
 
+            # 2) Processa cada schedule individualmente
             for sched in schedules.items:
-                # ------------------------------------------------------------------
-                sched: ContactScheduleEntity
+                # a) valida parcela
                 if not sched.installment_id:
                     continue
-
-                inst = self.notification_service.installment_repo.find_by_id(sched.installment_id)
-
+                inst = self.schedule_repo.installment_repo.find_by_id(sched.installment_id)
                 if not inst or inst.received:
                     continue
 
+                # b) valida contrato e permissão de notificação
                 contract = self.contract_repo.find_by_id(sched.contract_id)
                 if not contract or not contract.do_notifications:
                     continue
-                
-                patient = self.notification_service.patient_repo.find_by_id(
-                    sched.patient_id
-                )
 
+                patient = self.patient_repo.find_by_id(sched.patient_id)
+
+                # c) valida step ativo
                 cfg = self.config_repo.find_by_step(sched.current_step)
                 if not cfg or not cfg.active:
                     continue
 
-                for channel in cfg.channels:
-                    # ①  phonecall → cria PendingCall e pula envio real
-                    if channel == "phonecall":
-                        self.pending_call_repo.create(
-                            patient_id=sched.patient_id,
-                            contract_id=sched.contract_id,
-                            clinic_id=sched.clinic_id,
+                # d) só considera o canal que veio no próprio schedule
+                channel = sched.channel
+
+                # e) se for phonecall, só cria pendência
+                if channel == FlowStepConfig.Channel.PHONECALL:
+                    self.pending_call_repo.create(
+                        patient_id=sched.patient_id,
+                        contract_id=sched.contract_id,
+                        clinic_id=sched.clinic_id,
+                        schedule_id=sched.id,
+                        current_step=sched.current_step,
+                        scheduled_at=sched.scheduled_date or now,
+                    )
+                    results.append({
+                        "patient_id": str(sched.patient_id),
+                        "contract_id": str(sched.contract_id),
+                        "step": sched.current_step,
+                        "channel": channel,
+                        "success": True,
+                        "pending_call": True,
+                    })
+                    continue
+
+                # f) demais canais: busca template e envia
+                msg = self.message_repo.get_message(
+                    channel, sched.current_step, sched.clinic_id
+                )
+                if not msg:
+                    continue
+
+                try:
+                    self.notification_service.send(msg, patient, inst)
+                    send_ok = True
+                except Exception as err:
+                    send_ok = False
+                    err_msg = str(err)
+
+                # g) grava histórico e dispara evento
+                hist = self.history_repo.save_from_schedule(
+                    schedule=sched,
+                    sent_at=now,
+                    success=send_ok,
+                    channel=channel,
+                    feedback=None,
+                    observation="automated send" if send_ok else f"error: {err_msg}",
+                    message=msg,
+                )
+                NOTIFICATIONS_SENT.labels("automated", channel, str(send_ok)).inc()
+
+                if send_ok:
+                    self.dispatcher.dispatch(
+                        NotificationSentEvent(
                             schedule_id=sched.id,
-                            current_step=sched.current_step,
-                            scheduled_at=sched.scheduled_date or now,
+                            message_id=msg.id,
+                            sent_at=hist.sent_at,
+                            channel=channel,
                         )
-                        results.append(
-                            {
-                                "patient_id": str(sched.patient_id),
-                                "contract_id": str(sched.contract_id),
-                                "step": sched.current_step,
-                                "channel": channel,
-                                "success": True,
-                                "pending_call": True,
-                            }
-                        )
-                        continue
-                
-                    # ②  Demais canais – envia normalmente
-                    msg = self.notification_service.message_repo.get_message(
-                        channel, sched.current_step, sched.clinic_id
-                    )
-                    if not msg:
-                        continue
-
-                    try:
-                        self.notification_service.send(msg, patient, inst)
-                        send_ok = True
-                    except Exception as err:
-                        send_ok = False
-                        err_msg = str(err)
-
-                    hist = self.history_repo.save_from_schedule(
-                        schedule=sched,
-                        sent_at=now,
-                        success=send_ok,
-                        channel=channel,
-                        feedback=None,
-                        observation="automated send"
-                        if send_ok
-                        else f"error: {err_msg}",
-                        message=msg,
-                    )
-                    NOTIFICATIONS_SENT.labels("automated", channel, str(send_ok)).inc()
-
-                    if send_ok:
-                        self.dispatcher.dispatch(
-                            NotificationSentEvent(
-                                schedule_id=sched.id,
-                                message_id=msg.id,
-                                sent_at=hist.sent_at,
-                                channel=channel,
-                            )
-                        )
-                    results.append(
-                        {
-                            "patient_id": str(sched.patient_id),
-                            "contract_id": str(sched.contract_id),
-                            "step": sched.current_step,
-                            "channel": channel,
-                            "success": send_ok,
-                        }
                     )
 
-                # Avança step se **qualquer** canal “automático” foi bem-sucedido
-                if any(
-                    r["success"]
-                    and r.get("pending_call") is not True 
-                    and r["patient_id"] == str(sched.patient_id)
-                    and r["step"] == sched.current_step
-                    for r in results
-                ):
-                    self.command_bus.dispatch(AdvanceContactStepCommand(schedule_id=str(sched.id)))
-        
+                results.append({
+                    "patient_id": str(sched.patient_id),
+                    "contract_id": str(sched.contract_id),
+                    "step": sched.current_step,
+                    "channel": channel,
+                    "success": send_ok,
+                })
+
+                # h) avança o fluxo se enviou com sucesso
+                if send_ok:
+                    self.command_bus.dispatch(
+                        AdvanceContactStepCommand(schedule_id=str(sched.id))
+                    )
 
             return {
                 "clinic_id": cmd.clinic_id,
                 "processed": len(results),
                 "results": results,
             }
+
         except Exception:
             success = False
             raise

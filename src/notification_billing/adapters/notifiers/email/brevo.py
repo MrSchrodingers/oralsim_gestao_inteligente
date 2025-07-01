@@ -1,5 +1,3 @@
-# notification_billing/adapters/notifiers/email/brevo.py
-
 from __future__ import annotations
 
 import httpx
@@ -40,7 +38,10 @@ class BrevoEmail(BaseNotifier):
                 return
 
             payload = {
-                "sender":     {"email": self._from_email},   # remete ao DEFAULT_FROM_EMAIL :contentReference[oaicite:8]{index=8}
+                "sender":   {
+                                "name": "Oralsin Gestão de Recebíveis",
+                                "email": self._from_email
+                            },
                 "to":         [{"email": r} for r in recipients],
                 "subject":    subject,
                 "htmlContent": html,
@@ -57,6 +58,7 @@ class BrevoEmail(BaseNotifier):
                 "content-type":  "application/json",
             }
 
+            logger.debug("brevo.payload", payload=payload)
             # Uso do método unificado de request (timeout, retry, métricas)
             _response = self._request(
                 "POST",

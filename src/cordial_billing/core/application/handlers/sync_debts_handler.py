@@ -1,5 +1,3 @@
-# cordial_billing/core/application/handlers/sync_old_debts_handler.py
-
 from __future__ import annotations
 
 import time

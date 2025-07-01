@@ -34,14 +34,12 @@ class LetterNotifier(BaseNotifier):
         # 2. Prepara o anexo para a API do SendGrid
         encoded_file = base64.b64encode(letter_bytes).decode()
         
-        # --- CORREÇÃO ---
         patient_name = context.get("patient_name", "paciente")
         contract_id = context.get("contract_oralsin_id", "s/n")
-        # ----------------
         
         attachment = {
             "content": encoded_file,
-            "filename": f"Notificacao_Amigavel_{patient_name.replace(' ', '_')}_Contrato_{contract_id}.docx",
+            "name": f"Notificacao_Amigavel_{patient_name.replace(' ', '_')}_Contrato_{contract_id}.docx",
             "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "disposition": "attachment"
         }

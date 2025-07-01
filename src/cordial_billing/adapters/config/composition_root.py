@@ -143,7 +143,7 @@ def setup_di_container_from_settings(settings):                      # noqa: PLR
         )
         create_deal_handler = providers.Factory(
             CreatePipedriveDealHandler,
-            sync_service=pipedrive_sync_service,   #  ⇽  novo
+            sync_service=pipedrive_sync_service,
         )
         list_collection_case_handler = providers.Factory(ListCollectionCaseHandler)
         get_collection_case_handler  = providers.Factory(GetCollectionCaseHandler)

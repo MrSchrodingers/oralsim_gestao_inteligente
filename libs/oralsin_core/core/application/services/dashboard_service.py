@@ -359,16 +359,11 @@ class DashboardService:
                         (end_date_dt is None or inst.due_date <= end_date_dt))
             installments = [i for i in installments if in_window(i)]
 
-        today = date.today()
-        month_start = today.replace(day=1)
         paid_month = Decimal("0.0")
-        receivables = 0
-        for inst in installments:
-            if inst.received:
-                if month_start <= inst.due_date <= today:
-                    paid_month += inst.installment_amount
-            else:
-                receivables += 1
+        receivables = ContactSchedule.objects.filter(
+            clinic_id=clinic_id,
+            status=ContactSchedule.Status.PENDING,
+        ).values("patient_id").distinct().count()
 
         collection_cases = CollectionCase.objects.filter(clinic_id=clinic_id).count()
         clinic = self.clinic_repo.find_by_id(clinic_id) if self.clinic_repo else None
