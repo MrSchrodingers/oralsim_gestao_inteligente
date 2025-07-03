@@ -263,20 +263,27 @@ class OralsinPayloadMapper:
 
         return is_success_status and not_future_due
         
-        
     @classmethod
     def map_installments(
         cls,
         parcelas: list[OralsinParcelaDTO],
         contrato_version: int,
-        parcela_detalhe: OralsinParcelaAtualDetalheDTO | None,
         contract_id: uuid.UUID,
     ) -> list[InstallmentEntity]:
-        current_id = parcela_detalhe.idContratoParcela if parcela_detalhe else None
-        version = str(contrato_version)
+        """
+        [CORRIGIDO] Mapeia DTOs de parcela para Entidades.
 
+        A responsabilidade de definir a flag 'is_current' foi removida
+        desta camada e centralizada exclusivamente no SyncInadimplenciaHandler.
+        """
+        version = str(contrato_version)
         out: list[InstallmentEntity] = []
+        seen_ids = set()
         for p in parcelas:
+            if p.idContratoParcela in seen_ids:
+                continue
+            seen_ids.add(p.idContratoParcela)
+
             pm = None
             if p.nomeFormaPagamento:
                 pm = PaymentMethodEntity(
@@ -284,6 +291,7 @@ class OralsinPayloadMapper:
                     oralsin_payment_method_id=0,
                     name=p.nomeFormaPagamento,
                 )
+            
             out.append(
                 InstallmentEntity(
                     id=cls._uuid(),
@@ -295,13 +303,11 @@ class OralsinPayloadMapper:
                     installment_amount=float(p.valorParcela),
                     received=cls._is_paid(p),
                     payment_method=pm,
-                    installment_status=p.nomeStatusFinanceiro,
-                    is_current=p.idContratoParcela == current_id,
+                    installment_status=p.nomeStatusFinanceiro
                 )
             )
         return out
-    
-    
+
     @classmethod
     def map_installment(
         cls,
@@ -310,48 +316,53 @@ class OralsinPayloadMapper:
         parcelas: list[OralsinParcelaDTO] = None,
     ) -> InstallmentEntity:
         """
-        Mapeia uma parcela (se detalhada, infere 'numeroParcela' cruzando pelo idContratoParcela).
+        Mapeia uma única parcela. Se for a 'parcelaAtualDetalhe', infere dados
+        faltantes (como 'numeroParcela') a partir da lista completa de 'parcelas'.
+        A flag 'is_current' é marcada como True apenas se o DTO for do tipo
+        'OralsinParcelaAtualDetalheDTO'.
         """
-        # Se veio de detalhe, falta o numeroParcela
-        if isinstance(dto, OralsinParcelaAtualDetalheDTO):
-            if not parcelas:
-                raise ValueError("Precisa de 'parcelas' para extrair numeroParcela da parcelaAtualDetalhe")
-            # Busca o número da parcela pelo idContratoParcela
-            matching = next((p for p in parcelas if p.idContratoParcela == dto.idContratoParcela), None)
-            if not matching:
-                raise MappingError(f"Não encontrou numeroParcela para idContratoParcela={dto.idContratoParcela}")
-            installment_number = matching.numeroParcela
-            nome_status_financeiro = matching.nomeStatusFinanceiro
-            valor_parcela = matching.valorParcela
-            possivel_compensado = matching.possivelCompensado
-        else:
-            installment_number = dto.numeroParcela
-            nome_status_financeiro = dto.nomeStatusFinanceiro
-            valor_parcela = dto.valorParcela
-            possivel_compensado = dto.possivelCompensado
+        is_current_dto = isinstance(dto, OralsinParcelaAtualDetalheDTO)
 
-        contract_version = getattr(dto, "versaoContrato", 1)
-        oralsin_installment_id = getattr(dto, "idContratoParcela", None)
-        due_date = dto.dataVencimento.date() if hasattr(dto.dataVencimento, "date") else dto.dataVencimento
-        
+        if is_current_dto:
+            if not parcelas:
+                raise ValueError(
+                    "A lista 'parcelas' é necessária para mapear uma 'OralsinParcelaAtualDetalheDTO'."
+                )
+            # Busca a parcela correspondente na lista para obter todos os dados.
+            matching = next(
+                (p for p in parcelas if p.idContratoParcela == dto.idContratoParcela),
+                None,
+            )
+            if not matching:
+                raise MappingError(
+                    f"Não foi possível encontrar a parcela correspondente ao 'idContratoParcela={dto.idContratoParcela}' na lista de parcelas."
+                )
+            
+            # Usa os dados da parcela correspondente que é mais completa.
+            source_dto = matching
+            oralsin_installment_id = dto.idContratoParcela
+        else:
+            source_dto = dto
+            oralsin_installment_id = dto.idContratoParcela
+
         pm = None
-        if getattr(dto, "nomeFormaPagamento", None):
+        if getattr(source_dto, "nomeFormaPagamento", None):
             pm = PaymentMethodEntity(
                 id=cls._uuid(),
                 oralsin_payment_method_id=0,
-                name=dto.nomeFormaPagamento,
+                name=source_dto.nomeFormaPagamento,
             )
 
         return InstallmentEntity(
             id=cls._uuid(),
             contract_id=contract_id,
-            contract_version=contract_version,
-            installment_number=installment_number,
+            contract_version=str(getattr(dto, "versaoContrato", 1)),
+            installment_number=source_dto.numeroParcela,
             oralsin_installment_id=oralsin_installment_id,
-            due_date=due_date,
-            installment_amount=float(valor_parcela),
-            received=possivel_compensado,
+            due_date=source_dto.dataVencimento.date(),
+            installment_amount=float(source_dto.valorParcela),
+            received=cls._is_paid(source_dto),
             payment_method=pm,
-            installment_status=nome_status_financeiro,
-            is_current=bool(isinstance(dto, OralsinParcelaAtualDetalheDTO)),
+            installment_status=source_dto.nomeStatusFinanceiro,
+            is_current=False,
         )

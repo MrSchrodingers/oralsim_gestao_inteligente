@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 
 from oralsin_core.core.application.cqrs import PagedResult
@@ -86,6 +86,52 @@ class PatientRepoImpl(PatientRepository):
         return PatientEntity.from_model(model)
 
     # -----------------------------------------------------------------
+    def exists(self, oralsin_patient_id: int) -> bool:
+        """Retorna True se o paciente já estiver no banco."""
+        return PatientModel.objects.filter(
+            oralsin_patient_id=oralsin_patient_id
+        ).exists()
+
+    @transaction.atomic
+    def update(self, patient: PatientEntity) -> PatientEntity:
+        """
+        Atualiza **somente** campos mutáveis; nunca cria registro.
+        Lança `PatientModel.DoesNotExist` se o paciente não existir.
+        """
+        model: PatientModel = PatientModel.objects.get(
+            oralsin_patient_id=patient.oralsin_patient_id
+        )
+
+        # 1) endereço
+        if patient.address:
+            saved_addr = self._address_repo.save(
+                patient.address
+                if isinstance(patient.address, AddressEntity)
+                else AddressEntity.from_dict(patient.address)
+            )
+            model.address_id = saved_addr.id
+
+        # 2) campos simples
+        # (ignora clinic_id, oralsin_patient_id, id)
+        updatable = (
+            "name",
+            "cpf",
+            "contact_name",
+            "email",
+            "is_notification_enabled",
+        )
+        changed = False
+        for fld in updatable:
+            new_val = getattr(patient, fld, None)
+            if new_val is not None and getattr(model, fld) != new_val:
+                setattr(model, fld, new_val)
+                changed = True
+
+        if changed:
+            model.save(update_fields=[*updatable, "address_id"])
+
+        return PatientEntity.from_model(model)
+    
     def delete(self, patient_id: str) -> None:
         PatientModel.objects.filter(id=patient_id).delete()
 

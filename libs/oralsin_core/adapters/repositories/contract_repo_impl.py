@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 import structlog
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -61,6 +62,64 @@ class ContractRepoImpl(ContractRepository):
         return [ContractEntity.from_model(m) for m in qs]
 
     # ────────────────────────── persistência ───────────────────────────
+    def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None) -> bool:
+        """
+        Verifica se um contrato já está salvo.
+
+        Identificação primária: `(oralsin_contract_id, contract_version)`.
+        Se `contract_version` for None, ignora essa parte do filtro.
+        """
+        filters: dict[str, object] = {"oralsin_contract_id": oralsin_contract_id}
+        if contract_version is not None:
+            filters["contract_version"] = str(contract_version)
+        return ContractModel.objects.filter(**filters).exists()
+
+    @transaction.atomic
+    def update(self, contract: ContractEntity) -> ContractEntity:
+        """
+        Atualiza **somente** contratos já existentes.
+        Nunca cria um novo — se não existir, levanta `DoesNotExist`.
+        """
+        try:
+            model: ContractModel = ContractModel.objects.get(
+                oralsin_contract_id=contract.oralsin_contract_id,
+                contract_version=str(contract.contract_version),
+            )
+        except ContractModel.DoesNotExist:
+            raise                     # deixamos o handler decidir o que fazer
+
+        # 1) Payment method
+        if contract.payment_method:
+            pm_repo = PaymentMethodRepoImpl()
+            pm_model = pm_repo.get_or_create_by_name(contract.payment_method.name)
+            contract.payment_method.id = pm_model.id
+            contract.payment_method.oralsin_payment_method_id = pm_model.oralsin_payment_method_id
+            model.payment_method = pm_model
+
+        # 2) Campos mutáveis
+        updatable = (
+            "status",
+            "remaining_installments",
+            "overdue_amount",
+            "final_contract_value",
+            "do_notifications",
+            "do_billings",
+            "first_billing_date",
+            "negotiation_notes",
+        )
+        changed = False
+        for field in updatable:
+            new_val = getattr(contract, field, None)
+            if getattr(model, field) != new_val:
+                setattr(model, field, new_val)
+                changed = True
+
+        if changed:
+            model.updated_at = timezone.now()
+            model.save(update_fields=[*updatable, "payment_method", "updated_at"])
+
+        return ContractEntity.from_model(model)
+    
     def save(self, contract: ContractEntity) -> ContractEntity:
         # 1) resolve FK de PaymentMethod
         pm_model = None

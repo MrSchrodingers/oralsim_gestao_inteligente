@@ -1,6 +1,8 @@
 import uuid
 
 from cryptography.fernet import Fernet
+
+from config import settings
 from oralsin_core.adapters.message_broker.rabbitmq import MessagingService, registration_exchange
 from oralsin_core.adapters.security.hash_service import HashService
 from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
@@ -8,8 +10,6 @@ from oralsin_core.core.application.cqrs import CommandHandler, PagedResult, Quer
 from oralsin_core.core.application.queries.registration_request_queries import GetRegistrationRequestQuery, ListRegistrationRequestsQuery
 from oralsin_core.core.domain.entities.registration_request_entity import RegistrationRequestEntity
 from oralsin_core.core.domain.repositories.registration_request_repository import RegistrationRequestRepository
-
-from config import settings
 
 FERNET = Fernet(settings.REGISTRATION_KEY)
 

@@ -17,6 +17,17 @@ class InstallmentRepository(ABC):
         """Lista parcelas vencidas paginadas."""
         ...
     
+    @abstractmethod
+    def existing_oralsin_ids(self, ids: list[int]) -> set[int]:
+        ...
+        
+    @abstractmethod
+    def save_many(self, installments: list[InstallmentEntity]) -> None:
+        """
+        Cria ou atualiza uma lista de parcelas de forma eficiente e em lote.
+        """
+        ...
+        
     @abstractmethod    
     def find_by_contract_ids(self, contract_ids: list[str]) -> list[InstallmentEntity]:
         """

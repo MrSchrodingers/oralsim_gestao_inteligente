@@ -29,15 +29,15 @@ class OralsinSyncService:
         clinic_id: int,
         data_inicio: date,
         data_fim: date,
-        no_schedules=False
+        no_schedules=False,
+        resync: bool = False
     ) -> None:
         """Dispara sincronização completa de inadimplência para uma clínica."""
-        if no_schedules:
-            return
         cmd = SyncInadimplenciaCommand(
-            oralsin_clinic_id=clinic_id,
-            data_inicio=data_inicio,
-            data_fim=data_fim,
+            oralsin_clinic_id   =clinic_id,
+            data_inicio         =data_inicio,
+            data_fim            =data_fim,
+            resync              = resync,
         )
         self._commands.dispatch(cmd)
 

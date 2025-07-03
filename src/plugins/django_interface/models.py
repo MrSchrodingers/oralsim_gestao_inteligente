@@ -343,9 +343,9 @@ class Installment(models.Model):
         on_delete=models.CASCADE,
         related_name="installments"
     )
-    contract_version = models.PositiveIntegerField(null=True, db_index=True)
+    contract_version = models.CharField(max_length=10, null=True, db_index=True)
     installment_number = models.PositiveIntegerField()
-    oralsin_installment_id = models.IntegerField(null=True, db_index=True)
+    oralsin_installment_id = models.IntegerField(unique=True, null=True, db_index=True)
     due_date = models.DateField(db_index=True)
     installment_amount = models.DecimalField(max_digits=14, decimal_places=2)
     received = models.BooleanField(default=False, db_index=True)
@@ -364,10 +364,10 @@ class Installment(models.Model):
     class Meta:
         db_table = "installments"
         unique_together = [
-            ("contract", "contract_version", "installment_number")
+            ("contract", "oralsin_installment_id")
         ]
         indexes = [
-            Index(fields=["contract", "contract_version", "installment_number"]),
+            Index(fields=["contract", "contract_version", "installment_number", "is_current"]),
             BrinIndex(fields=["due_date"], autosummarize=True),
             Index(
                 fields=["received", "due_date"],
@@ -386,13 +386,13 @@ class Installment(models.Model):
                 fields=["contract", "is_current"],
             ),
         ]
-        # constraints = [
-        #     UniqueConstraint(
-        #         fields=["contract", "contract_version"],
-        #         condition=Q(is_current=True),
-        #         name="unique_current_per_contract_version",
-        #     )
-        # ]
+        constraints = [
+            UniqueConstraint(
+                fields=["contract", "contract_version"],
+                condition=Q(is_current=True),
+                name="unique_current_per_contract_version",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"Parcela {self.installment_number} | {self.contract}"

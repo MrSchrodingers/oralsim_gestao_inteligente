@@ -11,3 +11,4 @@ class SyncInadimplenciaCommand(CommandDTO):
     oralsin_clinic_id: int
     data_inicio: date
     data_fim: date
+    resync: bool = False

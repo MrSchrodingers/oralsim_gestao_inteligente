@@ -69,6 +69,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         DeletePatientPhoneCommand,
         UpdatePatientPhoneCommand,
     )
+    from oralsin_core.core.application.commands.register_commands import ResyncClinicCommand
     from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
     from oralsin_core.core.application.commands.sync_commands import (
         SyncInadimplenciaCommand,
@@ -111,13 +112,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         GetDashboardReportHandler,
         GetDashboardSummaryHandler,
     )
-    from oralsin_core.core.application.handlers.handlers.registration_request_handlers import (
-        ApproveRegistrationRequestHandler,
-        CreateRegistrationRequestHandler,
-        GetRegistrationRequestHandler,
-        ListRegistrationRequestsHandler,
-        RejectRegistrationRequestHandler,
-    )
 
     # Handlers de Queries (core)
     from oralsin_core.core.application.handlers.query_handlers import (
@@ -146,9 +140,17 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         ListUserClinicsHandler,
         ListUsersHandler,
     )
+    from oralsin_core.core.application.handlers.registration_request_handlers import (
+        ApproveRegistrationRequestHandler,
+        CreateRegistrationRequestHandler,
+        GetRegistrationRequestHandler,
+        ListRegistrationRequestsHandler,
+        RejectRegistrationRequestHandler,
+    )
 
     # Implementações concretas de repositórios
     from oralsin_core.core.application.handlers.sync_handlers import (
+        ResyncClinicHandler,
         SyncInadimplenciaHandler,
     )
 
@@ -337,6 +339,11 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             command_bus=command_bus,
             query_bus=query_bus,
         )
+        resync_clinic_handler = providers.Factory(
+            ResyncClinicHandler,
+            clinic_repo  =clinic_repo,
+            sync_service = oralsin_sync_service,
+        )
         dashboard_service    = providers.Singleton(
             DashboardService,
             user_clinic_repo=user_clinic_repo,
@@ -454,6 +461,9 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             cmd_bus.register(CreateRegistrationRequestCommand, self.create_registration_request_handler())
             cmd_bus.register(ApproveRegistrationRequestCommand, self.approve_registration_request_handler())
             cmd_bus.register(RejectRegistrationRequestCommand, self.reject_registration_request_handler())
+            
+            cmd_bus.register(ResyncClinicCommand, self.resync_clinic_handler())
+            
             # Bus de queries (core)
             qry_bus = self.query_bus()
 

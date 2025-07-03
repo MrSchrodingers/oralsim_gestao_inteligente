@@ -21,7 +21,7 @@ from oralsin_core.core.application.commands.billing_settings_commands import Upd
 from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
 from oralsin_core.core.application.cqrs import CommandBusImpl, QueryBusImpl
 from oralsin_core.core.application.dtos.registration_request_dto import CreateRegistrationRequestDTO
-from oralsin_core.core.application.handlers.handlers.registration_request_handlers import FERNET
+from oralsin_core.core.application.handlers.registration_request_handlers import FERNET
 from oralsin_core.core.application.queries.billing_settings_queries import GetBillingSettingsQuery, ListBillingSettingsQuery
 from oralsin_core.core.application.queries.payment_methods_queries import GetPaymentMethodQuery, ListPaymentMethodsQuery
 from oralsin_core.core.application.queries.registration_request_queries import GetRegistrationRequestQuery, ListRegistrationRequestsQuery

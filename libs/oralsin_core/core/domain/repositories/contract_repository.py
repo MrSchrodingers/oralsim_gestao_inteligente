@@ -11,6 +11,14 @@ class ContractRepository(ABC):
         ...
 
     @abstractmethod
+    def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None) -> bool:
+        ...
+        
+    @abstractmethod
+    def update(self, contract: ContractEntity) -> ContractEntity:
+        ...
+            
+    @abstractmethod
     def qs(self):
         """Recupera todos contratos."""
         ...

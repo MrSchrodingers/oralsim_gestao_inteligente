@@ -13,11 +13,10 @@ import os
 import pstats
 import time
 import uuid
-from collections import defaultdict
 from typing import Any
 
 from django.conf import settings
-from django.db import connection, models, transaction
+from django.db import connection, transaction
 
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
 from oralsin_core.adapters.observability.metrics import (
@@ -25,13 +24,14 @@ from oralsin_core.adapters.observability.metrics import (
     SYNC_PATIENTS,
     SYNC_RUNS,
 )
-from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
+from oralsin_core.core.application.commands.register_commands import ResyncClinicCommand
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import CommandHandler
 from oralsin_core.core.application.dtos.oralsin_dtos import (
     InadimplenciaQueryDTO,
     OralsinPacienteDTO,
 )
+from oralsin_core.core.application.services.oralsin_sync_service import OralsinSyncService
 from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 from oralsin_core.core.domain.repositories.clinic_repository import ClinicRepository
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
@@ -43,7 +43,6 @@ from oralsin_core.core.domain.repositories.patient_phone_repository import (
 )
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 from oralsin_core.core.domain.services.event_dispatcher import EventDispatcher
-from plugins.django_interface.models import Installment as InstallmentModel
 from plugins.django_interface.models import PatientPhone as PatientPhoneModel
 
 # ────────────────────────────────  logger  ───────────────────────────────
@@ -104,6 +103,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
     # ─────────────────────────────  main  ───────────────────────────────
     @transaction.atomic
     def handle(self, cmd: SyncInadimplenciaCommand) -> None:
+        self.is_resync = cmd.resync
         profiler = cProfile.Profile() if PROFILE_ENABLED else None
         if profiler:
             profiler.enable()
@@ -134,12 +134,14 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         for idx, dto in enumerate(dtos, 1):
             tag = f"dto{idx}"
 
-            # 3.1 paciente + telefones
+            # 3.1 paciente + telefones ----------------------------------------
             patient = self._profiled(
                 f"{tag}.patient", self._persist_patient_and_phones, dto, clinic.id
             )
+            if patient is None:                       # ← NEW
+                continue                              # nada a atualizar
 
-            # 3.2 contrato
+            # 3.2 contrato -----------------------------------------------------
             contract = self._profiled(
                 f"{tag}.contract",
                 self._persist_contract,
@@ -147,8 +149,10 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
                 patient.id,
                 clinic.id,
             )
+            if contract is None:                      # ← NEW
+                continue
 
-            # 3.3 parcelas (bulk seguro)
+            # 3.3 parcelas -----------------------------------------------------
             self._profiled(
                 f"{tag}.installments", self._persist_installments, dto, contract.id
             )
@@ -170,10 +174,55 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
     def _persist_patient_and_phones(
         self, dto: OralsinPacienteDTO, clinic_id: uuid.UUID
     ):
-        patient = self.mapper.map_patient(dto, clinic_id)
-        saved = self.patient_repo.save(patient)
+        """
+        • full-sync  → UPSERT completo (create + update)
+        • resync     → 
+            – se paciente existir → UPDATE
+            – se for novo:
+                · cria somente se DTO tiver dados essenciais
+                · senão, ignora
+        """
+        is_resync = getattr(self, "is_resync", False)
 
-        # telefones
+        # --------- regra de “DTO completo” ----------
+        def _dto_is_complete(d: OralsinPacienteDTO) -> bool:
+            """
+            Retorna True se há dados suficientes para criarmos um novo paciente
+            durante o *resync*.
+
+            • Usa getattr para evitar AttributeError se o campo não existir.
+            • Você pode ajustar os requisitos à vontade.
+            """
+            nome_ok  = getattr(d, "nomePaciente", None)
+            telef_ok = bool(getattr(d, "telefones", []))          # ≥1 tel
+            contr_ok = getattr(d, "contrato", None) is not None
+
+            # Campos opcionais – checamos se EXISTEM, mas não são mandatórios
+            _cpf_ok   = getattr(d, "cpf", None) or getattr(d, "cpfPaciente", None)
+            _email_ok = getattr(d, "email", None) or getattr(d, "emailPaciente", None)
+
+            return nome_ok and telef_ok and contr_ok  #  ← regras mínimas
+
+        # --------- Paciente ---------
+        patient_ent = self.mapper.map_patient(dto, clinic_id)
+
+        if is_resync:
+            if self.patient_repo.exists(dto.idPaciente):
+                saved = self.patient_repo.update(patient_ent)
+            elif _dto_is_complete(dto):
+                saved = self.patient_repo.save(patient_ent)           # cria
+                logger.debug(
+                    "Resync: paciente %s criado (DTO completo).", dto.idPaciente
+                )
+            else:
+                logger.debug(
+                    "Resync: paciente %s ignorado (DTO incompleto).", dto.idPaciente
+                )
+                return None
+        else:  # full-sync
+            saved = self.patient_repo.save(patient_ent)
+
+        # --------- Telefones ---------
         phones = list(self.mapper.map_patient_phones(dto.telefones, saved.id))
         if not phones:
             return saved
@@ -185,12 +234,13 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         for ent in phones:
             key = (ent.phone_number, ent.phone_type)
             model = existing_map.get(key)
+
             if model:
                 if model.phone_number != ent.phone_number or model.phone_type != ent.phone_type:
                     model.phone_number = ent.phone_number
-                    model.phone_type = ent.phone_type
+                    model.phone_type   = ent.phone_type
                     to_update.append(model)
-            else:
+            elif not is_resync or (is_resync and saved):      # pode criar telefone novo
                 to_create.append(
                     PatientPhoneModel(
                         id=ent.id or uuid.uuid4(),
@@ -199,11 +249,14 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
                         phone_type=ent.phone_type,
                     )
                 )
+
         if to_create:
             PatientPhoneModel.objects.bulk_create(to_create, ignore_conflicts=True)
         if to_update:
             PatientPhoneModel.objects.bulk_update(to_update, ["phone_number", "phone_type"])
+
         return saved
+
 
     def _persist_contract(
         self,
@@ -211,136 +264,89 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         patient_id: uuid.UUID,
         clinic_id: uuid.UUID,
     ):
-        contract = self.mapper.map_contract(dto.contrato, patient_id, clinic_id)
-        return self.contract_repo.save(contract)
+        is_resync = getattr(self, "is_resync", False)
+        contract_ent = self.mapper.map_contract(dto.contrato, patient_id, clinic_id)
 
-    # ────────────────────────  ★  PARCELAS  ★  ──────────────────────────
-    def _persist_installments( # noqa
-        self, dto: OralsinPacienteDTO, contract_id: uuid.UUID
-    ) -> None:
-        """
-        Estratégia bulk:
-        1. Mescla payloads → `entities`
-        2. Garante **apenas 1** parcela `is_current=True` por (contract_id, contract_version)
-        3. Upsert em duas fases:
-           3a. bulk_create novos
-           3b. bulk_update campos (exceto is_current)
-           3c. pós-passo: UPDATE ONE set is_current=True, demais False
-        """
+        if is_resync:
+            if not self.contract_repo.exists(dto.contrato.idContrato):
+                logger.debug("Resync: contrato %s inexistente – ignorado",
+                            dto.contrato.idContrato)
+                return None
+            return self.contract_repo.update(contract_ent)
+        return self.contract_repo.save(contract_ent)
 
-        # 0) Map
-        entities = self.installment_repo.merge_installments(
-            dto.parcelas, dto.contrato, dto.parcelaAtualDetalhe, contract_id
+    # ───────────────── ★ PARCELAS (Estrita) ★ ──────────────────
+    def _persist_installments(self, dto, contract_id):
+        entities = self.mapper.map_installments(
+            parcelas=dto.parcelas,
+            contrato_version=dto.contrato.versaoContrato,
+            contract_id=contract_id,
         )
+
+        # ① Se estamos em resync → só lida com parcelas já existentes
+        if getattr(self, "is_resync", False):
+            existing = self.installment_repo.existing_oralsin_ids(
+                [e.oralsin_installment_id for e in entities]
+            )
+            entities = [e for e in entities if e.oralsin_installment_id in existing]
+
         if not entities:
             return
-        
-        pm_repo = PaymentMethodRepoImpl()
-        for ent in entities:
-            if ent.payment_method:
-                pm = pm_repo.get_or_create_by_name(ent.payment_method.name)
-                ent.payment_method.id = pm.id
-                ent.payment_method.oralsin_payment_method_id = (
-                    pm.oralsin_payment_method_id
-                )
 
-        # 1) Agrupa por (contract_id, contract_version)
-        cv_groups: dict[tuple[uuid.UUID, int | None], list] = defaultdict(list)
-        for ent in entities:
-            cv_groups[(ent.contract_id, ent.contract_version)].append(ent)
+        # ② Decide quem é a “current”
+        current_id = (
+            dto.parcelaAtualDetalhe.idContratoParcela
+            if dto.parcelaAtualDetalhe else None
+        )
+        for e in entities:
+            e.is_current = False                # zera tudo na 1ª fase
 
-        # 2) Normaliza is_current → apenas 1 por grupo
-        winners: dict[tuple[uuid.UUID, int | None], int] = {}  # (cid,ver) -> installment_number
-        for cv_key, ents in cv_groups.items():
-            # Escolhe "favorito": primeiro que já esteja marcado como current,
-            # ou a menor due_date
-            winner = next((e for e in ents if e.is_current), None)
-            if not winner:
-                winner = min(ents, key=lambda e: e.due_date)
-            winners[cv_key] = winner.installment_number
-            for e in ents:
-                e.is_current = e.installment_number == winner.installment_number
+        # ③ Primeira fase – atualiza valores + is_current=False
+        self.installment_repo.save_many(entities)
 
-        # -----------------------------------------------------------------
-        # 3) Upsert bulk (ignorando is_current nos UPDATEs)
-        keys = {
-            (e.contract_id, e.contract_version, e.installment_number) for e in entities
-        }
-        q = models.Q()
-        for cid, ver, num in keys:
-            q |= models.Q(
-                contract_id=cid, contract_version=ver, installment_number=num
+        # ④ Segunda fase – seta exatamente uma current
+        if current_id:
+            self.installment_repo.set_current_installment_atomically(
+                contract_id=contract_id,
+                oralsin_installment_id=current_id,
             )
-        existing_map = {
-            (m.contract_id, m.contract_version, m.installment_number): m
-            for m in InstallmentModel.objects.filter(q)
-        }
+                
+                
+class ResyncClinicHandler(CommandHandler[ResyncClinicCommand]):
+    """
+    Executa o *delta sync* diário.  
+    Ele simplesmente delega para `OralsinSyncService.full_sync(...)`
+    com uma janela curta de datas para capturar *updates*.
+    """
 
-        to_create, to_update = [], []
-        UPDATE_FIELDS = [
-            "oralsin_installment_id",
-            "due_date",
-            "installment_amount",
-            "received",
-            "installment_status",
-            "payment_method_id",
-            # ← is_current fica fora!  post-step garantirá unicidade
-        ]
+    def __init__(
+        self,
+        sync_service: OralsinSyncService,
+        clinic_repo: ClinicRepository,
+    ) -> None:
+        self.sync_service = sync_service
+        self.clinic_repo  = clinic_repo
 
-        def _pm(ent):
-            return ent.payment_method.id if ent.payment_method else None
-
-        for ent in entities:
-            key = (ent.contract_id, ent.contract_version, ent.installment_number)
-            model = existing_map.get(key)
-            if model:
-                dirty = False
-                for f in UPDATE_FIELDS:
-                    val = getattr(ent, f) if f != "payment_method_id" else _pm(ent)
-                    if getattr(model, f) != val:
-                        setattr(model, f, val)
-                        dirty = True
-                if dirty:
-                    to_update.append(model)
-            else:
-                to_create.append(
-                    InstallmentModel(
-                        id=ent.id or uuid.uuid4(),
-                        contract_id=ent.contract_id,
-                        contract_version=ent.contract_version,
-                        installment_number=ent.installment_number,
-                        oralsin_installment_id=ent.oralsin_installment_id,
-                        due_date=ent.due_date,
-                        installment_amount=ent.installment_amount,
-                        received=ent.received,
-                        installment_status=ent.installment_status,
-                        payment_method_id=_pm(ent),
-                        is_current=ent.is_current,  # insert já com flag certo
-                    )
-                )
-
-        if to_create:
-            InstallmentModel.objects.bulk_create(to_create, ignore_conflicts=True)
-
-        if to_update:
-            InstallmentModel.objects.bulk_update(to_update, UPDATE_FIELDS)
-
-        # -----------------------------------------------------------------
-        # 4) Pós-passo:  SET is_current=True apenas na parcela vencedora
-        #    e force-false em qualquer outra que esteja True
-        for (cid, ver), winner_num in winners.items():
-            (  # zera competitors
-                InstallmentModel.objects.filter(
-                    contract_id=cid,
-                    contract_version=ver,
-                    is_current=True,
-                )
-                .exclude(installment_number=winner_num)
-                .update(is_current=False)
+    # ------------------------------------------------------------------
+    def handle(self, cmd: ResyncClinicCommand) -> None:
+        clinic = self.clinic_repo.find_by_oralsin_id(cmd.oralsin_clinic_id)
+        if not clinic:
+            raise ValueError(
+                f"Clinic with OralsinID={cmd.oralsin_clinic_id} not found."
             )
-            # garante winner True (caso viesse em to_update sem is_current)
-            InstallmentModel.objects.filter(
-                contract_id=cid,
-                contract_version=ver,
-                installment_number=winner_num,
-            ).update(is_current=True)
+
+        logger.info(
+            "⏩ [Resync] %s  %s → %s",
+            cmd.oralsin_clinic_id,
+            cmd.initial_date.isoformat(),
+            cmd.final_date.isoformat(),
+        )
+
+        # delega; já temos toda a lógica no serviço
+        self.sync_service.full_sync(
+            clinic_id   = cmd.oralsin_clinic_id,
+            data_inicio = cmd.initial_date,
+            data_fim    = cmd.final_date,
+            no_schedules= cmd.no_schedules,
+            resync      = True,  
+        )

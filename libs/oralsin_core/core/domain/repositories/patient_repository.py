@@ -11,6 +11,14 @@ class PatientRepository(ABC):
         ...
 
     @abstractmethod
+    def exists(self, oralsin_patient_id: int) -> bool:
+        ...
+        
+    @abstractmethod
+    def update(self, patient: PatientEntity) -> PatientEntity:
+        ...
+        
+    @abstractmethod
     def find_by_clinic(self, clinic_id: str) -> list[PatientEntity]:
         """Lista pacientes de uma clínica."""
         ...
