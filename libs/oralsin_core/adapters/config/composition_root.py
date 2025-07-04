@@ -342,7 +342,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         resync_clinic_handler = providers.Factory(
             ResyncClinicHandler,
             clinic_repo  =clinic_repo,
-            sync_service = oralsin_sync_service,
         )
         dashboard_service    = providers.Singleton(
             DashboardService,

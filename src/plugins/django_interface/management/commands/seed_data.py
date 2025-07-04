@@ -23,6 +23,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Any
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.text import slugify
@@ -65,6 +66,28 @@ class Command(BaseCommand):
         parser.add_argument("--min-days-billing", type=int, default=90)
         parser.add_argument("--skip-full-sync",   action="store_true")
         parser.add_argument("--no-schedules",     action="store_true")
+        
+        parser.add_argument(
+            "--resync",
+            action="store_true",
+            help="Executa em modo atualização para clínicas já existentes",
+        )
+        parser.add_argument(
+            "--window-days",
+            type=int,
+            default=30,
+            help="Janela de dias usada no modo --resync",
+        )
+        parser.add_argument(
+            "--initial-date",
+            type=str,
+            help="Data inicial (YYYY-MM-DD) para o modo resync",
+        )
+        parser.add_argument(
+            "--final-date",
+            type=str,
+            help="Data final (YYYY-MM-DD) para o modo resync",
+        )
 
     # ────────────────────────── entry-point ─────────────────────────────
     def handle(self, *args: Any, **opt: Any) -> None:  # noqa: PLR0915
@@ -109,6 +132,18 @@ class Command(BaseCommand):
         min_days_billing   = opt["min_days_billing"]
         skip_sync: bool    = opt["skip_full_sync"]
         no_schedules: bool = opt["no_schedules"]
+        resync_mode: bool  = opt.get("resync", False)
+        window_days: int   = opt.get("window_days", 30)
+        initial_date = (
+            date.fromisoformat(opt["initial_date"])
+            if opt.get("initial_date")
+            else None
+        )
+        final_date = (
+            date.fromisoformat(opt["final_date"])
+            if opt.get("final_date")
+            else None
+        )
 
         with transaction.atomic():
             covered_id, oralsin_id = self._register_coverage(
@@ -152,7 +187,16 @@ class Command(BaseCommand):
             oralsin_id,
             skip_sync,
             no_schedules,
+            resync=resync_mode,
+            window_days=window_days,
+            start_date=initial_date,
+            end_date=final_date,
         )
+        
+        if resync_mode:
+            call_command("sync_old_debts", clinic_id=oralsin_id)
+            call_command("sync_acordo_activities", clinic_id=oralsin_id)
+            call_command("seed_scheduling", clinic_id=oralsin_id)
 
         self.stdout.write(self.style.SUCCESS("🎉 Seed finalizado com sucesso."))
 
@@ -230,12 +274,17 @@ class Command(BaseCommand):
         return clinic_obj.id, covered.oralsin_clinic_id  # type: ignore
 
     # ------------------------------------------------------------------
-    def _post_seed_sync(
+    def _post_seed_sync(  # noqa: PLR0913
         self,
         container,
         oralsin_id: int,
         skip_sync: bool,
         no_schedules: bool,
+        *,
+        resync: bool = False,
+        window_days: int = 30,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> None:
         today = date.today()
         if skip_sync:
@@ -243,9 +292,25 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"⚡ --skip-full-sync: {start} → {end}")
             )
+        if resync:
+            if start_date and end_date:
+                start, end = start_date, end_date
+            else:
+                start, end = (
+                    today - timedelta(days=window_days),
+                    today + timedelta(days=window_days),
+                )
+            self.stdout.write(
+                self.style.NOTICE(f"⏳ Resync {start} → {end}")
+            )
         else:
-            start, end = today - timedelta(days=200), today + timedelta(days=730)
-            self.stdout.write(self.style.NOTICE("⏳ Sync completo (datas padrão)…"))
+            start, end = (
+                today - timedelta(days=200),
+                today + timedelta(days=730),
+            )
+            self.stdout.write(
+                self.style.NOTICE("⏳ Sync completo (datas padrão)…")
+            )
 
         sync_service = container.oralsin_sync_service()
         sync_service.full_sync(
@@ -253,6 +318,7 @@ class Command(BaseCommand):
             data_inicio=start,
             data_fim=end,
             no_schedules=no_schedules,
+            resync=resync,
         )
         self.stdout.write(self.style.SUCCESS("➡️ Sincronização concluída."))
 

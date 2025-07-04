@@ -517,6 +517,11 @@ class ContactSchedule(models.Model):
                 condition=Q(notification_trigger="automated"),
                 name="uq_contact_schedule_per_step_pending"
             ),
+            UniqueConstraint(
+                fields=["patient", "channel"],
+                condition=Q(status="pending", notification_trigger="automated"),
+                name="uq_patient_channel_pending",
+            ),
         ]
 
     def __str__(self) -> str:

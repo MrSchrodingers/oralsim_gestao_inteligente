@@ -16,6 +16,7 @@ import uuid
 from typing import Any
 
 from django.conf import settings
+from django.core.management import call_command
 from django.db import connection, transaction
 
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
@@ -31,7 +32,6 @@ from oralsin_core.core.application.dtos.oralsin_dtos import (
     InadimplenciaQueryDTO,
     OralsinPacienteDTO,
 )
-from oralsin_core.core.application.services.oralsin_sync_service import OralsinSyncService
 from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 from oralsin_core.core.domain.repositories.clinic_repository import ClinicRepository
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
@@ -321,10 +321,8 @@ class ResyncClinicHandler(CommandHandler[ResyncClinicCommand]):
 
     def __init__(
         self,
-        sync_service: OralsinSyncService,
         clinic_repo: ClinicRepository,
     ) -> None:
-        self.sync_service = sync_service
         self.clinic_repo  = clinic_repo
 
     # ------------------------------------------------------------------
@@ -343,10 +341,16 @@ class ResyncClinicHandler(CommandHandler[ResyncClinicCommand]):
         )
 
         # delega; já temos toda a lógica no serviço
-        self.sync_service.full_sync(
-            clinic_id   = cmd.oralsin_clinic_id,
-            data_inicio = cmd.initial_date,
-            data_fim    = cmd.final_date,
-            no_schedules= cmd.no_schedules,
-            resync      = True,  
+        window_days = max((cmd.final_date - cmd.initial_date).days, 1)
+        call_command(
+            "seed_data",
+            clinic_name=clinic.name,
+            owner_name=clinic.owner_name or clinic.name,
+            skip_admin=True,
+            skip_clinic_user=True,
+            no_schedules=cmd.no_schedules,
+            resync=True,
+            window_days=window_days,
+            initial_date=cmd.initial_date.isoformat(),
+            final_date=cmd.final_date.isoformat(),
         )

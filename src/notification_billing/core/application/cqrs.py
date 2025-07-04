@@ -135,25 +135,33 @@ class BaseService:
         return result
 
 class CommandBusImpl(CommandBus):
-    """
-    Implementação do CommandBus que usa o dispatcher de eventos
-    para casos em que handlers possam lançar DomainEvents.
-    """
     def __init__(self, dispatcher: EventDispatcher):
         super().__init__()
         self.dispatcher = dispatcher
-        self._dispatcher = dispatcher
+        self._loop: asyncio.AbstractEventLoop | None = None
 
+    def _get_loop(self) -> asyncio.AbstractEventLoop:
+        """
+        Garante que sempre trabalhamos no MESMO loop.
+        • Se já estamos dentro de um loop (por ex. Django-ASGI), usa-o.
+        • Caso contrário cria um novo e o reaproveita nas próximas chamadas.
+        """
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            if self._loop is None:
+                self._loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self._loop)
+            return self._loop
+
+    # ------------------------------------------------------------------
     def dispatch(self, command: Any) -> Any:
-        # chama o dispatch “pai” para executar handler.handle(...)
         result = super().dispatch(command)
 
-        # se o resultado for uma coroutine, aguardamos sua execução
         if asyncio.iscoroutine(result):
-            # Executa a coroutine até a conclusão no loop padrão
-            result = asyncio.run(result)
+            loop = self._get_loop()
+            result = loop.run_until_complete(result)
 
-        # Agora processamos DomainEvent(s) como antes
         if isinstance(result, DomainEvent):
             self.dispatcher.dispatch(result)
         elif hasattr(result, "__iter__") and not isinstance(result, str | bytes):
@@ -161,7 +169,6 @@ class CommandBusImpl(CommandBus):
                 self.dispatcher.dispatch(evt)
 
         return result
-
 
 class QueryBusImpl(QueryBus):
     """
