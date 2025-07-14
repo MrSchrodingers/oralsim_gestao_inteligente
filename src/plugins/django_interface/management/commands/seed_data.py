@@ -18,7 +18,6 @@ Principais mudanças
 
 from __future__ import annotations
 
-import random
 import uuid
 from datetime import date, timedelta
 from typing import Any
@@ -38,8 +37,6 @@ from oralsin_core.core.application.commands.coverage_commands import (
 )
 from oralsin_core.core.application.commands.user_commands import CreateUserCommand
 from oralsin_core.core.application.dtos.user_dto import CreateUserDTO
-
-from plugins.django_interface.models import Contract as ContractModel
 
 
 class Command(BaseCommand):
@@ -323,30 +320,30 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("➡️ Sincronização concluída."))
 
         # ajuste de flags para ambientes de teste
-        if not skip_sync:
-            self._adjust_billing_flags(oralsin_id)
+        # if not skip_sync:
+        #     self._adjust_billing_flags(oralsin_id)
 
     # ------------------------------------------------------------------
-    def _adjust_billing_flags(self, oralsin_id: int) -> None:
-        self.stdout.write("🌱 Ajustando flags de billing para testes…")
-        all_contracts = list(
-            ContractModel.objects.filter(clinic__oralsin_clinic_id=oralsin_id)
-        )
-        random.shuffle(all_contracts)
-        half = len(all_contracts) // 2
-        billing_ids      = [c.id for c in all_contracts[:half]]
-        notification_ids = [c.id for c in all_contracts[half:]]
+    # def _adjust_billing_flags(self, oralsin_id: int) -> None:
+    #     self.stdout.write("🌱 Ajustando flags de billing para testes…")
+    #     all_contracts = list(
+    #         ContractModel.objects.filter(clinic__oralsin_clinic_id=oralsin_id)
+    #     )
+    #     random.shuffle(all_contracts)
+    #     half = len(all_contracts) // 2
+    #     billing_ids      = [c.id for c in all_contracts[:half]]
+    #     notification_ids = [c.id for c in all_contracts[half:]]
 
-        ContractModel.objects.filter(id__in=billing_ids).update(
-            do_billings=True,
-            do_notifications=False,
-        )
-        ContractModel.objects.filter(id__in=notification_ids).update(
-            do_billings=False,
-            do_notifications=True,
-        )
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"✅ Flags Billing/Notification aplicadas ({len(all_contracts)} contratos)"
-            )
-        )
+    #     ContractModel.objects.filter(id__in=billing_ids).update(
+    #         do_billings=True,
+    #         do_notifications=False,
+    #     )
+    #     ContractModel.objects.filter(id__in=notification_ids).update(
+    #         do_billings=False,
+    #         do_notifications=True,
+    #     )
+    #     self.stdout.write(
+    #         self.style.SUCCESS(
+    #             f"✅ Flags Billing/Notification aplicadas ({len(all_contracts)} contratos)"
+    #         )
+    #     )

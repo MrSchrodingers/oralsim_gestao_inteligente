@@ -54,7 +54,6 @@ class ApproveRegistrationRequestHandler(CommandHandler[ApproveRegistrationReques
             "cordial_billing_config": request.cordial_billing_config,
         }
         
-        # CORREÇÃO: Chamada explícita ao serviço injetado. Sem decorators.
         self.messaging_service.publish(
             exchange=registration_exchange,
             routing_key="approved",

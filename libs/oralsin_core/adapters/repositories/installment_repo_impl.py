@@ -87,7 +87,7 @@ class InstallmentRepoImpl(InstallmentRepository):
 
         with transaction.atomic():
             if to_create:
-                InstallmentModel.objects.bulk_create(to_create, ignore_conflicts=True)
+                InstallmentModel.objects.bulk_create(to_create)
             if to_update:
                 InstallmentModel.objects.bulk_update(to_update, UPDATE_FIELDS)
                 
@@ -341,20 +341,32 @@ class InstallmentRepoImpl(InstallmentRepository):
 
     @transaction.atomic
     def set_current_installment_atomically(
-        self, contract_id: uuid.UUID, oralsin_installment_id: int
-    ) -> bool:
-        """
-        [NOVO E RECOMENDADO] Define a parcela 'current' de forma atômica e segura.
+        self, *, contract_id: uuid.UUID, oralsin_installment_id: int | None = None
+    ) -> None:
+        # 1) zera tudo
+        qset = InstallmentModel.objects.filter(contract_id=contract_id, is_current=True)
+        qset.update(is_current=False)
 
-        Este método não faz parte da interface 'InstallmentRepository', mas é
-        a forma recomendada de gerenciar a flag 'is_current' para evitar erros.
-        """
-        # Garante que nenhuma outra parcela seja 'current'
-        InstallmentModel.objects.filter(contract_id=contract_id).update(is_current=False)
+        # 2) tenta ativar a parcela informada
+        if oralsin_installment_id is not None:
+            updated = (
+                InstallmentModel.objects
+                .filter(contract_id=contract_id,
+                        oralsin_installment_id=oralsin_installment_id)
+                .update(is_current=True)
+            )
+            if updated:
+                return 
 
-        # Define a parcela correta como 'current'
-        updated_count = InstallmentModel.objects.filter(
-            contract_id=contract_id, oralsin_installment_id=oralsin_installment_id
-        ).update(is_current=True)
+            # nada encontrado: simplesmente não marca ninguém
+            return
 
-        return updated_count > 0
+        # 3) fallback seguro: primeira NÃO-recebida mais próxima do vencimento
+        inst = (InstallmentModel.objects
+                .filter(contract_id=contract_id, received=False)
+                .order_by("due_date")
+                .first())
+
+        if inst:
+            inst.is_current = True
+            inst.save(update_fields=["is_current"])

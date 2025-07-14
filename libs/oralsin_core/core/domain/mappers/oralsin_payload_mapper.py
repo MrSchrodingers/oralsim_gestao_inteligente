@@ -16,6 +16,7 @@ from oralsin_core.core.application.dtos.oralsin_dtos import (
     OralsinParcelaDTO,
     OralsinTelefoneDTO,
 )
+from oralsin_core.core.application.services.payment_status_classifier import is_paid_status
 from oralsin_core.core.domain.entities.address_entity import AddressEntity
 from oralsin_core.core.domain.entities.clinic_data_entity import ClinicDataEntity
 from oralsin_core.core.domain.entities.clinic_entity import ClinicEntity
@@ -150,7 +151,6 @@ class OralsinPayloadMapper:
                 address=address,
                 contact_name=dto.telefones.nomeContato or "",
                 email=dto.telefones.email or "",
-                is_notification_enabled=True,
             )
         except Exception as exc:  # pragma: no cover
             logger.error("map_patient", error=str(exc), dto=dto.dict())
@@ -223,45 +223,9 @@ class OralsinPayloadMapper:
 
     @staticmethod
     def _is_paid(dto) -> bool:
-        """
-        Retorna True se a parcela deve ser considerada paga, ou seja:
-        - Status financeiro indica compensação, negociação concluída ou passagem por gateway
-        - E a data de vencimento não está no futuro
-        """
-        # Status explícitos de parcela paga
-        paid_statuses = {
-            "compensado",
-            "caixa clínica",
-            "negociação concluída",
-        }
-
-        # Gateways/bancos que também significam "já pago"
-        payment_gateways = {
-            "banco bradesco",
-            "banco inter",
-            "cora bank",
-            "pagseguro",
-            "pagseguro 2",
-        }
-
-        raw = getattr(dto, "nomeStatusFinanceiro", "") or ""
-        status_txt = raw.strip().lower()
-
-        # Extrai a due_date como date
-        venc = dto.dataVencimento
-        venc_date = venc.date() if hasattr(venc, "date") else venc
-
-        # É pago se:
-        # 1) status_txt bate com um dos paid_statuses
-        # 2) OU bate com um dos payment_gateways
-        # 3) E o vencimento não é posterior ao mês corrente
-        is_success_status = (
-            status_txt in paid_statuses
-            or status_txt in payment_gateways
-        )
+        venc_date = dto.dataVencimento.date()
         not_future_due = venc_date <= date.today()
-
-        return is_success_status and not_future_due
+        return is_paid_status(dto.nomeStatusFinanceiro) and not_future_due
         
     @classmethod
     def map_installments(

@@ -81,7 +81,10 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
         processed_patients: set[str] = set()
 
         for contract in contracts:
-            effective_min_days = 0 if contract.do_billings else min_days
+            if not contract.do_billings:
+                continue
+
+            effective_min_days = min_days
             page = 0
             while True:
                 # 2️⃣ busca parcelas vencidas usando min_days da configuração

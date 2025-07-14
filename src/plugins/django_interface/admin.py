@@ -52,8 +52,8 @@ MODEL_ADMIN_REGISTRY: dict[type[models.models.Model], dict] = {
     ),
     # 3. Pacientes & Contratos
     models.Patient: dict(
-        list_display=("name", "cpf", "clinic", "is_notification_enabled"),
-        list_filter=("clinic", "is_notification_enabled"),
+        list_display=("name", "cpf", "clinic"),
+        list_filter=("clinic",),
         search_fields=("name", "cpf"),
     ),
     models.PatientPhone: dict(

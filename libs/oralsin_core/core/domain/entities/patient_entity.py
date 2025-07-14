@@ -19,7 +19,6 @@ class PatientEntity(EntityMixin):
     address: AddressEntity | None = None
     contact_name: str | None = None
     email: str | None = None
-    is_notification_enabled: bool = True
     flow_type: str | None = None
     phones: list[PatientPhoneEntity] = field(default_factory=list)
     created_at: datetime | None = None
@@ -39,7 +38,6 @@ class PatientEntity(EntityMixin):
             "flow_type": self.flow_type,
             "contact_name": self.contact_name,
             "email": self.email,
-            "is_notification_enabled": self.is_notification_enabled,
         }
         if self.address:
             data["address"] = {

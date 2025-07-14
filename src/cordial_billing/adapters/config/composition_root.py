@@ -62,6 +62,7 @@ def setup_di_container_from_settings(settings):                      # noqa: PLR
     from cordial_billing.core.application.commands.sync_acordo_activity_commands import (
         SyncAcordoActivitiesCommand,
     )
+    from cordial_billing.core.application.commands.update_deal_command import UpdatePipedriveDealCommand
     from cordial_billing.core.application.handlers.collection_case_handler import (
         GetCollectionCaseHandler,
         ListCollectionCaseHandler,
@@ -75,6 +76,7 @@ def setup_di_container_from_settings(settings):                      # noqa: PLR
     from cordial_billing.core.application.handlers.sync_debts_handler import (
         SyncOldDebtsHandler,
     )
+    from cordial_billing.core.application.handlers.update_deal_handler import UpdatePipedriveDealHandler
     from cordial_billing.core.application.queries.collection_case_queries import (
         GetCollectionCaseQuery,
         ListCollectionCasesQuery,
@@ -155,6 +157,11 @@ def setup_di_container_from_settings(settings):                      # noqa: PLR
             deal_repo=deal_repo,
             rabbit=rabbit,
         )
+        update_deal_handler = providers.Factory(
+            UpdatePipedriveDealHandler,
+            sync_service=pipedrive_sync_service,
+            activity_repo=activity_repo,
+        )
 
         # ----------------------------------------------------------
         def init(self) -> None:
@@ -163,6 +170,7 @@ def setup_di_container_from_settings(settings):                      # noqa: PLR
             bus.register(SyncOldDebtsCommand, self.sync_old_debts_handler())
             bus.register(SyncAcordoActivitiesCommand, self.sync_acordo_activities_handler())
             bus.register(CreatePipedriveDealCommand, self.create_deal_handler())
+            bus.register(UpdatePipedriveDealCommand, self.update_deal_handler())
 
             qry = self.query_bus()
             qry.register(ListCollectionCasesQuery, self.list_collection_case_handler())

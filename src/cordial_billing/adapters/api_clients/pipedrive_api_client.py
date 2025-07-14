@@ -62,10 +62,15 @@ class PipedriveAPIClient(BaseAPIClient):
     # ─────────────────────────── Deals ──────────────────────────
     def create_deal(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._safe_request("post", "deals", json_body=payload)
-
+    def update_deal(self, deal_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._safe_request("patch", f"deals/{deal_id}", json_body=payload)
+    
     # ─────────────────────────── Persons ─────────────────────────
     def search_persons(self, *, term: str) -> dict[str, Any]:
         return self._safe_request("get", "persons/search", params={"term": term})
-
     def create_person(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._safe_request("post", "persons", json_body=payload)
+
+    # ───────── Activities ────
+    def create_activity(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._safe_request("post", "activities", json_body=payload)

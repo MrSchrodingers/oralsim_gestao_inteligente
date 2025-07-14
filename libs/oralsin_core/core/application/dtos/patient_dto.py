@@ -20,7 +20,6 @@ class UpdatePatientDTO(BaseModel):
     name: str | None = None
     cpf: str | None = None
     email: EmailStr | None = None
-    is_notification_enabled: bool = False
 
 class PatientDTO(BaseModel):
     clinic_id: str
@@ -30,4 +29,3 @@ class PatientDTO(BaseModel):
     address_id: str | None = None
     contact_name: str | None = None
     email: str | None = None
-    is_notification_enabled: bool = False

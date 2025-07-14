@@ -24,6 +24,14 @@ class ContractRepoImpl(ContractRepository):
         except ContractModel.DoesNotExist:
             return None
 
+    def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None, patient_id: uuid.UUID | None = None) -> bool:
+        filters: dict[str, object] = {"oralsin_contract_id": oralsin_contract_id}
+        if contract_version is not None:
+            filters["contract_version"] = str(contract_version)
+        if patient_id is not None:
+            filters["patient_id"] = patient_id
+        return ContractModel.objects.filter(**filters).exists()
+    
     def list_by_clinic(self, clinic_id: int) -> list[ContractEntity]:
         """
         Recebe `clinic_id` da Oralsin → resolve o UUID interno da `Clinic`
@@ -62,18 +70,6 @@ class ContractRepoImpl(ContractRepository):
         return [ContractEntity.from_model(m) for m in qs]
 
     # ────────────────────────── persistência ───────────────────────────
-    def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None) -> bool:
-        """
-        Verifica se um contrato já está salvo.
-
-        Identificação primária: `(oralsin_contract_id, contract_version)`.
-        Se `contract_version` for None, ignora essa parte do filtro.
-        """
-        filters: dict[str, object] = {"oralsin_contract_id": oralsin_contract_id}
-        if contract_version is not None:
-            filters["contract_version"] = str(contract_version)
-        return ContractModel.objects.filter(**filters).exists()
-
     @transaction.atomic
     def update(self, contract: ContractEntity) -> ContractEntity:
         """
@@ -81,10 +77,11 @@ class ContractRepoImpl(ContractRepository):
         Nunca cria um novo — se não existir, levanta `DoesNotExist`.
         """
         try:
-            model: ContractModel = ContractModel.objects.get(
+            model = ContractModel.objects.filter(
                 oralsin_contract_id=contract.oralsin_contract_id,
                 contract_version=str(contract.contract_version),
-            )
+                patient_id=contract.patient_id,
+            ).first()
         except ContractModel.DoesNotExist:
             raise                     # deixamos o handler decidir o que fazer
 
@@ -120,46 +117,35 @@ class ContractRepoImpl(ContractRepository):
 
         return ContractEntity.from_model(model)
     
+    @transaction.atomic
     def save(self, contract: ContractEntity) -> ContractEntity:
-        # 1) resolve FK de PaymentMethod
         pm_model = None
         if contract.payment_method:
-            pm_model = PaymentMethodRepoImpl().get_or_create_by_name(
-                contract.payment_method.name
-            )
+            pm_repo = PaymentMethodRepoImpl()
+            pm_model = pm_repo.get_or_create_by_name(contract.payment_method.name)
             contract.payment_method.id = pm_model.id
-            contract.payment_method.oralsin_payment_method_id = (
-                pm_model.oralsin_payment_method_id
-            )
 
-        # 2) fields que queremos atualizar / criar
-        defaults = {
-            "patient_id": contract.patient_id,
-            "clinic_id": contract.clinic_id,
-            "status": contract.status,
-            "contract_version": contract.contract_version,
-            "remaining_installments": contract.remaining_installments,
-            "overdue_amount": contract.overdue_amount,
-            "final_contract_value": contract.final_contract_value,
-            "do_notifications": contract.do_notifications,
-            "do_billings": contract.do_billings,
-            "first_billing_date": contract.first_billing_date,
-            "negotiation_notes": contract.negotiation_notes,
-            "payment_method": pm_model,
-            "updated_at": timezone.now(),
-        }
-
-        # 3) lookup apenas por (oralsin_contract_id, contract_version)
         lookup = {
             "oralsin_contract_id": contract.oralsin_contract_id,
-            "contract_version": contract.contract_version,
+            "contract_version"   : contract.contract_version,
+            "patient_id"         : contract.patient_id,
+        }
+        
+        defaults = {
+            "clinic_id"              : contract.clinic_id,
+            "status"                 : contract.status,
+            "remaining_installments" : contract.remaining_installments,
+            "overdue_amount"         : contract.overdue_amount,
+            "final_contract_value"   : contract.final_contract_value,
+            "do_notifications"       : contract.do_notifications,
+            "do_billings"            : contract.do_billings,
+            "first_billing_date"     : contract.first_billing_date,
+            "negotiation_notes"      : contract.negotiation_notes,
+            "payment_method"         : pm_model,
+            "updated_at"             : timezone.now(),
         }
 
-        # 4) upsert
-        model, _created = ContractModel.objects.update_or_create(
-            defaults=defaults,
-            **lookup
-        )
+        model, _ = ContractModel.objects.update_or_create(defaults=defaults, **lookup)
         return ContractEntity.from_model(model)
 
     # ------------------------------------------------------------------

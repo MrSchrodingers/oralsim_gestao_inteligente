@@ -95,7 +95,6 @@ class UpdatePatientDTOSerializer(serializers.Serializer):
     name = serializers.CharField(required=False)
     cpf = serializers.CharField(required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_null=True)
-    is_notification_enabled = serializers.BooleanField(required=False)
 
 
 class PatientRegisterSerializer(serializers.Serializer):

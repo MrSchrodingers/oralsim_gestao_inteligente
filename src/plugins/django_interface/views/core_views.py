@@ -279,11 +279,30 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
         if getattr(request.user, "clinic_id", None):
             filtros["clinic_id"] = str(request.user.clinic_id)
 
-        # --- separa flow_type para a camada CQRS ---------------------------
-        flow_type = filtros.pop("flow_type", None)        # tira do dict
-        search    = filtros.pop("search", "").strip() 
-        # ────────── 1) QUERYSET bruto só para o summary ────────────────────
-        qs = PatientModel.objects.filter(**filtros)
+        flow_type = filtros.pop("flow_type", None)
+        search = filtros.pop("search", "").strip()
+        
+        base_qs = PatientModel.objects.prefetch_related("contracts")
+
+        # ────────── 1) QUERYSET bruto para o summary ────────────────────
+        qs = base_qs.filter(**filtros)
+
+        summary = {
+                "with_receivable": qs
+                    .filter(schedules__isnull=False)
+                    .exclude(collectioncase__isnull=False)
+                    .values("id")
+                    .distinct()
+                    .count(),
+
+                "with_collection": qs
+                    .filter(collectioncase__isnull=False)
+                    .exclude(schedules__isnull=False)
+                    .values("id")
+                    .distinct()
+                    .count(),
+            }
+        
         if search:
             qs = qs.filter(
                 Q(name__icontains=search) |
@@ -295,20 +314,7 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
         elif flow_type == "cordial_billing":
             qs = qs.filter(collectioncase__isnull=False)
 
-        if flow_type == "notification_billing":
-            qs = qs.filter(schedules__isnull=False).exclude(collectioncase__isnull=False)
-        elif flow_type == "cordial_billing":
-            qs = qs.filter(collectioncase__isnull=False)
-
-        summary = {
-            "with_receivable": qs.filter(
-                schedules__isnull=False
-            ).exclude(collectioncase__isnull=False).count(),
-            "with_collection": qs.filter(collectioncase__isnull=False).count(),
-            "with_notifications": qs.filter(is_notification_enabled=True).count(),
-        }
-
-        # ────────── 2) página paginada pelo CQRS (aqui flow_type volta) ────
+        # ────────── 2) página paginada pelo CQRS ────────────────────
         filtros_for_query = {**filtros, **({"flow_type": flow_type} if flow_type else {})}
         res = core_query_bus.dispatch(
             ListPatientsQuery(filtros=filtros_for_query, page=page, page_size=page_size)
@@ -316,6 +322,7 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
 
         total_items = res.total
         total_pages = math.ceil(total_items / page_size) if page_size else 1
+        
         pacientes_serializados = PatientSerializer(res.items, many=True).data
 
         payload = {

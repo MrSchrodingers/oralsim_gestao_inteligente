@@ -102,10 +102,10 @@ services:
       - oralsin_network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/healthz/ || exit 1"]
+      start_period: 60s
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
 
   # --------------------------------------------------------------------------
   # Celery Worker

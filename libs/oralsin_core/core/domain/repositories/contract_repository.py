@@ -1,3 +1,4 @@
+import uuid
 from abc import ABC, abstractmethod
 
 from oralsin_core.core.application.cqrs import PagedResult
@@ -11,7 +12,7 @@ class ContractRepository(ABC):
         ...
 
     @abstractmethod
-    def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None) -> bool:
+    def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None, patient_id: uuid.UUID | None = None) -> bool:
         ...
         
     @abstractmethod

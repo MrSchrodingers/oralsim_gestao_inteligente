@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from oralsin_core.adapters.observability.metrics import (
@@ -246,11 +246,19 @@ class DashboardService:
             clinic_id=clinic_id, status=PendingCall.Status.PENDING
         ).count()
         step_qs = (
-            ContactSchedule.objects.filter(
-                clinic_id=clinic_id, status=ContactSchedule.Status.PENDING
+            ContactSchedule.objects
+            .filter(
+                clinic_id=clinic_id,
+                status=ContactSchedule.Status.PENDING,
             )
             .values("current_step")
-            .annotate(total=Count("id"))
+            .annotate(
+                total=Count(
+                "patient_id",
+                filter=Q(status=ContactSchedule.Status.PENDING),
+                distinct=True
+                )
+            )
         )
         by_step = {row["current_step"]: row["total"] for row in step_qs}
         notification_summary = NotificationSummaryDTO(

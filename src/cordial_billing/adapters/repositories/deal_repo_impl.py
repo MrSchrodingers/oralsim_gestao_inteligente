@@ -9,6 +9,30 @@ from cordial_billing.core.domain.entities.pipedrive_deal_entity import (
 )
 from cordial_billing.core.domain.repositories.deal_repository import DealRepository
 
+_SQL_FIND_BY_CPF = """
+SELECT d.*
+  FROM negocios  d
+  JOIN pessoas   p ON p.id::text = d.person_id::text   -- tipos compatíveis
+ WHERE translate(p.cpf_text::text, '.-/', '') = :cpf   -- coluna já em TEXT
+ ORDER BY d.update_time DESC
+ LIMIT 1
+"""
+
+_SQL_FIND_CPF_BY_DEAL_ID = """
+SELECT p.cpf_text
+  FROM pessoas p
+  JOIN negocios d ON p.id::text = d.person_id::text
+ WHERE d.id = CAST(:id AS BIGINT)      -- garante comparação numérica
+ LIMIT 1
+"""
+
+_SQL_FIND_BY_ID = """
+SELECT d.*, p.cpf_text
+  FROM negocios d
+  JOIN pessoas p ON p.id::text = d.person_id::text
+ WHERE d.id = CAST(:id AS BIGINT)
+ LIMIT 1
+"""
 
 def _normalize_cpf(cpf: str) -> str:
     """Remove máscara/pontuação (123.456.789-00 → 12345678900)."""
@@ -20,18 +44,13 @@ class DealRepoImpl(DealRepository):
         self._engine = pipeboard_engine
 
     async def find_by_cpf(self, cpf: str) -> PipedriveDealEntity | None:
-        sql = """
-        SELECT d.* FROM negocios d
-        JOIN pessoas p ON p.id = d.person_id
-        WHERE translate(p.cpf_text, '.-/', '') = :cpf
-        ORDER BY d.update_time DESC
-        LIMIT 1
-        """
+
         cpf_clean = _normalize_cpf(cpf)
 
         async with self._engine.connect() as conn:
-            result = await conn.execute(text(sql), {"cpf": cpf_clean})
-            row = result.mappings().first()
+            row = (
+                await conn.execute(text(_SQL_FIND_BY_CPF), {"cpf": cpf_clean})
+            ).mappings().first()
 
         if not row:
             return None
@@ -54,9 +73,10 @@ class DealRepoImpl(DealRepository):
         return deal_entity
     
     async def find_by_id(self, deal_id: int) -> PipedriveDealEntity | None:
-        sql = "SELECT d.*, p.cpf_text FROM negocios d JOIN pessoas p ON p.id = d.person_id WHERE d.id = :id LIMIT 1"
         async with self._engine.connect() as conn:
-            row = (await conn.execute(text(sql), {"id": deal_id})).mappings().first()
+            row = (
+                await conn.execute(text(_SQL_FIND_BY_ID), {"id": deal_id})
+            ).mappings().first()
         if not row:
             return None
         dto = Deal.model_validate(row)
@@ -78,15 +98,10 @@ class DealRepoImpl(DealRepository):
         """
         Retorna apenas o CPF (cpf_text) da pessoa associada a um negócio (deal).
         """
-        sql = """
-        SELECT p.cpf_text
-          FROM pessoas p
-          JOIN negocios d ON p.id = d.person_id
-         WHERE d.id = :id
-           LIMIT 1
-        """
         async with self._engine.connect() as conn:
-            row = (await conn.execute(text(sql), {"id": deal_id})).mappings().first()
+            row = (
+                await conn.execute(text(_SQL_FIND_CPF_BY_DEAL_ID), {"id": deal_id})
+            ).mappings().first()
 
         if not row or not row.get("cpf_text"):
             return None

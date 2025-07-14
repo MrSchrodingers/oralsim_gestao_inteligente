@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -10,9 +12,40 @@ from cordial_billing.core.domain.repositories.activity_repository import Activit
 _SQL_ACORDO = """
 SELECT *
   FROM atividades
- WHERE type = 'call' AND id > :after
+ WHERE type = 'call'
+   AND id > CAST(:after AS BIGINT)
  ORDER BY id ASC
  LIMIT :limit
+"""
+
+_SQL_UPSERT = """
+INSERT INTO atividades (
+    id, user_id, done, type, subject,
+    due_date, due_time, duration,
+    add_time, update_time, marked_as_done_time,
+    deal_id, person_id, org_id, project_id, note
+) VALUES (
+    :id, :user_id, :done, :type, :subject,
+    :due_date, :due_time, :duration,
+    :add_time, :update_time, :marked_as_done_time,
+    :deal_id, :person_id, :org_id, :project_id, :note
+)
+ON CONFLICT (id) DO UPDATE SET
+    user_id             = EXCLUDED.user_id,
+    done                = EXCLUDED.done,
+    type                = EXCLUDED.type,
+    subject             = EXCLUDED.subject,
+    due_date            = EXCLUDED.due_date,
+    due_time            = EXCLUDED.due_time,
+    duration            = EXCLUDED.duration,
+    add_time            = EXCLUDED.add_time,
+    update_time         = EXCLUDED.update_time,
+    marked_as_done_time = EXCLUDED.marked_as_done_time,
+    deal_id             = EXCLUDED.deal_id,
+    person_id           = EXCLUDED.person_id,
+    org_id              = EXCLUDED.org_id,
+    project_id          = EXCLUDED.project_id,
+    note                = EXCLUDED.note
 """
 
 class ActivityRepoImpl(ActivityRepository):
@@ -48,3 +81,31 @@ class ActivityRepoImpl(ActivityRepository):
             )
             for dto in map(Activity.model_validate, rows)
         ]
+        
+    async def save_from_pipedrive_json(self, data: dict[str, Any]) -> None:
+        """
+        Upsert direto na tabela *atividades* a partir do JSON devolvido
+        pelo endpoint `/activities` do Pipedrive.
+        """
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                text(_SQL_UPSERT),
+                {
+                    "id":                  data["id"],
+                    "user_id":             data.get("user_id"),
+                    "done":                data.get("done"),
+                    "type":                data.get("type"),
+                    "subject":             data.get("subject"),
+                    "due_date":            data.get("due_date"),
+                    "due_time":            data.get("due_time"),
+                    "duration":            data.get("duration"),
+                    "add_time":            data.get("add_time"),
+                    "update_time":         data.get("update_time"),
+                    "marked_as_done_time": data.get("marked_as_done_time"),
+                    "deal_id":             data.get("deal_id"),
+                    "person_id":           data.get("person_id"),
+                    "org_id":              data.get("org_id"),
+                    "project_id":          data.get("project_id"),
+                    "note":                data.get("note"),
+                },
+            )

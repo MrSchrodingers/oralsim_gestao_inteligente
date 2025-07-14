@@ -228,14 +228,13 @@ class Patient(models.Model):
     contact_name = models.CharField(max_length=200, blank=True, null=True)
     cpf = models.CharField(max_length=14, blank=True, null=True)
     email = models.EmailField(blank=True, null=True, db_index=True)
-    address = models.OneToOneField(
+    address = models.ForeignKey(
         Address,
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-        related_name="patient",
+        related_name="patients",
     )
-    is_notification_enabled = models.BooleanField(default=True, db_index=True)
     name_search_vector = SearchVectorField(null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -325,7 +324,9 @@ class Contract(models.Model):
 
     class Meta:
         db_table = "contracts"
-        unique_together = [("oralsin_contract_id", "contract_version")]
+        unique_together = [
+            ("oralsin_contract_id", "contract_version", "patient"),
+        ]
         indexes = [
             Index(fields=["clinic", "patient"]),
             Index(fields=["status"]),
@@ -801,3 +802,14 @@ class RegistrationRequest(models.Model):
 
     def __str__(self) -> str:
         return f"Request from {self.email} for {self.clinic_name} [{self.status}]"
+    
+class PaymentStatus(models.Model):
+    raw_status   = models.CharField(max_length=80, unique=True)
+    normalized   = models.CharField(max_length=80, db_index=True)
+    is_paid      = models.BooleanField(default=False)
+    kind         = models.CharField(max_length=20, default="unknown")  # bank, gateway, manual…
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "payment_statuses"
+        indexes  = [models.Index(fields=["normalized"])]
