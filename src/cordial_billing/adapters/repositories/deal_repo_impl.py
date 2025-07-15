@@ -12,17 +12,17 @@ from cordial_billing.core.domain.repositories.deal_repository import DealReposit
 _SQL_FIND_BY_CPF = """
 SELECT d.*
   FROM negocios  d
-  JOIN pessoas   p ON p.id::text = d.person_id::text   -- tipos compatíveis
- WHERE translate(p.cpf_text::text, '.-/', '') = :cpf   -- coluna já em TEXT
+  JOIN pessoas   p ON p.id::text = d.person_id::text  
+ WHERE translate(p.cpf_text::text, '.-/', '') = :cpf 
  ORDER BY d.update_time DESC
  LIMIT 1
 """
 
 _SQL_FIND_CPF_BY_DEAL_ID = """
 SELECT p.cpf_text
-  FROM pessoas p
+  FROM pessoas  p
   JOIN negocios d ON p.id::text = d.person_id::text
- WHERE d.id = CAST(:id AS BIGINT)      -- garante comparação numérica
+ WHERE d.id::text = CAST(:id AS TEXT)
  LIMIT 1
 """
 
@@ -30,7 +30,7 @@ _SQL_FIND_BY_ID = """
 SELECT d.*, p.cpf_text
   FROM negocios d
   JOIN pessoas p ON p.id::text = d.person_id::text
- WHERE d.id = CAST(:id AS BIGINT)
+ WHERE d.id::text = CAST(:id AS TEXT)                
  LIMIT 1
 """
 
@@ -100,7 +100,7 @@ class DealRepoImpl(DealRepository):
         """
         async with self._engine.connect() as conn:
             row = (
-                await conn.execute(text(_SQL_FIND_CPF_BY_DEAL_ID), {"id": deal_id})
+                await conn.execute(text(_SQL_FIND_CPF_BY_DEAL_ID), {"id": str(deal_id)})
             ).mappings().first()
 
         if not row or not row.get("cpf_text"):

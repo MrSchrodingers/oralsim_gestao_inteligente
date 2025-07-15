@@ -18,8 +18,7 @@ from notification_billing.adapters.notifiers.whatsapp.debtapp import DebtAppWhat
 def get_sms_notifier(key: str = "assertiva") -> BaseNotifier:
     return AssertivaSMS(
         auth_token=os.getenv("ASSERTIVA_AUTH_TOKEN"),
-        base_url=os.getenv("ASSERTIVA_BASE_URL"),
-        webhook_url=os.getenv("WEBHOOK_URL"),
+        base_url=os.getenv("ASSERTIVA_BASE_URL")
     )
 
 

@@ -682,6 +682,11 @@ class CollectionCase(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE)
     installment = models.ForeignKey(Installment, on_delete=models.CASCADE)
     clinic = models.ForeignKey(Clinic, on_delete=models.CASCADE)
+    stage_id = models.IntegerField(
+        blank=True,
+        null=True,
+        help_text="ID da etapa do negócio no Pipedrive",
+    )
     opened_at = models.DateTimeField()
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     deal_id = models.BigIntegerField(blank=True, null=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -54,6 +55,29 @@ class ActivityRepoImpl(ActivityRepository):
     def __init__(self, pipeboard_engine: AsyncEngine):
         self._engine = pipeboard_engine
 
+    @staticmethod
+    def _to_date(val):
+        if isinstance(val, date):      # já é date
+            return val
+        if isinstance(val, str) and val:
+            # aceita 'YYYY-MM-DD' ou 'YYYY-MM-DDTHH:MM:SSZ'
+            try:
+                return date.fromisoformat(val[:10])
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _to_datetime(val):
+        if isinstance(val, datetime):  # já é datetime
+            return val
+        if isinstance(val, str) and val:
+            try:
+                return datetime.fromisoformat(val.replace('Z', '+00:00'))
+            except ValueError:
+                return None
+        return None
+
     async def list_acordo_fechado(self, after_id: int, limit: int = 100) -> list[PipedriveActivityEntity]:
         async with self._engine.connect() as conn:
             rows = (
@@ -96,12 +120,12 @@ class ActivityRepoImpl(ActivityRepository):
                     "done":                data.get("done"),
                     "type":                data.get("type"),
                     "subject":             data.get("subject"),
-                    "due_date":            data.get("due_date"),
+                    "due_date":            self._to_date(data.get("due_date")),
                     "due_time":            data.get("due_time"),
                     "duration":            data.get("duration"),
-                    "add_time":            data.get("add_time"),
-                    "update_time":         data.get("update_time"),
-                    "marked_as_done_time": data.get("marked_as_done_time"),
+                    "add_time":            self._to_datetime(data.get("add_time")),
+                    "update_time":         self._to_datetime(data.get("update_time")),
+                    "marked_as_done_time": self._to_datetime(data.get("marked_as_done_time")),
                     "deal_id":             data.get("deal_id"),
                     "person_id":           data.get("person_id"),
                     "org_id":              data.get("org_id"),

@@ -7,7 +7,7 @@ from uuid import UUID
 
 import structlog
 from django.db import IntegrityError, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.repositories.billing_settings_repository import (
@@ -40,6 +40,8 @@ _PRE_DUE_PRIORITIES: tuple[int, ...] = (7, 5, 2, 1, 0)
 #: cache simples de configs ativas {step: FlowStepConfig}
 _CFG_CACHE: dict[int, FlowStepConfig] = {}
 
+# canais manuais que NÃO travam o fluxo
+_MANUAL_Q = Q(channel="letter") | Q(channel="phonecall", pending_call=True)
 # ----------------------------------------------------------------------
 class ContactScheduleRepoImpl(ContactScheduleRepository):
     """Repositório/serviço de agendamentos de contato."""
@@ -49,7 +51,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         installment_repo: InstallmentRepository,
         billing_settings_repo: BillingSettingsRepository,
     ) -> None:
-        self.installments = installment_repo
+        self.installment_repo = installment_repo
         self.settings = billing_settings_repo
 
     # ───────────────────────────────────────────────────────── public API
@@ -256,6 +258,9 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         return ContactScheduleEntity.from_model(m) if m else None
 
     def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity:
+        if not self._can_advance(schedule_id):
+            return
+        
         with transaction.atomic():
             # 1) tranca o schedule atual
             m = Schedule.objects.select_for_update().get(id=schedule_id)
@@ -344,6 +349,35 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         ).order_by('scheduled_date')
         
         return [ContactScheduleEntity.from_model(s) for s in schedules]
+
+    def _can_advance(self, schedule_id: str) -> bool:
+        """
+        Retorna **True** se NÃO houver pendências bloqueantes
+        (sms / whatsapp / email).
+
+        • Ignora o próprio schedule `schedule_id`, que ainda está PENDING
+        quando essa verificação roda.
+        • Considera apenas schedules AUTOMATIZADOS (`notification_trigger=AUTOMATED`).
+        • Despreza pendências manuais (`letter` ou `phonecall` com `pending_call=True`).
+        """
+        try:
+            sched = Schedule.objects.get(id=schedule_id)
+        except Schedule.DoesNotExist:
+            # se o objeto sumiu, nada a bloquear → permite avanço
+            return True
+
+        blockers = (
+            Schedule.objects.filter(
+                patient_id=sched.patient_id,
+                contract_id=sched.contract_id,
+                status=Schedule.Status.PENDING,
+                notification_trigger=Schedule.Trigger.AUTOMATED,
+            )
+            # descarta o próprio schedule e os pendentes MANUAIS
+            .exclude(id=schedule_id)
+            .exclude(_MANUAL_Q)
+        )
+        return not blockers.exists()
 
     def bulk_update_status(self, schedule_ids: list[UUID], new_status: str) -> None:
         Schedule.objects.filter(id__in=schedule_ids).update(status=new_status)

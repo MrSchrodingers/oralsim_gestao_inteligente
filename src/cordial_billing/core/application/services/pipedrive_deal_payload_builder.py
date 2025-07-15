@@ -29,14 +29,14 @@ class PipedriveDealPayloadBuilder:
     # ───────────────────────── API pública ──────────────────────────
     def build(self) -> dict[str, Any]:
         title = (
-            f"{self.patient.cpf} - {self.patient.name}"
+            f"TESTE (API) - {self.patient.cpf} - {self.patient.name}"
             if self.patient.cpf else self.patient.name
         )[:255]
 
         # ---- valores base do deal ---------------------------------
         payload: dict[str, Any] = {
             "title":    title,
-            "value":    float(self.case.amount),
+            "value":    float(self._total_debt()),
             "currency": "BRL",
             "owner_id":     self.OWNER_ID,
             "pipeline_id":  self.PIPELINE_ID,

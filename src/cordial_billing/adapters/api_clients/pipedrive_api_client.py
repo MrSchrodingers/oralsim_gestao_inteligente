@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import requests
@@ -16,6 +17,7 @@ class PipedriveAPIClient(BaseAPIClient):
             default_headers={"Accept": "application/json"},
             timeout=5.0,
         )
+        self.logger = logging.getLogger(__name__)
         if settings.PIPEDRIVE_API_TOKEN:
             self.session.params.update({"api_token": settings.PIPEDRIVE_API_TOKEN})
 
@@ -32,6 +34,16 @@ class PipedriveAPIClient(BaseAPIClient):
         Executa a request capturando exceções de rede e
         tentando sempre converter a resposta para JSON.
         """
+        if (not settings.PIPEDRIVE_WRITE_ENABLED
+            and method.lower() in {"post", "patch", "put", "delete"}):
+            self.logger.warning("🔒 WRITE BLOCKED %s %s", method.upper(), endpoint)
+            return {
+                "status_code": 204,
+                "ok": True,
+                "headers": {},
+                "json": {"data": {"id": -1}},   #  ← aqui
+                "text": "",
+            }
         url = f"{self.base_url}{endpoint.lstrip('/')}"
         try:
             resp: requests.Response = self.session.request(

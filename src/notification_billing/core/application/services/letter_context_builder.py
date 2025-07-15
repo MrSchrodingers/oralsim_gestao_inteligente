@@ -33,15 +33,17 @@ class LetterContextBuilder:
         if zip_code and len(zip_code) == 8 and zip_code.isdigit():  # noqa: PLR2004
             return f"{zip_code[:5]}-{zip_code[5:]}"
         return zip_code or ""
+    
+    @staticmethod
+    def _clear_if_missing(val):
+        return "" if not val or val.strip().lower() in ["sem informação", "sem informacao", "não informado", "nao informado"] else val
       
     def build(self, *, patient_id: str, contract_id: str, clinic_id: str,
               installment_id: str | None = None, current_installment: bool = False) -> dict:
 
         patient   = self.patient_repo.find_by_id(patient_id)
         contract  = self.contract_repo.find_by_id(contract_id)
-        inst = ( self.installment_repo.get_current_installment(contract_id)
-                 if current_installment else
-                 self.installment_repo.find_by_id(installment_id) )
+        inst = self.installment_repo.find_by_id(installment_id) if installment_id else self.installment_repo.get_current_installment(contract_id)
 
         clinic        = self.clinic_repo.find_by_id(clinic_id)
         clinic_data   = self.clinic_data_repo.find_by_clinic(clinic_id)
@@ -60,12 +62,12 @@ class LetterContextBuilder:
             "patient_name": patient.name if patient else "",
             "patient_cpf":  patient.cpf if patient else "Não informado",
             "patient_address": str(patient_addr) if patient_addr else "Endereço não informado",
-            "patient_address_street":       patient_addr.street if patient_addr else "",
-            "patient_address_number":       patient_addr.number if patient_addr else "",
-            "patient_address_city":         patient_addr.city if patient_addr else "",
-            "patient_address_neighborhood": patient_addr.neighborhood if patient_addr else "",
-            "patient_address_complement":   patient_addr.complement if patient_addr else "",
-            "patient_address_state":        patient_addr.state if patient_addr else "",
+            "patient_address_street":       self._clear_if_missing(patient_addr.street) if patient_addr else "",
+            "patient_address_number":       self._clear_if_missing(patient_addr.number) if patient_addr else "",
+            "patient_address_complement":   self._clear_if_missing(patient_addr.complement) if patient_addr else "",
+            "patient_address_neighborhood": self._clear_if_missing(patient_addr.neighborhood) if patient_addr else "",
+            "patient_address_city":         self._clear_if_missing(patient_addr.city) if patient_addr else "",
+            "patient_address_state":        self._clear_if_missing(patient_addr.state) if patient_addr else "",
             "patient_address_zip_code":     f"CEP {self._format_zip_code(patient_addr.zip_code)}" if patient_addr else "",
 
             # — Contrato / parcela

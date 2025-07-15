@@ -29,7 +29,7 @@ from plugins.django_interface.models import (
 log = get_logger(__name__)
 
 # Stage “ADM Verificar” no pipeline 3.
-ADM_VERIFICAR_STAGE_ID = 22        # ajuste conforme seu Pipedrive
+ADM_VERIFICAR_STAGE_ID = 26
 
 
 class UpdatePipedriveDealHandler(
@@ -136,7 +136,7 @@ class UpdatePipedriveDealHandler(
         if resp.get("ok"):
             await self._create_activity(
                 deal_id=case.deal_id,
-                subject="Atualização automática do negócio",
+                subject="TESTE (API) - Atualização automática do negócio",
                 note=reason,
             )
             log.info("deal_updated", deal_id=case.deal_id, updates=updates)

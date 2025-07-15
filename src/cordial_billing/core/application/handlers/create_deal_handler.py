@@ -67,6 +67,7 @@ class CreatePipedriveDealHandler(
 
         # ---------- garante Org + Person ----------
         org_id = await self._sync.ensure_org_id(cnpj=case.clinic.cnpj)
+        org_id = int(org_id)
         person_id = await sync_to_async(self._sync.ensure_person)(
             patient=case.patient, org_id=org_id
         )

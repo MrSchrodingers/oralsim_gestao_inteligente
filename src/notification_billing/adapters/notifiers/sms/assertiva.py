@@ -19,12 +19,11 @@ class AssertivaSMS(BaseNotifier):
 
     _TOKEN_LOCK = threading.Lock()
 
-    def __init__(self, auth_token: str, base_url: str, webhook_url: str):
+    def __init__(self, auth_token: str, base_url: str):
         super().__init__("assertiva", "sms")
 
         self._basic_auth    = auth_token
         self._base_url      = base_url.rstrip("/")
-        self._webhook       = webhook_url.rstrip("/")
 
         self._token: str | None = None
         self._token_exp: float  = 0.0   # epoch segundos
@@ -40,8 +39,6 @@ class AssertivaSMS(BaseNotifier):
         payload = {
             "can_receive_status": False,
             "can_receive_answer": False,
-            "webhook_status_url": self._webhook,
-            "webhook_answer_url": self._webhook,
             "route_type": 1,
             "arraySms": [
                 {"number": p, "message": message, "filter_value": "GestaoRecebiveis"}
