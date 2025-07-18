@@ -472,6 +472,7 @@ class ContactSchedule(models.Model):
         APPROVED = "approved", "Aprovado"
         PROCESSING  = "processing", "Processando"
         REJECTED = "rejected", "Rejeitado"
+        CANCELED = "cancelled_paid", "Cancelado por Pagamento"
         
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(
@@ -516,8 +517,8 @@ class ContactSchedule(models.Model):
         constraints = [
             UniqueConstraint(
                 fields=["patient", "contract", "current_step", "channel", "installment"],
-                condition=Q(notification_trigger="automated"),
-                name="uq_contact_schedule_per_step_pending"
+                condition=Q(status="pending"),
+                name="uq_schedule_pending_per_step"
             ),
             UniqueConstraint(
                 fields=["patient", "channel"],
@@ -591,6 +592,11 @@ class ContactHistory(models.Model):
             UniqueConstraint(
                 fields=["schedule", "contact_type", "advance_flow"],
                 name="uq_history_schedule_channel_step",
+            ),
+            UniqueConstraint(
+                fields=["schedule"],
+                condition=Q(status="sent"),
+                name="uq_history_sent_per_schedule"
             )
         ]
         indexes = [

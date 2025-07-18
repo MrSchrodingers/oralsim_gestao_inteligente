@@ -22,6 +22,17 @@ class InstallmentRepository(ABC):
         ...
         
     @abstractmethod
+    def count_overdue_by_contract(self, contract_id: str) -> int:
+        """
+        Conta de forma eficiente o número total de parcelas vencidas e
+        não recebidas para um contrato específico.
+
+        Returns:
+            A contagem total de parcelas em atraso.
+        """
+        ...
+        
+    @abstractmethod
     def save_many(self, installments: list[InstallmentEntity]) -> None:
         """
         Cria ou atualiza uma lista de parcelas de forma eficiente e em lote.

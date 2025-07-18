@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
@@ -24,11 +24,12 @@ from notification_billing.core.domain.repositories.contact_schedule_repository i
     ContactScheduleRepository,
 )
 from plugins.django_interface.models import (
-    ContactSchedule as Schedule,
-)
-from plugins.django_interface.models import (
+    ContactHistory,
     Contract,
     FlowStepConfig,
+)
+from plugins.django_interface.models import (
+    ContactSchedule as Schedule,
 )
 
 log = structlog.get_logger(__name__)
@@ -79,7 +80,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         ‑ Não dispara exceção quando fora da janela `min_days_overdue` –
           apenas ignora (importante para *bulk resync*).
         """
-        # 0) Clínica autorizou notificações?
+        # 0) Clínica autorizou e contrato existe?
         if not Contract.objects.filter(id=contract_id, do_notifications=True).exists():
             return None
 
@@ -92,12 +93,17 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         if not inst or inst.received:
             return None
 
+        is_new_patient_for_notifications = not ContactHistory.objects.filter(
+            patient_id=patient_id
+        ).exists()
+        
         cfgs = self._flow_configs()
         try:
             step, sched_dt = self._decide_step_and_date(
                 inst=inst,
                 cfg0=cfgs[0],
                 min_days=self.settings.get(clinic_id).min_days_overdue,
+                is_new_patient=is_new_patient_for_notifications,
             )
         except _SkipSchedule:
             return None
@@ -156,6 +162,27 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         return ContactScheduleEntity.from_model(created) if created else None
 
     # ------------------------------------------------------------------ other helpers
+    def _is_step_complete(self, schedule: Schedule) -> bool:
+        """
+        Verifica se uma etapa do fluxo pode ser considerada concluída.
+
+        A regra é: todos os outros agendamentos para o mesmo contrato e mesma etapa
+        que são de canais bloqueantes (não são 'letter' ou 'phonecall') devem
+        ter um status final ('approved', 'failed', 'cancelled').
+        """
+        blocking_channels = ['sms', 'whatsapp', 'email'] # Defina os canais bloqueantes
+        
+        # Conta quantos outros agendamentos bloqueantes para esta etapa ainda estão pendentes
+        pending_blocking_schedules = Schedule.objects.filter(
+            contract_id=schedule.contract_id,
+            current_step=schedule.current_step,
+            channel__in=blocking_channels,
+            status=Schedule.Status.PENDING
+        ).exclude(id=schedule.id).count()
+
+        # Se não houver nenhum outro agendamento bloqueante pendente, a etapa está completa.
+        return pending_blocking_schedules == 0
+    
     def has_pending(self, patient_id: str, contract_id: str) -> bool:  # noqa: D401
         return Schedule.objects.filter(
             patient_id=patient_id,
@@ -251,69 +278,98 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
                 break
             yield from batch
                 
-    def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity:
+    @transaction.atomic
+    def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity | None:
+        """
+        Avança a etapa do fluxo para um ContactSchedule, garantindo atomicidade e idempotência.
+
+        1.  Verifica se o avanço é permitido (não há outros agendamentos bloqueantes).
+        2.  Encerra o agendamento atual (status 'APPROVED') e todos os outros pendentes
+            para o mesmo contrato (status 'CANCELLED'), garantindo um único fluxo ativo.
+        3.  Calcula a próxima etapa e a data do novo agendamento.
+        4.  Cria os novos agendamentos para os canais da próxima etapa.
+        5.  Retorna a primeira entidade do novo agendamento criado.
+        """
         if not self._can_advance(schedule_id):
-            return
+            log.warning("advance_step.blocked", schedule_id=schedule_id, reason="Existing pending schedules")
+            return None
+
+        # Bloqueia a linha do agendamento atual para evitar race conditions
+        try:
+            current_schedule = Schedule.objects.select_for_update().get(id=schedule_id)
+        except Schedule.DoesNotExist:
+            log.warning("advance_step.not_found", schedule_id=schedule_id)
+            return None
+
+        # Cancela outros agendamentos pendentes para o mesmo contrato, exceto o atual
+        Schedule.objects.filter(
+            contract_id=current_schedule.contract_id,
+            status=Schedule.Status.PENDING
+        ).exclude(id=schedule_id).update(status='cancelled', updated_at=timezone.now())
+
+        # Marca o agendamento atual como concluído
+        current_schedule.status = Schedule.Status.APPROVED
+        current_schedule.save(update_fields=["status", "updated_at"])
+
+        # Verifica se a etapa está pronta para avançar
+        if not self._is_step_complete(current_schedule):
+            log.info(
+                "advance_step.step_not_complete",
+                schedule_id=schedule_id,
+                contract_id=current_schedule.contract_id,
+                step=current_schedule.current_step
+            )
+            return None # Não avança o fluxo ainda, pois faltam outros canais.
+
+        log.info(
+            "advance_step.step_complete",
+            contract_id=current_schedule.contract_id,
+            step=current_schedule.current_step,
+            reason="All blocking channels are done. Advancing flow."
+        )
+
+        # Se a etapa estiver completa, cancelamos os canais não-bloqueantes pendentes.
+        # Isso evita que 'letter' e 'phonecall' fiquem "órfãos" no sistema.
+        Schedule.objects.filter(
+            contract_id=current_schedule.contract_id,
+            current_step=current_schedule.current_step,
+            status=Schedule.Status.PENDING,
+            channel__in=['letter', 'phonecall'] # Canais não-bloqueantes
+        ).update(status='cancelled', updated_at=timezone.now())
         
-        with transaction.atomic():
-            # 1) tranca o schedule atual
-            m = Schedule.objects.select_for_update().get(id=schedule_id)
-            m.status = Schedule.Status.APPROVED
-            m.save(update_fields=["status", "updated_at"])
+        # Lógica para calcular a próxima etapa e data
+        next_step_number = current_schedule.current_step + 1
+        try:
+            next_config = FlowStepConfig.objects.get(step_number=next_step_number, active=True)
+        except FlowStepConfig.DoesNotExist:
+            log.info("advance_step.end_of_flow", contract_id=current_schedule.contract_id)
+            return None  # Fim do fluxo
 
-            # 2) recupera a parcela para saber o due_date
-            inst = self.installment_repo.find_by_id(m.installment_id)
-            if not inst:
-                # se por algum motivo não achar, retorna o próprio schedule aprovado
-                return ContactScheduleEntity.from_model(m)
+        # Calcula a data do próximo agendamento
+        cooldown = next_config.cooldown_days or 7
+        next_scheduled_date = timezone.now() + timedelta(days=cooldown)
 
-            # 3) calcula o próximo step
-            next_step = m.current_step + 1
-            try:
-                cfg = FlowStepConfig.objects.get(step_number=next_step, active=True)
-            except FlowStepConfig.DoesNotExist:
-                return ContactScheduleEntity.from_model(m)
+        # Cria os novos agendamentos para a próxima etapa
+        new_schedules = []
+        for channel in next_config.channels:
+            obj, created = Schedule.objects.update_or_create(
+                patient_id=current_schedule.patient_id,
+                contract_id=current_schedule.contract_id,
+                installment_id=current_schedule.installment_id,
+                current_step=next_config.step_number,
+                channel=channel,
+                notification_trigger=current_schedule.notification_trigger,
+                status=Schedule.Status.PENDING,
+                defaults={'scheduled_date': next_scheduled_date, 'advance_flow': False}
+            )
+            if created:
+                new_schedules.append(obj)
 
-            # 4) decide nova data de agendamento:
-            today = timezone.now().date()
-            if inst.due_date > today:
-                # pré-vencimento: usa a lista de prioridades (7,5,2,1,0)
-                days_priorities = [7, 5, 2, 1, 0]
-                target = None
-                for d in days_priorities:
-                    cand = inst.due_date - timedelta(days=d)
-                    if cand > today:
-                        target = cand
-                        break
-                if target is None:
-                    target = inst.due_date
-                scheduled_dt = timezone.make_aware(datetime.combine(target, time.min))
-            else:
-                # pós-vencimento: reseta pelo cooldown do próprio step
-                cooldown = cfg.cooldown_days or 7
-                scheduled_dt = timezone.now() + timedelta(days=cooldown)
+        if not new_schedules:
+            log.warning("advance_step.no_new_schedules_created", contract_id=current_schedule.contract_id)
+            return None
 
-            # 5) cria os novos schedules por canal
-            new_models = []
-            try:
-                for channel in cfg.channels:
-                    new_m = Schedule.objects.create(
-                        patient=m.patient,
-                        contract=m.contract,
-                        clinic=m.clinic,
-                        installment_id=m.installment_id,
-                        notification_trigger=m.notification_trigger,
-                        advance_flow=False,
-                        current_step=cfg.step_number,
-                        channel=channel,
-                        scheduled_date=scheduled_dt,
-                        status=Schedule.Status.PENDING,
-                    )
-                    new_models.append(new_m)
-            except IntegrityError:
-                    log.debug("schedule already exists, skipping", schedule=m.id)
-
-            return ContactScheduleEntity.from_model(new_models[0] if new_models else m)
+        return ContactScheduleEntity.from_model(new_schedules[0])
 
 
     def find_by_id(self, schedule_id: str) -> ContactScheduleEntity | None:
@@ -446,14 +502,17 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         inst,
         cfg0: FlowStepConfig,
         min_days: int,
+        is_new_patient: bool,
     ) -> tuple[int, datetime]:
-        """Calcula `(step, scheduled_datetime)`.
+        """
+        Calcula `(step, scheduled_datetime)`.
 
         Levanta **_SkipSchedule** se a parcela está fora da janela.
+        Para novos pacientes, sempre inicia no Step 1 se a parcela estiver vencida.
         """
         today = timezone.localdate()
 
-        # ─── Pré‑vencimento ───────────────────────────────────────────
+        # --- Pré‑vencimento ---
         if inst.due_date > today:
             target_date = next(
                 (
@@ -463,13 +522,24 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
                 ),
                 inst.due_date,
             )
+            # Para pré-vencimento, sempre será Step 0
             return 0, timezone.make_aware(datetime.combine(target_date, time.min))
 
-        # ─── Pós‑vencimento ──────────────────────────────────────────
+        # --- Pós‑vencimento ---
         days_overdue = (today - inst.due_date).days
-        if days_overdue > min_days:
+        if days_overdue < 0 or days_overdue > min_days:
             raise _SkipSchedule
 
+        # Se for um paciente novo no fluxo, ele DEVE começar no Step 1.
+        if is_new_patient:
+            log.info(
+                "new_patient_flow.forcing_step_1",
+                patient_id=inst.patient_id,
+                days_overdue=days_overdue,
+            )
+            return 1, timezone.now()
+
+        # Lógica original para pacientes que já estão no fluxo
         raw_step = days_overdue // (cfg0.cooldown_days or 7) + 1
         step = min(raw_step, max(self._flow_configs().keys()))
         return step, timezone.now()

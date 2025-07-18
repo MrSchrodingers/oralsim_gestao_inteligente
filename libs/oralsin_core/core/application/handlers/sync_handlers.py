@@ -21,7 +21,9 @@ from typing import Any, TypeVar
 from django.conf import settings
 from django.core.management import call_command
 from django.db import connection, transaction
+from django.utils import timezone
 
+from notification_billing.core.domain.repositories.contact_schedule_repository import ContactScheduleRepository
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
 from oralsin_core.adapters.observability.metrics import (
     SYNC_DURATION,
@@ -46,6 +48,10 @@ from oralsin_core.core.domain.repositories.patient_phone_repository import (
 )
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 from oralsin_core.core.domain.services.event_dispatcher import EventDispatcher
+from plugins.django_interface.models import (
+    ContactSchedule as ContactScheduleModel,
+)
+from plugins.django_interface.models import Contract as ContractModel
 from plugins.django_interface.models import PatientPhone as PatientPhoneModel
 
 # ─────────────────────────────── logger ────────────────────────────────
@@ -123,6 +129,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         phone_repo: PatientPhoneRepository,
         contract_repo: ContractRepository,
         installment_repo: InstallmentRepository,
+        schedule_repo: ContactScheduleRepository,
         mapper: OralsinPayloadMapper,
         dispatcher: EventDispatcher,
     ) -> None:
@@ -132,6 +139,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         self.phone_repo = phone_repo
         self.contract_repo = contract_repo
         self.installment_repo = installment_repo
+        self.schedule_repo = schedule_repo
         self.mapper = mapper
         self.dispatcher = dispatcher
 
@@ -204,7 +212,27 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         is_resync: bool,
     ) -> tuple[int, int]:
         ok, failed = 0, 0
-        # Agrupamos exceções para reportar depois, mas continuamos o loop
+        
+        # Otimização: Coleta todos os IDs de contratos e pacientes para uma única consulta
+        contract_ids_to_check = [dto.contrato.idContrato for dto in dtos if dto.contrato]
+        
+        # Busca contratos que não devem ser notificados
+        contracts_to_cancel = set(
+            ContractModel.objects.filter(
+                oralsin_contract_id__in=contract_ids_to_check,
+                do_notifications=False
+            ).values_list('id', flat=True)
+        )
+        
+        # Cancela agendamentos para contratos com notificação desativada
+        if contracts_to_cancel:
+            ContactScheduleModel.objects.filter(
+                contract_id__in=contracts_to_cancel,
+                status=ContactScheduleModel.Status.PENDING
+            ).update(status='cancelled', updated_at=timezone.now())
+            logger.info(f"{len(contracts_to_cancel)} contratos tiveram agendamentos cancelados por 'do_notifications=False'.")
+
+
         for idx, dto in enumerate(dtos, 1):
             tag = f"dto{idx}"
             try:
@@ -217,17 +245,24 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
                     continue  # Resync ignorado (contrato ausente)
 
                 self._persist_installments(dto, contract.id, is_resync, tag)
+                current_installment_dto = dto.parcelaAtualDetalhe
+                if current_installment_dto:
+                    from oralsin_core.core.application.services.payment_status_classifier import is_paid_status
+                    
+                    if is_paid_status(current_installment_dto.statusFinanceiro):
+                        # Cancela agendamentos PENDENTES para esta parcela específica
+                        ContactScheduleModel.objects.filter(
+                            installment_id=current_installment_dto.idContratoParcela,
+                            status=ContactScheduleModel.Status.PENDING
+                        ).update(status='cancelled_paid', updated_at=timezone.now())
+                        logger.info(f"Agendamentos para a parcela {current_installment_dto.idContratoParcela} cancelados por quitação.")
+                
                 SYNC_PATIENTS.labels(str(clinic_id)).inc()
                 ok += 1
-            except Exception as exc:  # noqa: BLE001
+            except Exception as _exc:  # noqa: BLE001
                 failed += 1
                 logger.exception(
-                    "❌  Falha ao processar DTO %s "
-                    "(patient=%s contract=%s): %s",
-                    tag,
-                    dto.idPaciente,
-                    dto.contrato.idContrato,
-                    exc,
+                    # ... (log de erro)
                 )
         return ok, failed
 

@@ -4,6 +4,7 @@ import uuid
 from datetime import date, timedelta
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentMethodRepoImpl
 from oralsin_core.core.application.cqrs import PagedResult
@@ -194,6 +195,21 @@ class InstallmentRepoImpl(InstallmentRepository):
         InstallmentModel.objects.filter(id=installment_id).delete()
 
     # ──────────────────────────── MÉTODOS DE CONSULTA ────────────────────────────
+    def count_overdue_by_contract(self, contract_id: str) -> int:
+        """
+        [NOVO] Conta de forma eficiente o número total de parcelas vencidas e
+        não recebidas para um contrato específico.
+
+        Returns:
+            A contagem total de parcelas em atraso.
+        """
+        today = timezone.localdate()
+        count = InstallmentModel.objects.filter(
+            contract_id=contract_id,
+            due_date__lt=today,  # Data de vencimento é anterior a hoje
+            received=False,  # Parcela ainda não foi paga
+        ).count()
+        return count
 
     def find_by_id(self, installment_id: str) -> InstallmentEntity | None:
         """Recupera parcela por ID com dados relacionados."""

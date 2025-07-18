@@ -76,10 +76,15 @@ class NotificationSenderService:
 
     # ------------------------------------------------------------------ #
     def _render_content(self, msg, patient, inst) -> str:
+        overdue_count = self.installment_repo.count_overdue_by_contract(
+            contract_id=inst.contract_id
+        )
+        
         ctx = {
             "nome": patient.name,
             "valor": f"R$ {inst.installment_amount:.2f}",
             "vencimento": inst.due_date.strftime("%d/%m/%Y"),
+            "total_parcelas_em_atraso": overdue_count,
         }
         return render_message(msg.content, ctx)
     

@@ -222,7 +222,7 @@ class ModernDocumentTemplate(BaseDocTemplate):
             footer_y
         )
     
-    def _draw_decorative_line(self, canvas: Any, x1: float, x2: float, y: float,
+    def _draw_decorative_line(self, canvas: Any, x1: float, x2: float, y: float,  # noqa: PLR0913
                                 color: Any, thickness: float):
         """
         Draws a decorative line.
