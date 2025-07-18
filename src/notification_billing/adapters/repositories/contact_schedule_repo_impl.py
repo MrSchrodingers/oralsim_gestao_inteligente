@@ -41,7 +41,7 @@ _PRE_DUE_PRIORITIES: tuple[int, ...] = (7, 5, 2, 1, 0)
 _CFG_CACHE: dict[int, FlowStepConfig] = {}
 
 # canais manuais que NÃO travam o fluxo
-_MANUAL_Q = Q(channel="letter") | Q(channel="phonecall", pending_call=True)
+_MANUAL_Q = Q(channel="letter") | Q(channel="phonecall", pending_calls=True)
 # ----------------------------------------------------------------------
 class ContactScheduleRepoImpl(ContactScheduleRepository):
     """Repositório/serviço de agendamentos de contato."""
@@ -85,9 +85,9 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
 
         # 1) Parcela alvo
         inst = (
-            self.installments.find_by_id(installment_id)
+            self.installment_repo.find_by_id(installment_id)
             if installment_id
-            else self.installments.get_current_installment(contract_id)
+            else self.installment_repo.get_current_installment(contract_id)
         )
         if not inst or inst.received:
             return None
@@ -195,37 +195,6 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
                 first = first or m
         return ContactScheduleEntity.from_model(first)  # type: ignore[arg-type]
 
-    def upsert(  # noqa: F811, PLR0913
-        self,
-        *,
-        patient_id: str,
-        contract_id: str,
-        clinic_id: str,
-        installment_id: str,
-        step: int,
-        scheduled_dt: datetime,
-    ) -> ContactScheduleEntity:
-        cfg = self._flow_configs()[step]
-        first: Schedule | None = None
-        with transaction.atomic():
-            for ch in cfg.channels:
-                m, _ = Schedule.objects.update_or_create(
-                    patient_id=patient_id,
-                    channel=ch,
-                    notification_trigger=Schedule.Trigger.AUTOMATED,
-                    status=Schedule.Status.PENDING,
-                    defaults=dict(
-                        contract_id=contract_id,
-                        clinic_id=clinic_id,
-                        installment_id=installment_id,
-                        current_step=step,
-                        scheduled_date=scheduled_dt,
-                        advance_flow=False,
-                    ),
-                )
-                first = first or m
-        return ContactScheduleEntity.from_model(first)  # type: ignore[arg-type]
-
     def set_status_done(self, schedule_id: str) -> ContactScheduleEntity:
         m = Schedule.objects.get(id=schedule_id)
         m.status = Schedule.Status.APPROVED
@@ -235,7 +204,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
     def _pending(self, clinic_id: str) -> list[ContactScheduleEntity]:
         qs = Schedule.objects.filter(
             clinic_id=clinic_id,
-            scheduled_date__lte=datetime.utcnow()
+            scheduled_date__lte=timezone.now()
         )
         return [ContactScheduleEntity.from_model(m) for m in qs]
 
@@ -257,6 +226,31 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         )
         return ContactScheduleEntity.from_model(m) if m else None
 
+    def stream_pending(
+        self,
+        clinic_id,
+        *,
+        only_pending: bool = True,
+        chunk_size: int = 100,
+    ):
+        """
+        Gera lotes de ContactSchedule (Django models) com lock otimista.
+        Não segura locks por longos períodos; cada lote abre/fecha transação.
+        """
+        base = Schedule.objects.filter(clinic_id=clinic_id)
+        if only_pending:
+            base = base.filter(status=Schedule.Status.PENDING)
+        base = base.order_by("scheduled_date")
+
+        while True:
+            with transaction.atomic():
+                batch = list(
+                    base.select_for_update(skip_locked=True)[:chunk_size]
+                )
+            if not batch:
+                break
+            yield from batch
+                
     def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity:
         if not self._can_advance(schedule_id):
             return
@@ -358,7 +352,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         • Ignora o próprio schedule `schedule_id`, que ainda está PENDING
         quando essa verificação roda.
         • Considera apenas schedules AUTOMATIZADOS (`notification_trigger=AUTOMATED`).
-        • Despreza pendências manuais (`letter` ou `phonecall` com `pending_call=True`).
+        • Despreza pendências manuais (`letter` ou `phonecall` com `pending_calls=True`).
         """
         try:
             sched = Schedule.objects.get(id=schedule_id)

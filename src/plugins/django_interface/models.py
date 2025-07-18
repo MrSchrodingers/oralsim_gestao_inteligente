@@ -470,6 +470,7 @@ class ContactSchedule(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"
         APPROVED = "approved", "Aprovado"
+        PROCESSING  = "processing", "Processando"
         REJECTED = "rejected", "Rejeitado"
         
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -586,6 +587,12 @@ class ContactHistory(models.Model):
 
     class Meta:
         db_table = "contact_history"
+        constraints = [
+            UniqueConstraint(
+                fields=["schedule", "contact_type", "advance_flow"],
+                name="uq_history_schedule_channel_step",
+            )
+        ]
         indexes = [
             Index(fields=["clinic", "sent_at", "contact_type", "success"]),
             BrinIndex(fields=["sent_at"], autosummarize=True),

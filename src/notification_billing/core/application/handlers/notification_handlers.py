@@ -1,6 +1,8 @@
 import time
 from typing import Any
 
+import structlog
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 from oralsin_core.core.domain.repositories.contract_repository import (
     ContractRepository,
@@ -28,13 +30,9 @@ from notification_billing.core.application.commands.notification_commands import
 from notification_billing.core.application.cqrs import (
     CommandBus,
     CommandHandler,
-    PagedResult,
 )
 from notification_billing.core.application.dtos.whatsapp_notification_dto import (
     WhatsappNotificationDTO,
-)
-from notification_billing.core.application.queries.notification_queries import (
-    ListPendingSchedulesQuery,
 )
 from notification_billing.core.domain.entities.contact_schedule_entity import (
     ContactScheduleEntity,
@@ -53,8 +51,9 @@ from notification_billing.core.domain.services.event_dispatcher import (
     EventDispatcher,
 )
 from notification_billing.core.utils.template_utils import render_message
-from plugins.django_interface.models import ContactSchedule, FlowStepConfig
+from plugins.django_interface.models import ContactHistory, ContactSchedule, FlowStepConfig
 
+logger = structlog.get_logger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────
 # Service de envio (somente canais “automáticos”)
@@ -83,7 +82,17 @@ class NotificationSenderService:
             "vencimento": inst.due_date.strftime("%d/%m/%Y"),
         }
         return render_message(msg.content, ctx)
+    
+    def _channels_for_step(self, schedule: ContactSchedule) -> list[str]:
+        cfg = FlowStepConfig.objects.get(step_number=schedule.current_step)
+        return [c for c in cfg.channels if c not in ("letter", "pending_call")]
 
+    def _send_channel(self, schedule: ContactSchedule, channel: str) -> bool:
+        """Envia mensagem e devolve True/False (sucesso)."""
+        try:
+            return self._dispatcher.send(schedule, channel)
+        except Exception:
+            return False
     # ------------------------------------------------------------------ #
     def send(self, msg, patient, inst) -> None:
         content = self._render_content(msg, patient, inst)
@@ -244,39 +253,71 @@ class RunAutomatedNotificationsHandler(
         self.query_bus = query_bus
         self.command_bus = command_bus
 
-    def _process_schedule(  # noqa: PLR0911
-        self, sched: ContactScheduleEntity, now: timezone
-    ) -> dict[str, Any]:
-        """Processa um único agendamento."""
+    def _process_schedule(self, schedule: ContactSchedule) -> dict[str, Any] | None:
+        """
+        Executa **1** agendamento inteiro (todos os canais),
+        garantindo idempotência e tratamento de falhas.
+        """
         try:
-            # Validações iniciais (parcela, contrato, paciente)
-            inst = self.schedule_repo.installment_repo.find_by_id(
-                sched.installment_id
-            )
-            if not inst or inst.received:
-                return self._build_result(sched, success=False, error="Parcela inválida")
+            with transaction.atomic():
+                # 1) marca como PROCESSING e obtém lock pessimista
+                locked = (
+                    ContactSchedule.objects
+                    .select_for_update(skip_locked=True)
+                    .get(id=schedule.id, status=ContactSchedule.Status.PENDING)
+                )
+                locked.status = ContactSchedule.Status.PROCESSING
+                locked.save(update_fields=["status", "updated_at"])
 
-            contract = self.contract_repo.find_by_id(sched.contract_id)
-            if not contract or not contract.do_notifications:
-                return self._build_result(sched, success=False, error="Contrato inválido ou sem permissão")
+            # 2) fora da transação, faz os envios (pode demorar)
+            results: dict[str, bool] = {}
+            for channel in self.notification_service._channels_for_step(locked):
+                if channel == "phonecall":
+                    self.pending_call_repo.create(
+                        patient_id=locked.patient_id,
+                        contract_id=locked.contract_id,
+                        clinic_id=locked.clinic_id,
+                        schedule_id=locked.id,
+                        current_step=locked.current_step,
+                        scheduled_at=locked.scheduled_date or timezone.now(),
+                    )
+                    results[channel] = True
+                    continue
+                ok = self._send_through_notifier(locked, channel)
+                results[channel] = ok
 
-            patient = self.patient_repo.find_by_id(sched.patient_id)
-            if not patient:
-                return self._build_result(sched, success=False, error="Paciente não encontrado")
+            # 3) grava histórico e dá DONE numa nova transação
+            with transaction.atomic():
+                # idempotente – UNIQUE no ContactHistory garante
+                for channel, ok in results.items():
+                    ContactHistory.objects.get_or_create(
+                        schedule=locked,
+                        contact_type=channel,
+                        advance_flow=locked.advance_flow,
+                        defaults=dict(
+                            patient=locked.patient,
+                            contract=locked.contract,
+                            clinic=locked.clinic,
+                            sent_at=timezone.now(),
+                            success=ok,
+                        ),
+                    )
 
-            # Validação da etapa do fluxo
-            cfg = self.config_repo.find_by_step(sched.current_step)
-            if not cfg or not cfg.active:
-                return self._build_result(sched, success=False, error="Etapa do fluxo inativa")
+                locked.status = (
+                    ContactSchedule.Status.REJECTED
+                    if not all(results.values())
+                    else ContactSchedule.Status.APPROVED
+                )
+                locked.save(update_fields=["status", "updated_at"])
+                
+            return {"schedule_id": str(schedule.id), "results": results}
 
-            # Processamento do canal
-            if sched.channel == FlowStepConfig.Channel.PHONECALL:
-                return self._handle_phonecall(sched, now)
-            else:
-                return self._handle_notification(sched, patient, inst, now)
-
-        except Exception as e:
-            return self._build_result(sched, success=False, error=str(e))
+        except DatabaseError:
+            logger.warning("schedule.lock_failed", id=schedule.id)
+            return None
+        except Exception:
+            logger.exception("schedule.unhandled_error", id=schedule.id)
+            return None
 
     def _handle_phonecall(
         self, sched: ContactScheduleEntity, now: timezone
@@ -290,7 +331,7 @@ class RunAutomatedNotificationsHandler(
             current_step=sched.current_step,
             scheduled_at=sched.scheduled_date or now,
         )
-        return self._build_result(sched, success=True, pending_call=True)
+        return self._build_result(sched, success=True, pending_calls=True)
 
     def _handle_notification(
         self, sched: ContactScheduleEntity, patient, inst, now: timezone
@@ -353,7 +394,7 @@ class RunAutomatedNotificationsHandler(
             AdvanceContactStepCommand(schedule_id=str(sched.id))
         )
 
-    def _build_result(self, sched, success, error=None, pending_call=False):
+    def _build_result(self, sched, success, error=None, pending_calls=False):
         """Constrói o dicionário de resultado para um agendamento."""
         return {
             "patient_id": str(sched.patient_id),
@@ -362,7 +403,7 @@ class RunAutomatedNotificationsHandler(
             "channel": sched.channel,
             "success": success,
             "error": error,
-            "pending_call": pending_call,
+            "pending_calls": pending_calls,
         }
 
     @publish(exchange="notifications", routing_key="automated")
@@ -372,35 +413,27 @@ class RunAutomatedNotificationsHandler(
         start = time.perf_counter()
         success = True
         try:
-            # 1) Recupera todos os agendamentos pendentes
-            filters = {"clinic_id": cmd.clinic_id}
-            if cmd.only_pending:
-                filters["status"] = ContactSchedule.Status.PENDING
-
-            query = ListPendingSchedulesQuery(
-                filtros=filters, page=1, page_size=cmd.batch_size
-            )
-            schedules: PagedResult[
-                ContactScheduleEntity
-            ] = self.query_bus.dispatch(query)
-            now = timezone.now()
+            _now = timezone.now()
+            processed = 0
             results: list[dict[str, Any]] = []
 
-            if not schedules.items:
-                return {
-                    "clinic_id": cmd.clinic_id,
-                    "processed": 0,
-                    "results": results,
-                }
+            for sched in self.schedule_repo.stream_pending(
+                clinic_id=cmd.clinic_id,
+                only_pending=cmd.only_pending,
+                chunk_size=cmd.batch_size,
+            ):
+                result = self._process_schedule(sched)  
+                if result is not None:
+                    results.append(result)
+                processed += 1
 
-            # 2) Processa cada schedule individualmente
-            for sched in schedules.items:
-                result = self._process_schedule(sched, now)
-                results.append(result)
+            if processed == 0:
+                return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
+ 
 
             return {
                 "clinic_id": cmd.clinic_id,
-                "processed": len(results),
+                "processed": processed,
                 "results": results,
             }
 
@@ -412,3 +445,21 @@ class RunAutomatedNotificationsHandler(
             NOTIFICATION_FLOW_DURATION.labels("automated").observe(
                 time.perf_counter() - start
             )
+            
+    def _send_through_notifier(self, schedule: ContactSchedule, channel: str) -> bool:
+        """
+        Resolvido aqui para não depender de atributo privado de NotificationSenderService.
+        """
+        inst = self.notification_service.installment_repo.get_current_installment(schedule.contract_id)
+        if not inst:
+            return False
+        patient = self.notification_service.patient_repo.find_by_id(str(schedule.patient_id))
+        msg = self.message_repo.get_message(channel, schedule.current_step, schedule.clinic_id)
+        if not (patient and msg and inst):
+            return False
+        try:
+            self.notification_service.send(msg, patient, inst)
+            return True
+        except Exception:
+            logger.exception("send_channel_failed", schedule_id=schedule.id, channel=channel)
+            return False

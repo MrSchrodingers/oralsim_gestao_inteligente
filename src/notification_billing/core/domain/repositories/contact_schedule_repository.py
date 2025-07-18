@@ -59,6 +59,17 @@ class ContactScheduleRepository(ABC):
         ...
         
     @abstractmethod
+    def stream_pending(
+        self,
+        clinic_id: str,
+        *,
+        only_pending: bool = True,
+        chunk_size: int = 100,
+    ):
+        """Gerador com SELECT … SKIP LOCKED para alto throughput."""
+        ...
+        
+    @abstractmethod
     def list_pending(self, clinic_id: str) -> list[ContactScheduleEntity]:
         """Lista agendamentos cuja data já expirou."""
         ...

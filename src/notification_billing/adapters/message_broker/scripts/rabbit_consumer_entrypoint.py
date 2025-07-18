@@ -29,15 +29,19 @@ def run():
     rabbit.declare_exchange("notifications.dlx", exchange_type="fanout")
 
     # 3) declara e vincula filas
-    for key in ("manual", "automated"):
-        queue = f"notifications.{key}"
-        rabbit.declare_queue(queue, dlx="notifications.dlx")
-        rabbit.bind_queue(queue, "notifications", key)
+    # filas
+    rabbit.declare_queue("notifications.manual", dlx="notifications.dlx")
+    rabbit.bind_queue("notifications.manual", "notifications", "manual")
+    rabbit.declare_queue("notifications.automated", dlx="notifications.dlx")
+    rabbit.bind_queue("notifications.automated", "notifications", "automated")
+    # cada mensagem = 1 agendamento
+    rabbit.declare_queue("notifications.schedule", dlx="notifications.dlx")
+    rabbit.bind_queue("notifications.schedule", "notifications", "schedule")
 
     ch = rabbit.channel()
 
     # 4) define consumidores (funções marcadas com @retry_consume)
-    @retry_consume()
+    @retry_consume(queue="notifications.manual")
     def on_manual(ch, method, props, payload):
         notification_service.send_manual(
             patient_id=payload["patient_id"],
@@ -46,10 +50,14 @@ def run():
             message_id=payload["message_id"],
         )
 
-    @retry_consume()
+    @retry_consume(queue="notifications.automated")
     def on_automated(ch, method, props, payload):
-        notification_service.run_automated(clinic_id=payload["clinic_id"])
+        notification_service.enqueue_pending_schedules(clinic_id=payload["clinic_id"])
 
+    @retry_consume(queue="notifications.schedule")
+    def on_schedule(ch, method, props, payload):
+        notification_service.process_single_schedule(schedule_id=payload["schedule_id"])
+        
     ch.basic_consume(
         queue="notifications.manual",
         on_message_callback=on_manual,
@@ -57,6 +65,10 @@ def run():
     ch.basic_consume(
         queue="notifications.automated",
         on_message_callback=on_automated,
+    )
+    ch.basic_consume(
+        queue="notifications.schedule",
+        on_message_callback=on_schedule,
     )
 
     print(" [*] Rabbit consumer iniciado. Aguardando mensagens…")

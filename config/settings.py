@@ -133,7 +133,6 @@ PIPEDRIVE_CF_MAP: dict[str, str] = {
 # -------------------------------
 ASSERTIVA_BASE_URL   = config('ASSERTIVA_BASE_URL')
 ASSERTIVA_AUTH_TOKEN = config('ASSERTIVA_AUTH_TOKEN')
-ASSERTIVA_WEBHOOK    = config('ASSERTIVA_WEBHOOK_URL')
 
 # -------------------------------
 # Mailchimp / SendGrid
