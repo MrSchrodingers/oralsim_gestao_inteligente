@@ -13,6 +13,7 @@ from oralsin_core.core.domain.repositories.installment_repository import (
 from oralsin_core.core.domain.repositories.patient_repository import (
     PatientRepository,
 )
+from requests.exceptions import HTTPError
 
 from notification_billing.adapters.message_broker.rabbitmq import publish
 from notification_billing.adapters.notifiers.registry import get_notifier
@@ -38,6 +39,7 @@ from notification_billing.core.domain.entities.contact_schedule_entity import (
     ContactScheduleEntity,
 )
 from notification_billing.core.domain.events.events import NotificationSentEvent
+from notification_billing.core.domain.events.exceptions import NotificationError, PermanentNotificationError, TemporaryNotificationError
 from notification_billing.core.domain.repositories import (
     ContactHistoryRepository,
     ContactScheduleRepository,
@@ -54,6 +56,7 @@ from notification_billing.core.utils.template_utils import render_message
 from plugins.django_interface.models import ContactHistory, ContactSchedule, FlowStepConfig
 
 logger = structlog.get_logger(__name__)
+blocking_channels = {'sms', 'whatsapp', 'email'}
 
 # ──────────────────────────────────────────────────────────────────────────
 # Service de envio (somente canais “automáticos”)
@@ -103,23 +106,40 @@ class NotificationSenderService:
         content = self._render_content(msg, patient, inst)
         notifier = get_notifier(msg.type)
 
-        if msg.type == "email":
-            notifier.send(
-                recipients=[patient.email],
-                subject="Notificação de Atraso de Parcelas.",
-                html=content,
-            )
-        elif msg.type == "sms":
-            notifier.send(
-                phones=[patient.phones[0].phone_number], message=content
-            )
-        elif msg.type == "whatsapp":
-            dto = WhatsappNotificationDTO(
-                to=str(patient.phones[0].phone_number), message=content
-            )
-            notifier.send(dto)
-        else:
-            raise NotImplementedError(f"Canal não suportado: {msg.type}")
+        try:
+            if msg.type == "email":
+                notifier.send(
+                    recipients=[patient.email],
+                    subject="Notificação de Atraso de Parcelas.",
+                    html=content,
+                )
+            elif msg.type == "sms":
+                notifier.send(
+                    phones=[patient.phones[0].phone_number], message=content
+                )
+            elif msg.type == "whatsapp":
+                dto = WhatsappNotificationDTO(
+                    to=str(patient.phones[0].phone_number), message=content
+                )
+                notifier.send(dto)
+            else:
+                raise NotImplementedError(f"Canal não suportado: {msg.type}")
+        except HTTPError as http_err:
+            # Lógica para traduzir o erro HTTP em nossas exceções de negócio.
+            status_code = http_err.response.status_code
+            if 400 <= status_code < 500:  # noqa: PLR2004
+                # Erros 4xx são erros do cliente (ex: Bad Request), considerados permanentes.
+                raise PermanentNotificationError(f"Erro permanente do cliente (HTTP {status_code}): {http_err}") from http_err
+            elif 500 <= status_code < 600:  # noqa: PLR2004
+                # Erros 5xx são erros do servidor, considerados temporários.
+                raise TemporaryNotificationError(f"Erro temporário no servidor do provedor (HTTP {status_code}): {http_err}") from http_err
+            else:
+                # Outros erros HTTP são tratados como temporários por precaução.
+                raise TemporaryNotificationError(f"Erro HTTP inesperado: {http_err}") from http_err
+        
+        except Exception as e:
+            # Captura qualquer outra exceção não-HTTP e a envolve em nossa exceção base.
+            raise NotificationError(f"Erro inesperado durante o envio: {e}") from e
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -419,7 +439,7 @@ class RunAutomatedNotificationsHandler(
         patient_id = representative_schedule.patient.id
         contract_id = representative_schedule.contract.id
         current_step = representative_schedule.current_step
-
+        
         try:
             with transaction.atomic():
                 schedules_in_group = list(
@@ -462,11 +482,29 @@ class RunAutomatedNotificationsHandler(
                 ok = self._send_through_notifier(schedule, channel)
                 results[channel] = ok
 
-            all_successful = all(results.values())
+            _all_successful = all(results.values())
+            step_should_advance = any(
+                success for channel, success in results.items() if channel in blocking_channels
+            )
             
             # Grava o histórico de todas as tentativas
             with transaction.atomic():
                 for schedule in schedules_in_group:
+                    # Verifica o resultado específico para o canal deste agendamento.
+                    success = results.get(schedule.channel, False)
+                    
+                    if schedule.channel not in results:
+                        # Pula canais que não foram processados (ex: 'letter')
+                        continue
+
+                    # Define o status final individualmente.
+                    final_status = ContactSchedule.Status.APPROVED if success else ContactSchedule.Status.REJECTED
+                    
+                    schedule.status = final_status
+                    schedule.updated_at = timezone.now()
+                    schedule.save(update_fields=["status", "updated_at"])
+
+                    # Registra o histórico para cada tentativa, com seu resultado real.
                     ContactHistory.objects.get_or_create(
                         schedule_id=schedule.id,
                         contact_type=schedule.channel,
@@ -475,23 +513,14 @@ class RunAutomatedNotificationsHandler(
                             contract_id=schedule.contract.id,
                             clinic_id=schedule.clinic.id,
                             sent_at=timezone.now(),
-                            success=results.get(schedule.channel, False),
+                            success=success,
                         ),
                     )
 
-            if all_successful:
-                # Se tudo deu certo, o comando de avanço cuidará de marcar a etapa atual como 'APPROVED'
-                # e criar os agendamentos da próxima etapa.
+            if step_should_advance:
                 self._advance_step(ContactScheduleEntity.from_model(representative_schedule))
-            else:
-                # Se algo falhou, apenas marcamos o grupo como 'REJECTED' e não avançamos.
-                with transaction.atomic():
-                    ContactSchedule.objects.filter(id__in=schedule_ids).update(
-                        status=ContactSchedule.Status.REJECTED,
-                        updated_at=timezone.now()
-                    )
 
-            return {"patient_id": str(patient_id), "step": current_step, "results": results, "advanced_step": all_successful}
+            return {"patient_id": str(patient_id), "step": current_step, "results": results, "advanced_step": step_should_advance}
 
         except Exception:
             logger.exception("schedule_group.unhandled_error", patient_id=str(patient_id), contract_id=str(contract_id))
@@ -543,14 +572,60 @@ class RunAutomatedNotificationsHandler(
         """
         inst = self.notification_service.installment_repo.get_current_installment(schedule.contract)
         if not inst:
+            logger.error("send_notifier.precondition_failed", reason="current_installment_not_found", schedule_id=schedule.id, contract_id=schedule.contract_id)
             return False
         patient = self.notification_service.patient_repo.find_by_id(str(schedule.patient.id))
         msg = self.message_repo.get_message(channel, schedule.current_step, schedule.clinic)
         if not (patient and msg and inst):
+            logger.error("send_notifier.precondition_failed", reason="patient_msg_or_inst_missing", schedule_id=schedule.id)
             return False
         try:
             self.notification_service.send(msg, patient, inst)
+            logger.info(
+                "send_notifier.success",
+                schedule_id=schedule.id,
+                patient_id=schedule.patient.id,
+                channel=channel,
+                msg_type=msg.type
+            )
             return True
-        except Exception:
-            logger.exception("send_channel_failed", schedule_id=schedule.id, channel=channel)
+        except PermanentNotificationError as e:
+            # ERRO GRAVE E PERMANENTE: Logamos como ERRO.
+            # A notificação é descartada (retorna False) e não será tentada novamente.
+            # O log detalhado é a prova para compliance de que o envio falhou por um motivo válido e imutável.
+            logger.error(
+                "send_notifier.permanent_failure",
+                reason="O destinatário ou a requisição são inválidos. A notificação não será reenviada.",
+                schedule_id=schedule.id,
+                patient_id=schedule.patient.id,
+                channel=channel,
+                error_details=str(e)
+            )
+            return False
+            
+        except TemporaryNotificationError as e:
+            # ERRO TEMPORÁRIO: Logamos como AVISO.
+            # A notificação falhou, mas a causa pode ser resolvida (ex: servidor voltou ao ar).
+            # Por enquanto, retornamos False. No futuro, aqui entraria a lógica de retentativa.
+            # O log como 'warning' ajuda a monitorar a saúde dos serviços de terceiros.
+            logger.warning(
+                "send_notifier.temporary_failure",
+                reason="O serviço do provedor falhou ou houve um erro de rede. Pode ser tentado novamente.",
+                schedule_id=schedule.id,
+                patient_id=schedule.patient.id,
+                channel=channel,
+                error_details=str(e)
+            )
+            return False
+
+        except Exception as _e:
+            # ERRO INESPERADO: Logamos com 'exception' para capturar o traceback completo.
+            # Essencial para debugar problemas não previstos na programação.
+            logger.exception(
+                "send_notifier.unhandled_error",
+                reason="Uma falha inesperada ocorreu no fluxo de envio.",
+                schedule_id=schedule.id,
+                patient_id=schedule.patient.id,
+                channel=channel,
+            )
             return False
