@@ -311,6 +311,9 @@ class RunAutomatedNotificationsHandler(
                 ok = self._send_through_notifier(locked, channel)
                 results[channel] = ok
 
+            msg = self.notification_service.message_repo.get_message(
+                        locked.channel, locked.current_step, locked.clinic
+                    )
             # 3) grava histórico e dá DONE numa nova transação
             with transaction.atomic():
                 # idempotente – UNIQUE no ContactHistory garante
@@ -323,6 +326,7 @@ class RunAutomatedNotificationsHandler(
                             patient=locked.patient,
                             contract=locked.contract,
                             clinic=locked.clinic,
+                            message_id=msg.id if msg else None,
                             sent_at=timezone.now(),
                             success=ok,
                         ),
@@ -503,6 +507,9 @@ class RunAutomatedNotificationsHandler(
                     schedule.status = final_status
                     schedule.updated_at = timezone.now()
                     schedule.save(update_fields=["status", "updated_at"])
+                    msg = self.notification_service.message_repo.get_message(
+                        schedule.channel, schedule.current_step, schedule.clinic_id
+                    )
 
                     # Registra o histórico para cada tentativa, com seu resultado real.
                     ContactHistory.objects.get_or_create(
@@ -512,6 +519,7 @@ class RunAutomatedNotificationsHandler(
                             patient_id=schedule.patient.id,
                             contract_id=schedule.contract.id,
                             clinic_id=schedule.clinic.id,
+                            message_id=msg.id if msg else None,
                             sent_at=timezone.now(),
                             success=success,
                         ),

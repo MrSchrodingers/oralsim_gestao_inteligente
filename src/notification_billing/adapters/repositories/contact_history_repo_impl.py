@@ -4,6 +4,7 @@ from typing import Any, Literal, Union
 import structlog
 from django.utils import timezone
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContatoHistoricoEnvioDTO
 
 from notification_billing.core.domain.entities.contact_history_entity import ContactHistoryEntity
@@ -231,3 +232,20 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
             entities.append(entity)
 
         return entities
+    
+    def list(
+        self, filtros: dict[str, Any] | None, page: int, page_size: int
+    ) -> PagedResult[ContactHistoryEntity]:
+        """
+        lista com paginação genérica.
+        """
+        qs = ContactHistoryModel.objects.all()
+        if filtros:
+            qs = qs.filter(**filtros)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        objs_page = qs.order_by("sent_at")[offset : offset + page_size]
+
+        items = [ContactHistoryEntity.from_model(obj) for obj in objs_page]
+        return PagedResult(items=items, total=total, page=page, page_size=page_size)

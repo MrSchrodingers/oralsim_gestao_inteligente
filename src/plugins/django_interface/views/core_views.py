@@ -1279,7 +1279,7 @@ class CollectionCaseViewSet(PaginationFilterMixin, viewsets.ViewSet):
         case = cordial_billing_query_bus.dispatch(
             GetCollectionCaseQuery(collection_case_id=str(pk), filtros={"clinic_id": str(request.user.clinic_id)})
         )
-        return Response(CollectionCaseSerializer(case).data)
+        return Response(CollectionCaseSerializer(case).data) 
     
     @action(detail=True, methods=["post"])  # POST /collection-case/{id}/create_deal
     def create_deal(self, request, pk=None):

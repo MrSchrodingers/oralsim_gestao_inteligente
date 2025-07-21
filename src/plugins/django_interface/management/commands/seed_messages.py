@@ -75,6 +75,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Prezado(a) {{ nome }},</p>"
             "<p>Escrevemos novamente para informar que a pendência referente à parcela de <strong>{{ valor }}</strong> (vencida em <strong>{{ vencimento }}</strong>) persiste.</p>"
             "<p>É importante regularizar sua situação para evitar o acúmulo de encargos. Se já realizou o pagamento, por favor, nos envie o comprovante.</p>"
+            "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "<p>Atenciosamente,<br/>Departamento Financeiro</p>"
         ),
         "step": 2
@@ -405,6 +406,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Prezado(a) {{ nome }},</p>"
             "<p>Esgotadas todas as tentativas de resolução amigável do débito de <strong>{{ valor }}</strong>, comunicamos oficialmente que o seu caso foi transferido ao nosso departamento jurídico.</p>"
             "<p>A partir desta data, a cobrança do referido valor será conduzida exclusivamente por via judicial. Quaisquer futuras comunicações sobre este assunto serão formais e legais.</p>"
+            "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "<p>Sem mais.</p>"
         ),
         "step": 14

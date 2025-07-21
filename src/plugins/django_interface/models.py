@@ -698,6 +698,7 @@ class CollectionCase(models.Model):
     opened_at = models.DateTimeField()
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     deal_id = models.BigIntegerField(blank=True, null=True)
+    last_stage_id = models.BigIntegerField(blank=True, null=True)
     deal_sync_status = models.CharField(
         max_length=20,
         choices=DealSyncStatus.choices,
@@ -712,7 +713,7 @@ class CollectionCase(models.Model):
 
     class Meta:
         db_table = "collection_cases"
-        indexes = [models.Index(fields=["clinic", "status", "patient", "deal_id", "installment", "deal_sync_status"])]
+        indexes = [models.Index(fields=["clinic", "status", "patient", "deal_id", "last_stage_id", "installment", "deal_sync_status"])]
 
 
 class PendingCall(models.Model):

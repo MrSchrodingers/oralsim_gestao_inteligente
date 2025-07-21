@@ -135,6 +135,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                         opened_at=timezone.now(),
                         amount=Decimal(inst.installment_amount),
                         deal_id=deal.id if deal else None,
+                        last_stage_id=deal.stage_id if deal else None,
                         deal_sync_status= "pending" if deal else "created",
                         status="open",
                     )

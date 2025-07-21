@@ -296,6 +296,7 @@ class CollectionCaseSerializer(serializers.Serializer):
     opened_at        = serializers.DateTimeField()
     amount           = serializers.DecimalField(max_digits=14, decimal_places=2)
     deal_id          = serializers.IntegerField(allow_null=True)
+    last_stage_id    = serializers.IntegerField(allow_null=True)
     deal_sync_status = serializers.ChoiceField(
         choices=CollectionCase.DealSyncStatus.choices
     )

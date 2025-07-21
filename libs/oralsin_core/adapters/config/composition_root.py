@@ -411,7 +411,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         get_user_clinic_handler          = providers.Factory(GetUserClinicHandler)
         list_users_handler               = providers.Factory(ListUsersHandler)
         get_user_handler                 = providers.Factory(GetUserHandler)
-        
         list_payment_methods_handler     = providers.Factory(ListPaymentMethodsHandler)
         get_payment_methods_handler      = providers.Factory(GetPaymentMethodsHandler)
         
@@ -494,6 +493,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             
             qry_bus.register(ListPaymentMethodsQuery, self.list_payment_methods_handler())
             qry_bus.register(GetPaymentMethodQuery, self.get_payment_methods_handler())
+            
+
             
             qry_bus.register(
                 GetBillingSettingsQuery,

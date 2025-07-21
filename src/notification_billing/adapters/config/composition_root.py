@@ -72,6 +72,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         AdvanceContactStepHandler,
         RecordContactSentHandler,
     )
+    from notification_billing.core.application.handlers.contact_history_handlers import GetContactHistoryHandler, ListContactHistoryHandler
     from notification_billing.core.application.handlers.core_entities_handlers import (
         CreateContactScheduleHandler,
         CreateMessageHandler,
@@ -98,6 +99,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         SetPendingCallDoneHandler,
     )
     from notification_billing.core.application.handlers.sync_handlers import BulkScheduleContactsHandler
+    from notification_billing.core.application.queries.contact_history_queries import GetContactHistoryQuery, ListContactHistoryQuery
     from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
     from notification_billing.core.application.queries.flow_step_config_queries import GetFlowStepConfigQuery, ListFlowStepConfigsQuery
     from notification_billing.core.application.queries.letter_queries import GetLetterPreviewQuery, ListLettersQuery
@@ -212,6 +214,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         
         # Handlers de Queries
         get_flow_step_config_handler = providers.Factory(GetFlowStepConfigHandler)
+        list_contact_history_handler     = providers.Factory(ListContactHistoryHandler)
+        get_contact_history_handler      = providers.Factory(GetContactHistoryHandler)
         list_flow_step_config_handler = providers.Factory(ListFlowStepConfigHandler)
         list_due_contacts_handler = providers.Factory(ListPendingSchedulesHandler, schedule_repo=contact_schedule_repo)
         list_message_handler = providers.Factory(ListMessagesHandler)
@@ -336,6 +340,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             qb.register(GetMessageQuery, self.get_message_handler())
             qb.register(ListLettersQuery, self.list_letters_handler())
             qb.register(GetLetterPreviewQuery, self.get_letter_preview_handler())
+            qb.register(ListContactHistoryQuery, self.list_contact_history_handler())
+            qb.register(GetContactHistoryQuery, self.get_contact_history_handler())
             
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()

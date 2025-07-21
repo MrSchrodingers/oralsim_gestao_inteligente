@@ -56,6 +56,7 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
             "clinic_id": case.clinic_id,
             "opened_at": case.opened_at,
             "amount": case.amount,
+            "last_stage_id": case.last_stage_id,
             "deal_id": case.deal_id,
             "deal_sync_status": desired_sync_status,
             "status": case.status,
@@ -78,6 +79,7 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
             amount=model.amount,
             deal_sync_status=model.deal_sync_status,
             deal_id=model.deal_id,
+            last_stage_id=model.last_stage_id,
             status=model.status,
         )
 
