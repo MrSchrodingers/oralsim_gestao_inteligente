@@ -12,6 +12,11 @@ class ContractRepository(ABC):
         ...
 
     @abstractmethod
+    def find_by_patient_id(self, patient_id: str) -> ContractEntity | None:
+        """Recupera um contrato por Paciente."""
+        ...
+        
+    @abstractmethod
     def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None, patient_id: uuid.UUID | None = None) -> bool:
         ...
         

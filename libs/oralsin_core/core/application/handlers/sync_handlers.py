@@ -1,41 +1,24 @@
-# ——————————————————————————————————————————————————————————
-#  SyncInadimplenciaHandler – v2 (robusta, bulk-safe)
-#  · Mantém alta performance em bulk_create/bulk_update
-#  · Garante **UMA** parcela is_current=True por (contract_id, contract_version)
-#  · Evita violar UNIQUE CONSTRAINT `unique_current_per_contract_version`
-#  · Melhora rastreabilidade com logs estruturados + timings
-# ——————————————————————————————————————————————————————————
 from __future__ import annotations
 
-import cProfile
-import io
 import logging
-import os
-import pstats
 import time
 import uuid
-from collections.abc import Callable, Mapping
-from functools import wraps
-from typing import Any, TypeVar
 
-from django.conf import settings
-from django.core.management import call_command
-from django.db import connection, transaction
+from django.db import transaction
 from django.utils import timezone
 
-from notification_billing.core.domain.repositories.contact_schedule_repository import ContactScheduleRepository
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
 from oralsin_core.adapters.observability.metrics import (
     SYNC_DURATION,
     SYNC_PATIENTS,
     SYNC_RUNS,
 )
-from oralsin_core.core.application.commands.register_commands import ResyncClinicCommand
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import CommandHandler
 from oralsin_core.core.application.dtos.oralsin_dtos import (
     InadimplenciaQueryDTO,
     OralsinPacienteDTO,
+    OralsinTelefoneDTO,
 )
 from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
 from oralsin_core.core.domain.repositories.clinic_repository import ClinicRepository
@@ -51,76 +34,17 @@ from oralsin_core.core.domain.services.event_dispatcher import EventDispatcher
 from plugins.django_interface.models import (
     ContactSchedule as ContactScheduleModel,
 )
-from plugins.django_interface.models import Contract as ContractModel
 from plugins.django_interface.models import PatientPhone as PatientPhoneModel
 
-# ─────────────────────────────── logger ────────────────────────────────
-logger = logging.getLogger("sync_inadimplencia")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)s %(name)s "
-            "%(message)s [%(funcName)s:%(lineno)d]"
-        )
-    )
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
-
-PROFILE_ENABLED = os.getenv("PROFILE_SYNC_HANDLER", "true").lower() == "true"
-
-_T = TypeVar("_T")
+logger = logging.getLogger(__name__)
 
 
-def profiled(
-    label: str,
-    *,
-    context: Mapping[str, Any] | None = None,
-) -> Callable[[Callable[..., _T]], Callable[..., _T]]:
-    """
-    Decorador interno p/ medir tempo de execução e, em DEBUG, nº de queries.
-    Uso:
-        @profiled("repo.save", context={"id": obj.id})
-        def fn(...):
-            ...
-    """
-    def decorator(fn: Callable[..., _T]) -> Callable[..., _T]:
-        @wraps(fn)
-        def wrapper(*args, **kwargs) -> _T:
-            if not PROFILE_ENABLED:
-                return fn(*args, **kwargs)
-
-            q_before = len(connection.queries) if settings.DEBUG else 0
-            start = time.perf_counter()
-
-            result = fn(*args, **kwargs)
-
-            elapsed = time.perf_counter() - start
-            q_after = len(connection.queries) if settings.DEBUG else 0
-
-            meta = ", ".join(f"{k}={v}" for k, v in (context or {}).items())
-            logger.info(
-                "[PROFILE] %s%s – %.3fs, ΔQ=%s",
-                label,
-                f" [{meta}]" if meta else "",
-                elapsed,
-                (q_after - q_before) if settings.DEBUG else "n/a",
-            )
-            return result
-
-        return wrapper
-
-    return decorator
-
-
-# ────────────────────────────  Handler  ────────────────────────────────
 class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
     """
-    Sincroniza inadimplência: pacientes, contratos e parcelas.
-    NÃO dispara agendamentos ou notificações.
+    Orquestra a sincronização de inadimplência, garantindo robustez,
+    idempotência e respeito às regras de negócio como as flags de cobrança.
     """
 
-    # ───────── ctor: injeta dependências explícitas ─────────
     def __init__(  # noqa: PLR0913
         self,
         api_client: OralsinAPIClient,
@@ -129,7 +53,6 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         phone_repo: PatientPhoneRepository,
         contract_repo: ContractRepository,
         installment_repo: InstallmentRepository,
-        schedule_repo: ContactScheduleRepository,
         mapper: OralsinPayloadMapper,
         dispatcher: EventDispatcher,
     ) -> None:
@@ -139,343 +62,118 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         self.phone_repo = phone_repo
         self.contract_repo = contract_repo
         self.installment_repo = installment_repo
-        self.schedule_repo = schedule_repo
         self.mapper = mapper
         self.dispatcher = dispatcher
 
-    # ─────────── handle (transacional) ────────────
     @transaction.atomic
     def handle(self, cmd: SyncInadimplenciaCommand) -> None:
-        profiler = cProfile.Profile() if PROFILE_ENABLED else None
-        if profiler:
-            profiler.enable()
-
         SYNC_RUNS.labels(str(cmd.oralsin_clinic_id)).inc()
-        overall_start = time.perf_counter()
+        start_time = time.perf_counter()
 
-        logger.info(
-            "▶️  Iniciando sync inadimplência "
-            "clinic=%s resync=%s window=%s→%s",
-            cmd.oralsin_clinic_id,
-            cmd.resync,
-            cmd.data_inicio,
-            cmd.data_fim,
-        )
+        logger.info(f"[SYNC_START] Clínica: {cmd.oralsin_clinic_id}, Resync: {cmd.resync}")
 
-        # 1) Clínica
-        clinic = self._get_or_create_clinic(cmd.oralsin_clinic_id)
-
-        # 2) DTOs de inadimplência
+        clinic = self.clinic_repo.get_or_create_by_oralsin_id(cmd.oralsin_clinic_id)
         dtos = self._fetch_dtos(cmd)
-        logger.info("📦  %d DTOs recebidos da API", len(dtos))
+        
+        if not dtos:
+            logger.info(f"[SYNC_INFO] Nenhum dado de inadimplência encontrado para a clínica {cmd.oralsin_clinic_id}.")
+            return
 
-        # 3) Persistência principal
         processed, errors = self._persist_all(dtos, clinic.id, cmd.resync)
-        logger.info("✅  %d DTOs processados com sucesso, %d falharam", processed, errors)
 
-        # 4) Métricas & profile
-        elapsed = time.perf_counter() - overall_start
+        elapsed = time.perf_counter() - start_time
         SYNC_DURATION.labels(str(cmd.oralsin_clinic_id)).observe(elapsed)
+        logger.info(
+            f"[SYNC_END] Clínica: {cmd.oralsin_clinic_id}. "
+            f"Processados: {processed}, Falhas: {errors}, Duração: {elapsed:.2f}s"
+        )
 
-        if profiler:
-            profiler.disable()
-            s = io.StringIO()
-            pstats.Stats(profiler, stream=s).sort_stats(
-                pstats.SortKey.CUMULATIVE
-            ).print_stats(25)
-            logger.info("[PROFILE] Estatísticas detalhadas:\n%s", s.getvalue())
-
-        logger.info("⏹️  Sync concluído em %.2fs", elapsed)
-
-    # ────────────────────  Fases da sync  ─────────────────────
-    # 1) Clínica
-    @profiled("clinic.get_or_create")
-    def _get_or_create_clinic(self, oralsin_id: int):
-        return self.clinic_repo.get_or_create_by_oralsin_id(oralsin_id)
-
-    # 2) Chamada externa
-    @profiled("api.get_inadimplencia")
     def _fetch_dtos(self, cmd: SyncInadimplenciaCommand) -> list[OralsinPacienteDTO]:
-        return self.api.get_inadimplencia(
-            InadimplenciaQueryDTO(
-                idClinica=cmd.oralsin_clinic_id,
-                dataVencimentoInicio=cmd.data_inicio,
-                dataVencimentoFim=cmd.data_fim,
-            )
+        query = InadimplenciaQueryDTO(
+            idClinica=cmd.oralsin_clinic_id,
+            dataVencimentoInicio=cmd.data_inicio,
+            dataVencimentoFim=cmd.data_fim,
         )
+        return self.api.get_inadimplencia(query)
 
-    # 3) Loop principal
     def _persist_all(
-        self,
-        dtos: list[OralsinPacienteDTO],
-        clinic_id: uuid.UUID,
-        is_resync: bool,
+        self, dtos: list[OralsinPacienteDTO], clinic_id: uuid.UUID, is_resync: bool
     ) -> tuple[int, int]:
-        ok, failed = 0, 0
-        
-        # Otimização: Coleta todos os IDs de contratos e pacientes para uma única consulta
-        contract_ids_to_check = [dto.contrato.idContrato for dto in dtos if dto.contrato]
-        
-        # Busca contratos que não devem ser notificados
-        contracts_to_cancel = set(
-            ContractModel.objects.filter(
-                oralsin_contract_id__in=contract_ids_to_check,
-                do_notifications=False
-            ).values_list('id', flat=True)
-        )
-        
-        # Cancela agendamentos para contratos com notificação desativada
-        if contracts_to_cancel:
-            ContactScheduleModel.objects.filter(
-                contract_id__in=contracts_to_cancel,
-                status=ContactScheduleModel.Status.PENDING
-            ).update(status='cancelled', updated_at=timezone.now())
-            logger.info(f"{len(contracts_to_cancel)} contratos tiveram agendamentos cancelados por 'do_notifications=False'.")
-
-
-        for idx, dto in enumerate(dtos, 1):
-            tag = f"dto{idx}"
+        ok_count, error_count = 0, 0
+        for dto in dtos:
             try:
-                patient = self._persist_patient(dto, clinic_id, is_resync, tag)
-                if not patient:
-                    continue  # Resync ignorado (DTO incompleto ou paciente ausente)
+                # 1. Persiste Paciente e Telefones
+                patient_id = self._persist_patient(dto, clinic_id)
+                self._sync_phones(dto.telefones, patient_id)
 
-                contract = self._persist_contract(dto, patient, clinic_id, is_resync, tag)
-                if not contract:
-                    continue  # Resync ignorado (contrato ausente)
+                # 2. Persiste Contrato (e lida com flags de cobrança)
+                contract_entity = self._persist_contract(dto, patient_id, clinic_id)
+                self._handle_billing_flags(contract_entity.id, dto.contrato.realizarCobranca)
 
-                self._persist_installments(dto, contract.id, is_resync, tag)
-                current_installment_dto = dto.parcelaAtualDetalhe
-                if current_installment_dto:
-                    from oralsin_core.core.application.services.payment_status_classifier import is_paid_status
-                    
-                    if is_paid_status(current_installment_dto.statusFinanceiro):
-                        # Cancela agendamentos PENDENTES para esta parcela específica
-                        ContactScheduleModel.objects.filter(
-                            installment_id=current_installment_dto.idContratoParcela,
-                            status=ContactScheduleModel.Status.PENDING
-                        ).update(status='cancelled_paid', updated_at=timezone.now())
-                        logger.info(f"Agendamentos para a parcela {current_installment_dto.idContratoParcela} cancelados por quitação.")
+                # 3. Persiste Parcelas e lida com status de pagamento
+                self._persist_installments(dto, contract_entity.id)
+                self._handle_paid_installment(dto.parcelaAtualDetalhe)
                 
                 SYNC_PATIENTS.labels(str(clinic_id)).inc()
-                ok += 1
-            except Exception as _exc:  # noqa: BLE001
-                failed += 1
-                logger.exception(
-                    # ... (log de erro)
-                )
-        return ok, failed
+                ok_count += 1
+            except Exception as e:
+                error_count += 1
+                logger.error(f"[SYNC_ERROR] Falha ao processar DTO do paciente {dto.idPaciente}: {e}", exc_info=True)
+        
+        return ok_count, error_count
 
-    # ──────────────── Persistência – Paciente ────────────────
-    def _persist_patient(
-        self,
-        dto: OralsinPacienteDTO,
-        clinic_id: uuid.UUID,
-        is_resync: bool,
-        tag: str,
-    ):
-        ctx = {"patient_id": dto.idPaciente, "tag": tag}
+    def _persist_patient(self, dto: OralsinPacienteDTO, clinic_id: uuid.UUID) -> uuid.UUID:
+        patient_entity = self.mapper.map_patient(dto, clinic_id)
+        saved_patient = self.patient_repo.save(patient_entity)
+        return saved_patient.id
 
-        @profiled("patient.save", context=ctx)
-        def _save() -> uuid.UUID | None:
-            # Regras de DTO completo (para criar paciente novo em resync)
-            def _dto_complete(d: OralsinPacienteDTO) -> bool:
-                has_name = bool(getattr(d, "nomePaciente", None))
-                has_phone = bool(getattr(d, "telefones", []))
-                has_contract = d.contrato is not None
-                return has_name and has_phone and has_contract
+    def _sync_phones(self, phones_dto: OralsinTelefoneDTO, patient_id: uuid.UUID) -> None:
+        phone_entities = self.mapper.map_patient_phones(phones_dto, patient_id)
+        if not phone_entities:
+            return
 
-            patient_ent = self.mapper.map_patient(dto, clinic_id)
+        # Lógica de "upsert" em lote para telefones
+        existing_phones = {p.phone_number: p for p in PatientPhoneModel.objects.filter(patient_id=patient_id)}
+        to_create = [
+            PatientPhoneModel(**ent.to_dict()) for ent in phone_entities 
+            if ent.phone_number not in existing_phones
+        ]
+        if to_create:
+            PatientPhoneModel.objects.bulk_create(to_create, ignore_conflicts=True)
 
-            if is_resync and self.patient_repo.exists(dto.idPaciente):
-                return self.patient_repo.update(patient_ent).id
+    def _persist_contract(self, dto: OralsinPacienteDTO, patient_id: uuid.UUID, clinic_id: uuid.UUID):
+        contract_entity = self.mapper.map_contract(dto.contrato, patient_id, clinic_id)
+        return self.contract_repo.save(contract_entity)
 
-            if is_resync and not _dto_complete(dto):
-                logger.debug("Resync: paciente %s ignorado (DTO incompleto)", dto.idPaciente)
-                return None
+    def _handle_billing_flags(self, contract_id: uuid.UUID, should_notify: bool):
+        """Cancela agendamentos se a cobrança for desativada."""
+        if not should_notify:
+            updated_count = ContactScheduleModel.objects.filter(
+                contract_id=contract_id, status=ContactScheduleModel.Status.PENDING
+            ).update(status='cancelled', updated_at=timezone.now())
+            if updated_count > 0:
+                logger.info(f"[SYNC_FLAGS] {updated_count} agendamentos cancelados para o contrato {contract_id} (cobrança desativada).")
 
-            # full-sync ou resync + completo
-            return self.patient_repo.save(patient_ent).id
-
-        patient_id = _save()
-        if patient_id is None:
-            return None
-
-        # Telefones
-        self._sync_phones(dto.telefones, patient_id, is_resync, tag)
-        return patient_id  # simples uuid para acelerar GC
-
-    # Telefones em lote
-    def _sync_phones(
-        self,
-        phones_dto: list[dict[str, Any]],
-        patient_id: uuid.UUID,
-        is_resync: bool,
-        tag: str,
-    ) -> None:
-        ctx = {"patient_id": patient_id, "tag": tag}
-
-        @profiled("phones.sync", context=ctx)
-        def _impl() -> None:
-            entities = list(self.mapper.map_patient_phones(phones_dto, patient_id))
-            if not entities:
-                return
-
-            existing = PatientPhoneModel.objects.filter(patient_id=patient_id)
-            existing_map = {(p.phone_number, p.phone_type): p for p in existing}
-
-            to_create: list[PatientPhoneModel] = []
-            to_update: list[PatientPhoneModel] = []
-
-            for ent in entities:
-                key = (ent.phone_number, ent.phone_type)
-                model = existing_map.get(key)
-
-                if model:
-                    # Comparação direta garante update só quando necessário
-                    if model.phone_number != ent.phone_number or model.phone_type != ent.phone_type:
-                        model.phone_number = ent.phone_number
-                        model.phone_type = ent.phone_type
-                        to_update.append(model)
-                elif not is_resync or (is_resync and patient_id):
-                    to_create.append(
-                        PatientPhoneModel(
-                            id=ent.id or uuid.uuid4(),
-                            patient_id=patient_id,
-                            phone_number=ent.phone_number,
-                            phone_type=ent.phone_type,
-                        )
-                    )
-
-            if to_create:
-                PatientPhoneModel.objects.bulk_create(to_create, ignore_conflicts=True)
-                logger.debug("📞  %d telefones criados (patient=%s)", len(to_create), patient_id)
-            if to_update:
-                PatientPhoneModel.objects.bulk_update(
-                    to_update, ["phone_number", "phone_type"]
-                )
-                logger.debug("📞  %d telefones atualizados (patient=%s)", len(to_update), patient_id)
-
-        _impl()
-
-    # ──────────────── Persistência – Contrato ────────────────
-    def _persist_contract(
-        self,
-        dto: OralsinPacienteDTO,
-        patient_id: uuid.UUID,
-        clinic_id: uuid.UUID,
-        is_resync: bool,
-        tag: str,
-    ):
-        ctx = {
-            "patient_id": patient_id,
-            "contract_id": dto.contrato.idContrato,
-            "tag": tag,
-        }
-
-        @profiled("contract.save", context=ctx)
-        def _save():
-            contract_ent = self.mapper.map_contract(dto.contrato, patient_id, clinic_id)
-
-            if is_resync and not self.contract_repo.exists(
-                dto.contrato.idContrato,
-                contract_version=dto.contrato.versaoContrato,
-                patient_id=patient_id,
-            ):
-                logger.debug(
-                    "Resync: contrato %s inexistente p/ paciente %s – ignorado",
-                    dto.contrato.idContrato,
-                    patient_id,
-                )
-                return None
-
-            return (
-                self.contract_repo.update(contract_ent)
-                if is_resync
-                else self.contract_repo.save(contract_ent)
-            )
-
-        return _save()
-
-    # ─────────────── Persistência – Parcelas ────────────────
-    def _persist_installments(
-        self,
-        dto: OralsinPacienteDTO,
-        contract_id: uuid.UUID,
-        is_resync: bool,
-        tag: str,
-    ) -> None:
-        ctx = {"contract_id": contract_id, "tag": tag}
-
-        @profiled("installments.sync", context=ctx)
-        def _impl():
-            entities = self.mapper.map_installments(
-                parcelas=dto.parcelas,
-                contrato_version=dto.contrato.versaoContrato,
-                contract_id=contract_id,
-            )
-
-            if is_resync:
-                existing_ids = self.installment_repo.existing_oralsin_ids(
-                    [e.oralsin_installment_id for e in entities]
-                )
-                entities = [e for e in entities if e.oralsin_installment_id in existing_ids]
-                if not entities:
-                    return
-
-            # (i) apenas grava/atualiza em lote
-            self.installment_repo.save_many(entities)
-
-            # (ii) **só depois** garante que exista exatamente 1 parcela atual
-            current_id = (
-                dto.parcelaAtualDetalhe.idContratoParcela
-                if dto.parcelaAtualDetalhe else None
-            )
-            if current_id:
-                self.installment_repo.set_current_installment_atomically(
-                    contract_id=contract_id,
-                    oralsin_installment_id=current_id,
-                )
-
-        _impl()
-
-# ——————————————————————————————————————————————————————————
-#  ResyncClinicHandler – sem alterações lógicas, apenas logs
-# ——————————————————————————————————————————————————————————
-class ResyncClinicHandler(CommandHandler[ResyncClinicCommand]):
-    """
-    Executa o *delta sync* diário.  
-    Ele delega para `seed_data` (ali residem as regras completas).
-    """
-
-    def __init__(self, clinic_repo: ClinicRepository) -> None:
-        self.clinic_repo = clinic_repo
-
-    @profiled("clinic.resync_handle")
-    def handle(self, cmd: ResyncClinicCommand) -> None:
-        clinic = self.clinic_repo.find_by_oralsin_id(cmd.oralsin_clinic_id)
-        if not clinic:
-            raise ValueError(f"Clinic with OralsinID={cmd.oralsin_clinic_id} not found.")
-
-        logger.info(
-            "🔄  Resync solicitado clinic=%s window=%s→%s no_schedules=%s",
-            cmd.oralsin_clinic_id,
-            cmd.initial_date,
-            cmd.final_date,
-            cmd.no_schedules,
+    def _persist_installments(self, dto: OralsinPacienteDTO, contract_id: uuid.UUID):
+        installment_entities = self.mapper.map_installments(
+            dto.parcelas, dto.contrato.versaoContrato, contract_id
         )
+        self.installment_repo.save_many(installment_entities)
 
-        window_days = max((cmd.final_date - cmd.initial_date).days, 1)
-        call_command(
-            "seed_data",
-            clinic_name=clinic.name,
-            owner_name=clinic.owner_name or clinic.name,
-            skip_admin=True,
-            skip_clinic_user=True,
-            no_schedules=cmd.no_schedules,
-            resync=True,
-            window_days=window_days,
-            initial_date=cmd.initial_date.isoformat(),
-            final_date=cmd.final_date.isoformat(),
-        )
-        logger.info("✅  Resync concluído clinic=%s", cmd.oralsin_clinic_id)
+        current_installment_id = dto.parcelaAtualDetalhe.idContratoParcela if dto.parcelaAtualDetalhe else None
+        if current_installment_id:
+            self.installment_repo.set_current_installment_atomically(
+                contract_id=contract_id, oralsin_installment_id=current_installment_id
+            )
+
+    def _handle_paid_installment(self, current_installment_dto):
+        """Cancela agendamentos se a parcela atual foi quitada."""
+        if current_installment_dto:
+            from oralsin_core.core.application.services.payment_status_classifier import is_paid_status
+            if is_paid_status(current_installment_dto.statusFinanceiro):
+                updated_count = ContactScheduleModel.objects.filter(
+                    installment_id=current_installment_dto.idContratoParcela,
+                    status=ContactScheduleModel.Status.PENDING
+                ).update(status='cancelled_paid', updated_at=timezone.now())
+                if updated_count > 0:
+                    logger.info(f"[SYNC_PAYMENT] {updated_count} agendamentos para a parcela {current_installment_dto.idContratoParcela} cancelados por quitação.")

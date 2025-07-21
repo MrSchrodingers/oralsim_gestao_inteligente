@@ -153,6 +153,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         contact_schedule_repo = providers.Singleton(
             ContactScheduleRepoImpl,
             installment_repo=installment_repo,
+            contract_repo=contract_repo,
             billing_settings_repo=billing_settings_repo,
         )
         patient_repo = providers.Singleton(

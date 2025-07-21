@@ -410,7 +410,93 @@ class RunAutomatedNotificationsHandler(
             "error": error,
             "pending_calls": pending_calls,
         }
+    
+    def _process_schedule_group(self, representative_schedule: ContactSchedule) -> dict[str, Any] | None:
+        """
+        Executa um GRUPO de agendamentos para um paciente/contrato/etapa,
+        enviando para cada canal apenas uma vez e avançando a etapa se bem-sucedido.
+        """
+        patient_id = representative_schedule.patient.id
+        contract_id = representative_schedule.contract.id
+        current_step = representative_schedule.current_step
 
+        try:
+            with transaction.atomic():
+                schedules_in_group = list(
+                    ContactSchedule.objects.select_for_update(skip_locked=True).filter(
+                        patient_id=patient_id,
+                        contract_id=contract_id,
+                        current_step=current_step,
+                        status=ContactSchedule.Status.PENDING,
+                    )
+                )
+
+                if not schedules_in_group:
+                    logger.info("schedule_group.already_locked_or_processed", patient_id=str(patient_id), contract_id=str(contract_id))
+                    return None
+
+                schedule_ids = [s.id for s in schedules_in_group]
+                ContactSchedule.objects.filter(id__in=schedule_ids).update(
+                    status=ContactSchedule.Status.PROCESSING,
+                    updated_at=timezone.now()
+                )
+
+            results: dict[str, bool] = {}
+            for schedule in schedules_in_group:
+                channel = schedule.channel
+                if channel == "letter":
+                    continue
+                
+                if channel == "phonecall":
+                    self.pending_call_repo.create(
+                        patient_id=schedule.patient.id,
+                        contract_id=schedule.contract.id,
+                        clinic_id=schedule.clinic.id,
+                        schedule_id=schedule.id,
+                        current_step=schedule.current_step,
+                        scheduled_at=schedule.scheduled_date or timezone.now(),
+                    )
+                    results[channel] = True
+                    continue
+                
+                ok = self._send_through_notifier(schedule, channel)
+                results[channel] = ok
+
+            all_successful = all(results.values())
+            
+            # Grava o histórico de todas as tentativas
+            with transaction.atomic():
+                for schedule in schedules_in_group:
+                    ContactHistory.objects.get_or_create(
+                        schedule_id=schedule.id,
+                        contact_type=schedule.channel,
+                        defaults=dict(
+                            patient_id=schedule.patient.id,
+                            contract_id=schedule.contract.id,
+                            clinic_id=schedule.clinic.id,
+                            sent_at=timezone.now(),
+                            success=results.get(schedule.channel, False),
+                        ),
+                    )
+
+            if all_successful:
+                # Se tudo deu certo, o comando de avanço cuidará de marcar a etapa atual como 'APPROVED'
+                # e criar os agendamentos da próxima etapa.
+                self._advance_step(ContactScheduleEntity.from_model(representative_schedule))
+            else:
+                # Se algo falhou, apenas marcamos o grupo como 'REJECTED' e não avançamos.
+                with transaction.atomic():
+                    ContactSchedule.objects.filter(id__in=schedule_ids).update(
+                        status=ContactSchedule.Status.REJECTED,
+                        updated_at=timezone.now()
+                    )
+
+            return {"patient_id": str(patient_id), "step": current_step, "results": results, "advanced_step": all_successful}
+
+        except Exception:
+            logger.exception("schedule_group.unhandled_error", patient_id=str(patient_id), contract_id=str(contract_id))
+            return None
+        
     @publish(exchange="notifications", routing_key="automated")
     def handle(
         self, cmd: RunAutomatedNotificationsCommand
@@ -422,12 +508,12 @@ class RunAutomatedNotificationsHandler(
             processed = 0
             results: list[dict[str, Any]] = []
 
-            for sched in self.schedule_repo.stream_pending(
+            for representative_schedule in self.schedule_repo.stream_pending(
                 clinic_id=cmd.clinic_id,
                 only_pending=cmd.only_pending,
                 chunk_size=cmd.batch_size,
             ):
-                result = self._process_schedule(sched)  
+                result = self._process_schedule_group(representative_schedule)
                 if result is not None:
                     results.append(result)
                 processed += 1
@@ -455,11 +541,11 @@ class RunAutomatedNotificationsHandler(
         """
         Resolvido aqui para não depender de atributo privado de NotificationSenderService.
         """
-        inst = self.notification_service.installment_repo.get_current_installment(schedule.contract_id)
+        inst = self.notification_service.installment_repo.get_current_installment(schedule.contract)
         if not inst:
             return False
-        patient = self.notification_service.patient_repo.find_by_id(str(schedule.patient_id))
-        msg = self.message_repo.get_message(channel, schedule.current_step, schedule.clinic_id)
+        patient = self.notification_service.patient_repo.find_by_id(str(schedule.patient.id))
+        msg = self.message_repo.get_message(channel, schedule.current_step, schedule.clinic)
         if not (patient and msg and inst):
             return False
         try:

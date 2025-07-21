@@ -49,19 +49,23 @@ def _publish_sync_tasks(clinic_id: int) -> None:
 
 def _run_seed_and_sync(*, clinic_name: str, owner_name: str, min_days_billing: int, email: str, password: str) -> None:
     LOGGER.info("🛠 Seed para '%s' iniciado…", clinic_name)
+    oralsin_clinic_id = None # Inicializa a variável
     try:
         with transaction.atomic():
+            # O comando seed_data agora é a fonte da verdade para a criação
             call_command(
                 "seed_data", clinic_name=clinic_name, owner_name=owner_name,
                 min_days_billing=min_days_billing, skip_admin=True,
-                skip_full_sync=False, clinic_email=email, clinic_pass=password
+                skip_full_sync=False, clinic_email=email, clinic_pass=password,
+                force=True # Garante que o seed rode para esta clínica específica
             )
-            from plugins.django_interface.models import Clinic
-            clinic_id = Clinic.objects.only("oralsin_clinic_id").get(name__iexact=clinic_name).oralsin_clinic_id
+            # Após o comando rodar com sucesso, buscamos o ID para as próximas etapas
+            from plugins.django_interface.models import CoveredClinic
+            oralsin_clinic_id = CoveredClinic.objects.only("oralsin_clinic_id").get(name__iexact=clinic_name).oralsin_clinic_id
         
-        LOGGER.info("✅ Seed concluído para %s (id=%s)", clinic_name, clinic_id)
-        _publish_sync_tasks(clinic_id)
-        LOGGER.info("📤 Sync tasks publicadas para clínica id=%s", clinic_id)
+        LOGGER.info("✅ Seed concluído para %s (oralsin_clinic_id=%s)", clinic_name, oralsin_clinic_id)
+        _publish_sync_tasks(oralsin_clinic_id)
+        LOGGER.info("📤 Sync tasks publicadas para clínica id=%s", oralsin_clinic_id)
 
     except Exception:
         LOGGER.exception("Seed falhou para %s. Enviando para DLX.", clinic_name)
@@ -102,6 +106,10 @@ def main():
     signal.signal(signal.SIGTERM, graceful_shutdown)
 
     with Connection(settings.RABBITMQ_URL) as conn:
+        with conn.channel() as channel:
+            LOGGER.info("Declarando dead-letter exchange '%s'", registration_dlx.name)
+            registration_dlx.declare(channel=channel)
+            
         LOGGER.info("Conectado ao RabbitMQ. Aguardando mensagens em '%s'", registration_approved_queue.name)
         with conn.Consumer(queues=[registration_approved_queue], callbacks=[on_message_received]):
             while not stop_consuming:

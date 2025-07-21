@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from collections.abc import Mapping as TMapping
 from datetime import datetime, time, timedelta
 from typing import Any
@@ -10,9 +11,11 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
+from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 from oralsin_core.core.domain.repositories.billing_settings_repository import (
     BillingSettingsRepository,
 )
+from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.installment_repository import (
     InstallmentRepository,
 )
@@ -25,8 +28,10 @@ from notification_billing.core.domain.repositories.contact_schedule_repository i
 )
 from plugins.django_interface.models import (
     ContactHistory,
+    ContactSchedule,
     Contract,
     FlowStepConfig,
+    Installment,
 )
 from plugins.django_interface.models import (
     ContactSchedule as Schedule,
@@ -50,9 +55,11 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
     def __init__(
         self,
         installment_repo: InstallmentRepository,
+        contract_repo: ContractRepository,
         billing_settings_repo: BillingSettingsRepository,
     ) -> None:
         self.installment_repo = installment_repo
+        self.contract_repo = contract_repo
         self.settings = billing_settings_repo
 
     # ───────────────────────────────────────────────────────── public API
@@ -261,25 +268,34 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         chunk_size: int = 100,
     ):
         """
-        Gera lotes de ContactSchedule (Django models) com lock otimista.
-        Não segura locks por longos períodos; cada lote abre/fecha transação.
+        Gera um representante de cada grupo de trabalho (paciente, contrato, etapa)
+        que precisa ser processado.
         """
-        base = Schedule.objects.filter(clinic_id=clinic_id)
+        base = ContactSchedule.objects.filter(clinic_id=clinic_id)
         if only_pending:
-            base = base.filter(status=Schedule.Status.PENDING)
-        base = base.order_by("scheduled_date")
+            base = base.filter(status=ContactSchedule.Status.PENDING)
+            
+        representative_ids_query = base.order_by(
+            "patient_id", "contract_id", "current_step", "scheduled_date"
+        ).distinct(
+            "patient_id", "contract_id", "current_step"
+        ).values_list('id', flat=True)
 
+        # Usamos iterator() para eficiência de memória ao buscar os IDs
+        ids_iterator = representative_ids_query.iterator(chunk_size=chunk_size)
+
+        # Agrupa os IDs em lotes (batches)
         while True:
-            with transaction.atomic():
-                batch = list(
-                    base.select_for_update(skip_locked=True)[:chunk_size]
-                )
-            if not batch:
+            batch_ids = list(itertools.islice(ids_iterator, chunk_size))
+            if not batch_ids:
                 break
-            yield from batch
+            
+            # Apenas busca os objetos, SEM LOCK. O lock será feito no Handler.
+            batch_schedules = ContactSchedule.objects.filter(id__in=batch_ids)
+            yield from batch_schedules
                 
     @transaction.atomic
-    def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity | None:
+    def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity | None:  # noqa: PLR0911, PLR0912
         """
         Avança a etapa do fluxo para um ContactSchedule, garantindo atomicidade e idempotência.
 
@@ -301,6 +317,65 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
             log.warning("advance_step.not_found", schedule_id=schedule_id)
             return None
 
+        if current_schedule.current_step == 0:
+            try:
+                installment = current_schedule.installment
+                is_overdue = installment.due_date < timezone.now().date()
+            except Installment.DoesNotExist:
+                is_overdue = False
+
+            if not is_overdue:
+                # Marca os agendamentos atuais do step 0 como concluídos
+                Schedule.objects.filter(
+                    contract_id=current_schedule.contract_id,
+                    current_step=0,
+                    status__in=[Schedule.Status.PENDING, Schedule.Status.PROCESSING]
+                ).update(status=Schedule.Status.APPROVED, updated_at=timezone.now())
+
+                # Calcula a data do próximo aviso
+                next_warning_date = timezone.now() + timedelta(days=7)
+
+                # Reagenda um novo aviso de step 0 apenas se ele ocorrer antes do vencimento
+                if next_warning_date.date() < installment.due_date:
+                    log.info(
+                        "advance_step.rescheduling_step_0",
+                        contract_id=current_schedule.contract_id,
+                        next_date=next_warning_date.date()
+                    )
+                    cfg0 = self._flow_configs().get(0)
+                    if cfg0:
+                        for ch in cfg0.channels:
+                            Schedule.objects.update_or_create(
+                                patient_id=current_schedule.patient_id,
+                                contract_id=current_schedule.contract_id,
+                                current_step=0, # Continua no step 0
+                                channel=ch,
+                                notification_trigger=Schedule.Trigger.AUTOMATED,
+                                status=Schedule.Status.PENDING,
+                                defaults=dict(
+                                    clinic_id=current_schedule.clinic_id,
+                                    installment_id=current_schedule.installment_id,
+                                    scheduled_date=next_warning_date,
+                                    advance_flow=False,
+                                ),
+                            )
+                else:
+                    log.info(
+                        "advance_step.stopped_at_step_0",
+                        contract_id=current_schedule.contract_id,
+                        reason="Due date is too close for another warning."
+                    )
+                
+                # Interrompe o avanço para o step 1
+                return None
+            
+            # Se chegamos aqui, é step 0 mas a parcela já venceu, então o fluxo continua para o step 1.
+            log.info(
+                "advance_step.advancing_from_step_0",
+                contract_id=current_schedule.contract_id,
+                reason="Installment is now overdue."
+            )
+    
         # Cancela outros agendamentos pendentes para o mesmo contrato, exceto o atual
         Schedule.objects.filter(
             contract_id=current_schedule.contract_id,
@@ -360,7 +435,11 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
                 channel=channel,
                 notification_trigger=current_schedule.notification_trigger,
                 status=Schedule.Status.PENDING,
-                defaults={'scheduled_date': next_scheduled_date, 'advance_flow': False}
+                clinic_id=current_schedule.clinic_id,
+                defaults={
+                    'scheduled_date': next_scheduled_date,
+                    'advance_flow': False,
+                }
             )
             if created:
                 new_schedules.append(obj)
@@ -499,7 +578,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
     def _decide_step_and_date(
         self,
         *,
-        inst,
+        inst: InstallmentEntity,
         cfg0: FlowStepConfig,
         min_days: int,
         is_new_patient: bool,
@@ -511,7 +590,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         Para novos pacientes, sempre inicia no Step 1 se a parcela estiver vencida.
         """
         today = timezone.localdate()
-
+        patient_id = self.contract_repo.find_by_id(inst.contract_id).patient_id
         # --- Pré‑vencimento ---
         if inst.due_date > today:
             target_date = next(
@@ -534,7 +613,7 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         if is_new_patient:
             log.info(
                 "new_patient_flow.forcing_step_1",
-                patient_id=inst.patient_id,
+                patient_id=patient_id,
                 days_overdue=days_overdue,
             )
             return 1, timezone.now()

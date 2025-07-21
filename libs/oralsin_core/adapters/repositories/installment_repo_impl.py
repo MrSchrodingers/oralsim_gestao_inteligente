@@ -231,6 +231,19 @@ class InstallmentRepoImpl(InstallmentRepository):
         ).filter(contract_id__in=contract_ids)
         return [InstallmentEntity.from_model(m) for m in qs]
     
+    def get_current_installment(self, contract_id: str) -> InstallmentEntity | None:
+        """[CONSOLIDADO] Recupera a parcela marcada como 'is_current'."""
+        qs = InstallmentModel.objects.select_related(
+            "contract", "payment_method"
+        ).filter(contract_id=contract_id, is_current=True).order_by("due_date")
+        
+        # A implementação é a mesma para 'get_current_installment' e 'get_trigger_installment'.
+        if qs.count() > 1:
+            print(f"[Warning] Múltiplas parcelas 'current' para o contrato {contract_id}.")
+
+        model = qs.first()
+        return InstallmentEntity.from_model(model) if model else None
+    
     def has_overdue(
         self, contract_id: str, min_days_overdue: int, *, contract_version: int | None = None
     ) -> bool:
@@ -309,19 +322,6 @@ class InstallmentRepoImpl(InstallmentRepository):
             contract_version=contract_version,
         )
     
-    def get_current_installment(self, contract_id: str) -> InstallmentEntity | None:
-        """[CONSOLIDADO] Recupera a parcela marcada como 'is_current'."""
-        qs = InstallmentModel.objects.select_related(
-            "contract", "payment_method"
-        ).filter(contract_id=contract_id, is_current=True).order_by("due_date")
-        
-        # A implementação é a mesma para 'get_current_installment' e 'get_trigger_installment'.
-        if qs.count() > 1:
-            print(f"[Warning] Múltiplas parcelas 'current' para o contrato {contract_id}.")
-
-        model = qs.first()
-        return InstallmentEntity.from_model(model) if model else None
-
     def get_trigger_installment(self, contract_id: str) -> InstallmentEntity | None:
         """[CONSOLIDADO] Recupera a parcela de gatilho (considerada a 'current')."""
         # A lógica de negócio definiu que a parcela de "gatilho" é a parcela "atual".
@@ -359,30 +359,25 @@ class InstallmentRepoImpl(InstallmentRepository):
     def set_current_installment_atomically(
         self, *, contract_id: uuid.UUID, oralsin_installment_id: int | None = None
     ) -> None:
-        # 1) zera tudo
-        qset = InstallmentModel.objects.filter(contract_id=contract_id, is_current=True)
-        qset.update(is_current=False)
+        # 1. Zera a flag 'is_current' para todas as parcelas do contrato
+        InstallmentModel.objects.filter(contract_id=contract_id, is_current=True).update(is_current=False)
 
-        # 2) tenta ativar a parcela informada
+        # 2. Ativa a flag para a parcela correta
         if oralsin_installment_id is not None:
-            updated = (
-                InstallmentModel.objects
-                .filter(contract_id=contract_id,
-                        oralsin_installment_id=oralsin_installment_id)
-                .update(is_current=True)
-            )
-            if updated:
-                return 
+            updated_rows = InstallmentModel.objects.filter(
+                contract_id=contract_id, oralsin_installment_id=oralsin_installment_id
+            ).update(is_current=True)
+            
+            # Se a parcela especificada não foi encontrada (talvez ainda não sincronizada), não faz nada.
+            if updated_rows > 0:
+                return
 
-            # nada encontrado: simplesmente não marca ninguém
-            return
-
-        # 3) fallback seguro: primeira NÃO-recebida mais próxima do vencimento
-        inst = (InstallmentModel.objects
-                .filter(contract_id=contract_id, received=False)
-                .order_by("due_date")
-                .first())
-
-        if inst:
-            inst.is_current = True
-            inst.save(update_fields=["is_current"])
+        # 3. Fallback: Se nenhuma parcela foi especificada ou encontrada, marca a primeira não paga
+        first_unpaid = (
+            InstallmentModel.objects.filter(contract_id=contract_id, received=False)
+            .order_by("due_date")
+            .first()
+        )
+        if first_unpaid:
+            first_unpaid.is_current = True
+            first_unpaid.save(update_fields=["is_current"])

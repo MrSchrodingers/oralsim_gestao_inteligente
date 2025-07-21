@@ -69,7 +69,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         DeletePatientPhoneCommand,
         UpdatePatientPhoneCommand,
     )
-    from oralsin_core.core.application.commands.register_commands import ResyncClinicCommand
     from oralsin_core.core.application.commands.registration_request_commands import ApproveRegistrationRequestCommand, CreateRegistrationRequestCommand, RejectRegistrationRequestCommand
     from oralsin_core.core.application.commands.sync_commands import (
         SyncInadimplenciaCommand,
@@ -150,7 +149,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # Implementações concretas de repositórios
     from oralsin_core.core.application.handlers.sync_handlers import (
-        ResyncClinicHandler,
         SyncInadimplenciaHandler,
     )
 
@@ -251,6 +249,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         contact_history_repo = providers.Singleton(ContactHistoryRepoImpl)
         contact_schedule_repo = providers.Singleton(ContactScheduleRepoImpl, 
                                                     installment_repo=installment_repo, 
+                                                    contract_repo=contract_repo,
                                                     billing_settings_repo=billing_settings_repo
                                                     )
         registration_request_repo = providers.Singleton(RegistrationRequestRepoImpl)
@@ -338,10 +337,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             OralsinSyncService,
             command_bus=command_bus,
             query_bus=query_bus,
-        )
-        resync_clinic_handler = providers.Factory(
-            ResyncClinicHandler,
-            clinic_repo  =clinic_repo,
         )
         dashboard_service    = providers.Singleton(
             DashboardService,
@@ -460,8 +455,6 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             cmd_bus.register(CreateRegistrationRequestCommand, self.create_registration_request_handler())
             cmd_bus.register(ApproveRegistrationRequestCommand, self.approve_registration_request_handler())
             cmd_bus.register(RejectRegistrationRequestCommand, self.reject_registration_request_handler())
-            
-            cmd_bus.register(ResyncClinicCommand, self.resync_clinic_handler())
             
             # Bus de queries (core)
             qry_bus = self.query_bus()

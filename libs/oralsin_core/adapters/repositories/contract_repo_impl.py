@@ -23,6 +23,12 @@ class ContractRepoImpl(ContractRepository):
             return ContractEntity.from_model(ContractModel.objects.get(id=contract_id))
         except ContractModel.DoesNotExist:
             return None
+        
+    def find_by_patient_id(self, patient_id: str) -> ContractEntity | None:
+        try:
+            return ContractEntity.from_model(ContractModel.objects.get(patient_id=patient_id))
+        except ContractModel.DoesNotExist:
+            return None
 
     def exists(self, oralsin_contract_id: int, *, contract_version: str | None = None, patient_id: uuid.UUID | None = None) -> bool:
         filters: dict[str, object] = {"oralsin_contract_id": oralsin_contract_id}
