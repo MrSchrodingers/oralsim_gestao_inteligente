@@ -434,7 +434,7 @@ class RunAutomatedNotificationsHandler(
             "error": error,
             "pending_calls": pending_calls,
         }
-    
+            
     def _process_schedule_group(self, representative_schedule: ContactSchedule) -> dict[str, Any] | None:
         """
         Executa um GRUPO de agendamentos para um paciente/contrato/etapa,

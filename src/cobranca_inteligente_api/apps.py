@@ -30,6 +30,7 @@ class BillingConfig(AppConfig):
         )
         from oralsin_core.core.application.services.utils.fonts import register_roboto_family
         register_roboto_family()
+        import notification_billing.adapters.message_broker.oralsin_contact_history_publisher  # noqa: F401
 
         core_container.query_bus().register(
             GetDashboardSummaryQuery,

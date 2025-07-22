@@ -1,50 +1,28 @@
 from datetime import datetime
-from typing import Any, Literal, Union
+from typing import Any, Union
 
 import structlog
-from django.utils import timezone
-from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+from django.db import transaction
 from oralsin_core.core.application.cqrs import PagedResult
-from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContatoHistoricoEnvioDTO
 
 from notification_billing.core.domain.entities.contact_history_entity import ContactHistoryEntity
 from notification_billing.core.domain.entities.contact_schedule_entity import (
     ContactScheduleEntity,
 )
+from notification_billing.core.domain.events.contact_history_events import ContactHistoryCreated
 from notification_billing.core.domain.repositories.contact_history_repository import ContactHistoryRepository
-from plugins.django_interface.models import Clinic as ClinicModel
 from plugins.django_interface.models import (
     ContactHistory as ContactHistoryModel,
 )
 from plugins.django_interface.models import (
     ContactSchedule as ContactScheduleModel,
 )
-from plugins.django_interface.models import Contract as ContractModel
-from plugins.django_interface.models import (
-    Message as MessageModel,
-)
-from plugins.django_interface.models import Patient as PatientModel
 
 ScheduleLike = Union[ContactScheduleModel, ContactScheduleEntity]  # noqa: UP007
-ContactType = Literal["phonecall", "sms", "whatsapp", "email", "letter"]
-
-_CONTACT_TYPE_DESC: dict[ContactType, str] = {
-    "phonecall": "Ligação telefônica",
-    "sms": "SMS",
-    "whatsapp": "WhatsApp",
-    "email": "E-mail",
-    "letter": "Carta Amigável"
-}
 
 class ContactHistoryRepoImpl(ContactHistoryRepository):
     def __init__(self) -> None:
         self.log = structlog.get_logger(__name__)
-        self.api_client = OralsinAPIClient()
-    
-    # ------------------------------------------------------------------  aux
-    @staticmethod
-    def _friendly_description(contact_type: str) -> str:
-        return _CONTACT_TYPE_DESC.get(contact_type, contact_type)
     
     # ------------------------------------------------------------------  save
 
@@ -52,34 +30,9 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
         model = ContactHistoryModel.objects.create(**history.to_dict())
         entity = ContactHistoryEntity.from_model(model)
 
-        # tenta reportar à Oralsin
-        try:
-            patient = PatientModel.objects.get(id=entity.patient_id)
-            clinic = ClinicModel.objects.get(id=entity.clinic_id)
-            contract = None
-            if entity.contract_id:
-                contract = ContractModel.objects.filter(id=entity.contract_id).first()
-            
-            message_desc = "Sem mensagem registrada"
-            if entity.message_id:
-                message_obj = MessageModel.objects.filter(id=entity.message_id).first()
-                if message_obj and getattr(message_obj, "content", None):
-                    message_desc = message_obj.content
-                
-            payload = OralsinContatoHistoricoEnvioDTO(
-                idClinica=clinic.oralsin_clinic_id,
-                idPaciente=patient.oralsin_patient_id,
-                idContrato=getattr(contract, "oralsin_contract_id", None),
-                dataHoraInseriu=entity.sent_at or timezone.now(),
-                observacao=entity.observation or "",
-                contatoTipo=self._friendly_description(entity.contact_type),
-                descricao=message_desc,
-            )
-            # self.api_client.post_contact_history(payload)
-            self.log.info("Payload Contato -> Oralsin", payload=payload)
-        except Exception as exc:  # noqa: BLE001
-            self.log.error("oralsin_contact_history_failed", error=str(exc))
-
+        transaction.on_commit(
+            lambda: ContactHistoryCreated.emit(entity_id=entity.id)
+        )
         return entity
 
     # ------------------------------------------------------------------  save_from_schedule
@@ -143,34 +96,9 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
         model = ContactHistoryModel.objects.create(**base_kwargs)
         entity = ContactHistoryEntity.from_model(model)
 
-        # tenta reportar à Oralsin
-        try:
-            patient = PatientModel.objects.get(id=entity.patient_id)
-            clinic = ClinicModel.objects.get(id=entity.clinic_id)
-            contract = None
-            if entity.contract_id:
-                contract = ContractModel.objects.filter(id=entity.contract_id).first()
-
-            message_desc = "Sem mensagem registrada"
-            if entity.message_id:
-                message_obj = MessageModel.objects.filter(id=entity.message_id).first()
-                if message_obj and getattr(message_obj, "content", None):
-                    message_desc = message_obj.content
-                
-            payload = OralsinContatoHistoricoEnvioDTO(
-                idClinica=clinic.oralsin_clinic_id,
-                idPaciente=patient.oralsin_patient_id,
-                idContrato=getattr(contract, "oralsin_contract_id", None),
-                dataHoraInseriu=entity.sent_at or timezone.now(),
-                observacao=entity.observation or "",
-                contatoTipo=self._friendly_description(entity.contact_type),
-                descricao=message_desc,
-            )
-            # self.api_client.post_contact_history(payload)
-            self.log.info("Payload Contato -> Oralsin", payload=payload)
-        except Exception as exc:  # noqa: BLE001
-            self.log.error("oralsin_contact_history_failed", error=str(exc))
-
+        transaction.on_commit(
+            lambda: ContactHistoryCreated.emit(entity_id=entity.id)
+        )
         return entity
 
     # ------------------------------------------------------------------  find_by_id

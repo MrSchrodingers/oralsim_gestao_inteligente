@@ -142,11 +142,27 @@ class OralsinPayloadMapper:
                     clinic_id: uuid.UUID) -> PatientEntity:
         try:
             address = cls.map_address(dto.enderecos)
+            suffixes = [
+                r"\(C\+P\)",
+                r"\(E\+P\)",
+                r"\( V \)",
+                r"\(EP\)",
+                r"\(C\+PP\)",
+                r"\(V\)",
+                r"\(C\)",
+                r"\(J\)",
+                r"\(CP\)",
+                r"\(C P\)",
+                r"\(F\)"
+            ]
+            pattern = re.compile("|".join(suffixes))
+            name = dto.nomePaciente 
+            cleaned_name = pattern.sub("", name).strip()
             return PatientEntity(
                 id=cls._uuid(),
                 oralsin_patient_id=dto.idPaciente,
                 clinic_id=clinic_id,
-                name=dto.nomePaciente,
+                name=cleaned_name,
                 cpf=dto.cpfPaciente,
                 address=address,
                 contact_name=dto.telefones.nomeContato or "",
