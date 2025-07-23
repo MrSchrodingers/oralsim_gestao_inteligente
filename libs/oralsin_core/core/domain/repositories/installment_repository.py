@@ -1,7 +1,8 @@
+import uuid
 from abc import ABC, abstractmethod
 
 from oralsin_core.core.application.cqrs import PagedResult
-from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContratoDTO, OralsinParcelaAtualDetalheDTO
+from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContratoDTO
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 
 
@@ -16,7 +17,13 @@ class InstallmentRepository(ABC):
     ) -> PagedResult[InstallmentEntity]:
         """Lista parcelas vencidas paginadas."""
         ...
-    
+        
+    @abstractmethod
+    def set_current_installment_atomically(
+        self, *, contract_id: uuid.UUID, oralsin_installment_id: int | None = None
+    ) -> None:
+        ...
+        
     @abstractmethod
     def existing_oralsin_ids(self, ids: list[int]) -> set[int]:
         ...
@@ -60,8 +67,8 @@ class InstallmentRepository(ABC):
         ...
         
     @abstractmethod
-    def merge_installments(self, parcelas: list, contrato: OralsinContratoDTO | None, parcela_atual: OralsinParcelaAtualDetalheDTO  | None, contract_id: str):
-        """Retorna uma lista de InstallmentEntity única, priorizando parcelaAtualDetalhe."""
+    def merge_installments(self, parcelas: list, contrato: OralsinContratoDTO | None, contract_id: str):
+        """Retorna uma lista de InstallmentEntity única."""
         ...
         
     @abstractmethod

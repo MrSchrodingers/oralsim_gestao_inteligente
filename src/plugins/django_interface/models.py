@@ -345,6 +345,7 @@ class Installment(models.Model):
         related_name="installments"
     )
     contract_version = models.CharField(max_length=10, null=True, db_index=True)
+    schedule = models.BooleanField(default=False, null=True,help_text="Indica se a parcela tem um pagamento agendado.")
     installment_number = models.PositiveIntegerField()
     oralsin_installment_id = models.IntegerField(unique=True, null=True, db_index=True)
     due_date = models.DateField(db_index=True)

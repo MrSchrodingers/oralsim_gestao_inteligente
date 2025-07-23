@@ -17,6 +17,7 @@ class InstallmentEntity(EntityMixin):
     due_date: date
     installment_amount: float
     received: bool
+    schedule: bool | None 
     oralsin_installment_id: int | None 
     installment_status: str | None = None
     payment_method: PaymentMethodEntity | None = None

@@ -12,7 +12,6 @@ from oralsin_core.core.application.dtos.oralsin_dtos import (
     OralsinContratoDTO,
     OralsinEnderecoDTO,
     OralsinPacienteDTO,
-    OralsinParcelaAtualDetalheDTO,
     OralsinParcelaDTO,
     OralsinTelefoneDTO,
 )
@@ -58,7 +57,7 @@ class OralsinPayloadMapper:
                 id=cls._uuid(),
                 oralsin_clinic_id=dto.idClinica,
                 name=dto.nomeClinica,
-                cnpj="",                 # não vem nesse DTO
+                cnpj="",
             )
         except Exception as exc:  # pragma: no cover
             logger.error("map_clinic_by_patient", error=str(exc), dto=dto.dict())
@@ -69,7 +68,7 @@ class OralsinPayloadMapper:
         try:
             return CoveredClinicEntity(
                 id=cls._uuid(),
-                clinic_id=clinic_id, 
+                clinic_id=clinic_id,
                 oralsin_clinic_id=dto.idClinica,
                 name=dto.nomeClinica,
                 cnpj=dto.cnpj,
@@ -102,7 +101,7 @@ class OralsinPayloadMapper:
             return ClinicDataEntity(
                 id=cls._uuid(),
                 clinic_id=clinic_id,
-                oralsin_clinic_id=dto.idClinica,      # ← agora incluímos
+                oralsin_clinic_id=dto.idClinica, 
                 corporate_name=dto.razaoSocial,
                 acronym=dto.sigla,
                 address=address,
@@ -156,7 +155,7 @@ class OralsinPayloadMapper:
                 r"\(F\)"
             ]
             pattern = re.compile("|".join(suffixes))
-            name = dto.nomePaciente 
+            name = dto.nomePaciente
             cleaned_name = pattern.sub("", name).strip()
             return PatientEntity(
                 id=cls._uuid(),
@@ -178,7 +177,7 @@ class OralsinPayloadMapper:
         out: list[PatientPhoneEntity] = []
         for t, n in [("home", dto.telefoneResidencial),
                      ("mobile", dto.telefoneCelular),
-                     ("commercial", dto.telefoneComercial),
+                     ("commercial",dto.telefoneComercial),
                      ("contact", dto.telefoneContato)]:
             if n:
                 out.append(
@@ -206,8 +205,8 @@ class OralsinPayloadMapper:
     # ───────────────── contrato + parcelas ──────────────────────
     @classmethod
     def map_contract(cls, dto: OralsinContratoDTO,
-                    patient_id: uuid.UUID,
-                    clinic_id: uuid.UUID) -> ContractEntity:
+                     patient_id: uuid.UUID,
+                     clinic_id: uuid.UUID) -> ContractEntity:
         try:
             pm: PaymentMethodEntity | None = None
             if dto.nomeFormaPagamento:
@@ -238,11 +237,13 @@ class OralsinPayloadMapper:
 
 
     @staticmethod
-    def _is_paid(dto) -> bool:
-        venc_date = dto.dataVencimento.date()
-        not_future_due = venc_date <= date.today()
-        return is_paid_status(dto.nomeStatusFinanceiro) and not_future_due
-        
+    def _is_paid(dto: OralsinParcelaDTO) -> bool:
+        """
+        Verifica se o status financeiro da parcela é considerado pago.
+        A regra agora foca exclusivamente nos status 'Compensado' ou 'Caixa Clinica'.
+        """
+        return is_paid_status(dto.nomeStatusFinanceiro)
+
     @classmethod
     def map_installments(
         cls,
@@ -251,10 +252,10 @@ class OralsinPayloadMapper:
         contract_id: uuid.UUID,
     ) -> list[InstallmentEntity]:
         """
-        [CORRIGIDO] Mapeia DTOs de parcela para Entidades.
+        Mapeia DTOs de parcela para Entidades, incluindo o novo campo 'agendado'.
 
         A responsabilidade de definir a flag 'is_current' foi removida
-        desta camada e centralizada exclusivamente no SyncInadimplenciaHandler.
+        desta camada e é calculada posteriormente, com base na nova regra de negócio.
         """
         version = str(contrato_version)
         out: list[InstallmentEntity] = []
@@ -271,7 +272,10 @@ class OralsinPayloadMapper:
                     oralsin_payment_method_id=0,
                     name=p.nomeFormaPagamento,
                 )
-            
+
+            raw_schedule_val = p.nomeStatusFinanceiro
+            is_scheduled = str(raw_schedule_val).strip().lower() in ['agendado']
+
             out.append(
                 InstallmentEntity(
                     id=cls._uuid(),
@@ -283,66 +287,9 @@ class OralsinPayloadMapper:
                     installment_amount=float(p.valorParcela),
                     received=cls._is_paid(p),
                     payment_method=pm,
-                    installment_status=p.nomeStatusFinanceiro
+                    installment_status=p.nomeStatusFinanceiro,
+                    schedule=is_scheduled,
+                    is_current=False,
                 )
             )
         return out
-
-    @classmethod
-    def map_installment(
-        cls,
-        dto: OralsinParcelaAtualDetalheDTO | OralsinParcelaDTO,
-        contract_id: uuid.UUID,
-        parcelas: list[OralsinParcelaDTO] = None,
-    ) -> InstallmentEntity:
-        """
-        Mapeia uma única parcela. Se for a 'parcelaAtualDetalhe', infere dados
-        faltantes (como 'numeroParcela') a partir da lista completa de 'parcelas'.
-        A flag 'is_current' é marcada como True apenas se o DTO for do tipo
-        'OralsinParcelaAtualDetalheDTO'.
-        """
-        is_current_dto = isinstance(dto, OralsinParcelaAtualDetalheDTO)
-
-        if is_current_dto:
-            if not parcelas:
-                raise ValueError(
-                    "A lista 'parcelas' é necessária para mapear uma 'OralsinParcelaAtualDetalheDTO'."
-                )
-            # Busca a parcela correspondente na lista para obter todos os dados.
-            matching = next(
-                (p for p in parcelas if p.idContratoParcela == dto.idContratoParcela),
-                None,
-            )
-            if not matching:
-                raise MappingError(
-                    f"Não foi possível encontrar a parcela correspondente ao 'idContratoParcela={dto.idContratoParcela}' na lista de parcelas."
-                )
-            
-            # Usa os dados da parcela correspondente que é mais completa.
-            source_dto = matching
-            oralsin_installment_id = dto.idContratoParcela
-        else:
-            source_dto = dto
-            oralsin_installment_id = dto.idContratoParcela
-
-        pm = None
-        if getattr(source_dto, "nomeFormaPagamento", None):
-            pm = PaymentMethodEntity(
-                id=cls._uuid(),
-                oralsin_payment_method_id=0,
-                name=source_dto.nomeFormaPagamento,
-            )
-
-        return InstallmentEntity(
-            id=cls._uuid(),
-            contract_id=contract_id,
-            contract_version=str(getattr(dto, "versaoContrato", 1)),
-            installment_number=source_dto.numeroParcela,
-            oralsin_installment_id=oralsin_installment_id,
-            due_date=source_dto.dataVencimento.date(),
-            installment_amount=float(source_dto.valorParcela),
-            received=cls._is_paid(source_dto),
-            payment_method=pm,
-            installment_status=source_dto.nomeStatusFinanceiro,
-            is_current=False,
-        )

@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 
 class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
     """
-    Orquestra a sincronização de inadimplência, garantindo robustez,
-    idempotência e respeito às regras de negócio como as flags de cobrança.
+    Orquestra a sincronização, agora com a nova lógica para
+    definir a parcela atual, independente do payload da API.
     """
 
     def __init__(  # noqa: PLR0913
@@ -74,7 +74,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
 
         clinic = self.clinic_repo.get_or_create_by_oralsin_id(cmd.oralsin_clinic_id)
         dtos = self._fetch_dtos(cmd)
-        
+
         if not dtos:
             logger.info(f"[SYNC_INFO] Nenhum dado de inadimplência encontrado para a clínica {cmd.oralsin_clinic_id}.")
             return
@@ -106,20 +106,19 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
                 patient_id = self._persist_patient(dto, clinic_id)
                 self._sync_phones(dto.telefones, patient_id)
 
-                # 2. Persiste Contrato (e lida com flags de cobrança)
+                # 2. Persiste Contrato e lida com flags de cobrança
                 contract_entity = self._persist_contract(dto, patient_id, clinic_id)
                 self._handle_billing_flags(contract_entity.id, dto.contrato.realizarCobranca)
 
-                # 3. Persiste Parcelas e lida com status de pagamento
-                self._persist_installments(dto, contract_entity.id)
-                self._handle_paid_installment(dto.parcelaAtualDetalhe)
+                # 3. Persiste Parcelas e define a 'is_current'
+                self._persist_and_set_current_installment(dto, contract_entity.id)
                 
                 SYNC_PATIENTS.labels(str(clinic_id)).inc()
                 ok_count += 1
             except Exception as e:
                 error_count += 1
                 logger.error(f"[SYNC_ERROR] Falha ao processar DTO do paciente {dto.idPaciente}: {e}", exc_info=True)
-        
+
         return ok_count, error_count
 
     def _persist_patient(self, dto: OralsinPacienteDTO, clinic_id: uuid.UUID) -> uuid.UUID:
@@ -132,10 +131,9 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         if not phone_entities:
             return
 
-        # Lógica de "upsert" em lote para telefones
         existing_phones = {p.phone_number: p for p in PatientPhoneModel.objects.filter(patient_id=patient_id)}
         to_create = [
-            PatientPhoneModel(**ent.to_dict()) for ent in phone_entities 
+            PatientPhoneModel(**ent.to_dict()) for ent in phone_entities
             if ent.phone_number not in existing_phones
         ]
         if to_create:
@@ -154,26 +152,19 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
             if updated_count > 0:
                 logger.info(f"[SYNC_FLAGS] {updated_count} agendamentos cancelados para o contrato {contract_id} (cobrança desativada).")
 
-    def _persist_installments(self, dto: OralsinPacienteDTO, contract_id: uuid.UUID):
+    def _persist_and_set_current_installment(self, dto: OralsinPacienteDTO, contract_id: uuid.UUID):
+        """
+        Salva as parcelas e, em seguida, chama o repositório
+        para calcular e definir qual é a parcela 'is_current' baseado na nova regra.
+        """
+        # 1. Mapeia e salva todas as parcelas do contrato
         installment_entities = self.mapper.map_installments(
             dto.parcelas, dto.contrato.versaoContrato, contract_id
         )
         self.installment_repo.save_many(installment_entities)
 
-        current_installment_id = dto.parcelaAtualDetalhe.idContratoParcela if dto.parcelaAtualDetalhe else None
-        if current_installment_id:
-            self.installment_repo.set_current_installment_atomically(
-                contract_id=contract_id, oralsin_installment_id=current_installment_id
-            )
-
-    def _handle_paid_installment(self, current_installment_dto):
-        """Cancela agendamentos se a parcela atual foi quitada."""
-        if current_installment_dto:
-            from oralsin_core.core.application.services.payment_status_classifier import is_paid_status
-            if is_paid_status(current_installment_dto.statusFinanceiro):
-                updated_count = ContactScheduleModel.objects.filter(
-                    installment_id=current_installment_dto.idContratoParcela,
-                    status=ContactScheduleModel.Status.PENDING
-                ).update(status='cancelled_paid', updated_at=timezone.now())
-                if updated_count > 0:
-                    logger.info(f"[SYNC_PAYMENT] {updated_count} agendamentos para a parcela {current_installment_dto.idContratoParcela} cancelados por quitação.")
+        # 2. Chama o método atômico para definir a parcela atual.
+        self.installment_repo.set_current_installment_atomically(
+            contract_id=contract_id,
+            oralsin_installment_id=None
+        )

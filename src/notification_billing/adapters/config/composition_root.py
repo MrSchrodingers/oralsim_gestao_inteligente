@@ -72,7 +72,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         AdvanceContactStepHandler,
         RecordContactSentHandler,
     )
-    from notification_billing.core.application.handlers.contact_history_handlers import GetContactHistoryHandler, ListContactHistoryHandler
+    from notification_billing.core.application.handlers.contact_history_handlers import GetContactHistoryHandler, ListContactHistoryHandler, PublishContactHistoryToQueueHandler
     from notification_billing.core.application.handlers.core_entities_handlers import (
         CreateContactScheduleHandler,
         CreateMessageHandler,
@@ -113,6 +113,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
     from notification_billing.core.application.services.letter_context_builder import LetterContextBuilder
     from notification_billing.core.application.services.letter_service import CordialLetterService
     from notification_billing.core.application.services.notification_service import NotificationFacadeService
+    from notification_billing.core.domain.events.contact_history_events import ContactHistoryCreated
 
     # Event Dispatcher
     from notification_billing.core.domain.services.event_dispatcher import EventDispatcher
@@ -146,7 +147,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         oralsin_mapper = providers.Singleton(OralsinPayloadMapper)
         flow_step_config_repo = providers.Singleton(FlowStepConfigRepoImpl)
         message_repo = providers.Singleton(MessageRepoImpl)
-        contact_history_repo = providers.Singleton(ContactHistoryRepoImpl)
+        contact_history_repo = providers.Singleton(
+            ContactHistoryRepoImpl,
+            dispatcher=event_dispatcher,
+        )
         contract_repo = providers.Singleton(ContractRepoImpl)
         installment_repo = providers.Singleton(
             InstallmentRepoImpl,
@@ -214,8 +218,14 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         
         # Handlers de Queries
         get_flow_step_config_handler = providers.Factory(GetFlowStepConfigHandler)
-        list_contact_history_handler     = providers.Factory(ListContactHistoryHandler)
-        get_contact_history_handler      = providers.Factory(GetContactHistoryHandler)
+        list_contact_history_handler = providers.Factory(
+            ListContactHistoryHandler,
+            repo=contact_history_repo,
+        )
+        get_contact_history_handler = providers.Factory(
+            GetContactHistoryHandler,
+            repo=contact_history_repo,
+        )
         list_flow_step_config_handler = providers.Factory(ListFlowStepConfigHandler)
         list_due_contacts_handler = providers.Factory(ListPendingSchedulesHandler, schedule_repo=contact_schedule_repo)
         list_message_handler = providers.Factory(ListMessagesHandler)
@@ -304,6 +314,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             logger=logger,
             dispatcher=event_dispatcher
         )
+        publish_contact_history_handler = providers.Factory(
+            PublishContactHistoryToQueueHandler,
+            rabbit=rabbit,
+        )
 
         def init(self):
             # Registrar comandos no CommandBus
@@ -342,6 +356,12 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             qb.register(GetLetterPreviewQuery, self.get_letter_preview_handler())
             qb.register(ListContactHistoryQuery, self.list_contact_history_handler())
             qb.register(GetContactHistoryQuery, self.get_contact_history_handler())
+            
+            dispatcher = self.event_dispatcher()
+            dispatcher.subscribe(
+                ContactHistoryCreated,
+                self.publish_contact_history_handler(),
+            )
             
     # ------- INSTANCIAÇÃO E CONFIG -------
     container = Container()

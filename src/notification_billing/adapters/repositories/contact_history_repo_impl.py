@@ -11,6 +11,7 @@ from notification_billing.core.domain.entities.contact_schedule_entity import (
 )
 from notification_billing.core.domain.events.contact_history_events import ContactHistoryCreated
 from notification_billing.core.domain.repositories.contact_history_repository import ContactHistoryRepository
+from notification_billing.core.domain.services.event_dispatcher import EventDispatcher
 from plugins.django_interface.models import (
     ContactHistory as ContactHistoryModel,
 )
@@ -21,17 +22,19 @@ from plugins.django_interface.models import (
 ScheduleLike = Union[ContactScheduleModel, ContactScheduleEntity]  # noqa: UP007
 
 class ContactHistoryRepoImpl(ContactHistoryRepository):
-    def __init__(self) -> None:
+    def __init__(self, dispatcher: EventDispatcher) -> None:
         self.log = structlog.get_logger(__name__)
-    
+        self.dispatcher = dispatcher
+        
     # ------------------------------------------------------------------  save
 
     def save(self, history: ContactHistoryEntity) -> ContactHistoryEntity:
         model = ContactHistoryModel.objects.create(**history.to_dict())
         entity = ContactHistoryEntity.from_model(model)
 
+        event = ContactHistoryCreated(entity_id=entity.id)
         transaction.on_commit(
-            lambda: ContactHistoryCreated.emit(entity_id=entity.id)
+            lambda: self.dispatcher.dispatch(event)
         )
         return entity
 
@@ -96,8 +99,9 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
         model = ContactHistoryModel.objects.create(**base_kwargs)
         entity = ContactHistoryEntity.from_model(model)
 
+        event = ContactHistoryCreated(entity_id=entity.id)
         transaction.on_commit(
-            lambda: ContactHistoryCreated.emit(entity_id=entity.id)
+            lambda: self.dispatcher.dispatch(event)
         )
         return entity
 

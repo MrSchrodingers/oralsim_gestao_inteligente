@@ -10,7 +10,6 @@ from oralsin_core.adapters.repositories.payment_method_repo_impl import PaymentM
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.application.dtos.oralsin_dtos import (
     OralsinContratoDTO,
-    OralsinParcelaAtualDetalheDTO,
 )
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 from oralsin_core.core.domain.mappers.oralsin_payload_mapper import OralsinPayloadMapper
@@ -35,26 +34,25 @@ class InstallmentRepoImpl(InstallmentRepository):
     # ─────────────────────────── MÉTODOS DE PERSISTÊNCIA ───────────────────────────
     def save_many(self, installments: list[InstallmentEntity]) -> None:
         """
-        [NOVO E CORRIGIDO] Cria ou atualiza uma lista de parcelas de forma eficiente,
-        segura e em lote.
+        Cria ou atualiza uma lista de parcelas, agora incluindo o campo 'schedule'.
         """
         if not installments:
             return
 
         oralsin_ids = [e.oralsin_installment_id for e in installments if e.oralsin_installment_id is not None]
         existing_map = {m.oralsin_installment_id: m for m in InstallmentModel.objects.filter(oralsin_installment_id__in=oralsin_ids)}
-        
+
         to_create = []
         to_update = []
         UPDATE_FIELDS = [
             "due_date", "installment_amount", "received", "installment_status",
-            "payment_method_id", "is_current", "installment_number", "contract_version"
+            "payment_method_id", "is_current", "installment_number", "contract_version",
+            "schedule"
         ]
 
         pm_repo = PaymentMethodRepoImpl()
 
         for ent in installments:
-            # Garante que o método de pagamento tenha um ID antes de persistir
             if ent.payment_method:
                 pm = pm_repo.get_or_create_by_name(ent.payment_method.name)
                 ent.payment_method.id = pm.id
@@ -64,11 +62,11 @@ class InstallmentRepoImpl(InstallmentRepository):
                 has_changed = False
                 for field in UPDATE_FIELDS:
                     new_value = (ent.payment_method.id if ent.payment_method else None) if field == "payment_method_id" else getattr(ent, field, None)
-                    
+
                     if getattr(model, field) != new_value:
                         setattr(model, field, new_value)
                         has_changed = True
-                
+
                 if has_changed:
                     to_update.append(model)
             else:
@@ -84,6 +82,7 @@ class InstallmentRepoImpl(InstallmentRepository):
                     installment_status=ent.installment_status,
                     payment_method_id=ent.payment_method.id if ent.payment_method else None,
                     is_current=ent.is_current,
+                    schedule=ent.schedule,
                 ))
 
         with transaction.atomic():
@@ -170,7 +169,6 @@ class InstallmentRepoImpl(InstallmentRepository):
         self,
         parcelas: list,
         contrato: OralsinContratoDTO | None,
-        parcela_atual: OralsinParcelaAtualDetalheDTO | None,
         contract_id: str,
     ) -> list[InstallmentEntity]:
         """
@@ -359,25 +357,36 @@ class InstallmentRepoImpl(InstallmentRepository):
     def set_current_installment_atomically(
         self, *, contract_id: uuid.UUID, oralsin_installment_id: int | None = None
     ) -> None:
-        # 1. Zera a flag 'is_current' para todas as parcelas do contrato
+        """
+        [ROBUSTECIDO] Garante que apenas uma parcela seja a 'is_current'
+        e lida corretamente com valores nulos para o campo 'schedule'.
+        """
+        # 1. Zera a flag 'is_current' para todas as parcelas do contrato.
         InstallmentModel.objects.filter(contract_id=contract_id, is_current=True).update(is_current=False)
 
-        # 2. Ativa a flag para a parcela correta
+        # 2. Determina a nova parcela 'is_current'.
+        target_installment = None
         if oralsin_installment_id is not None:
-            updated_rows = InstallmentModel.objects.filter(
-                contract_id=contract_id, oralsin_installment_id=oralsin_installment_id
-            ).update(is_current=True)
-            
-            # Se a parcela especificada não foi encontrada (talvez ainda não sincronizada), não faz nada.
-            if updated_rows > 0:
-                return
+            # Mantém a lógica antiga para retrocompatibilidade, se necessário.
+            target_installment = (
+                InstallmentModel.objects
+                .filter(contract_id=contract_id, oralsin_installment_id=oralsin_installment_id)
+                .first()
+            )
+        else:
+            today = timezone.localdate()
+            target_installment = (
+                InstallmentModel.objects
+                .filter(
+                    contract_id=contract_id,
+                    received=False,
+                    due_date__lt=today
+                )
+                .order_by("due_date")
+                .first()
+            )
 
-        # 3. Fallback: Se nenhuma parcela foi especificada ou encontrada, marca a primeira não paga
-        first_unpaid = (
-            InstallmentModel.objects.filter(contract_id=contract_id, received=False)
-            .order_by("due_date")
-            .first()
-        )
-        if first_unpaid:
-            first_unpaid.is_current = True
-            first_unpaid.save(update_fields=["is_current"])
+        # 3. Se encontramos uma parcela candidata, a marcamos como 'is_current'.
+        if target_installment:
+            target_installment.is_current = True
+            target_installment.save(update_fields=["is_current"])

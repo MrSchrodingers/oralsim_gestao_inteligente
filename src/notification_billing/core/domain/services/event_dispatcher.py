@@ -15,10 +15,11 @@ class EventDispatcher:
 
     def subscribe(self, event_type: type[DomainEvent], handler: Callable[[DomainEvent], None]) -> None:
         self._subs.setdefault(event_type, []).append(handler)
+        handler_name = getattr(handler, '__name__', handler.__class__.__name__)
         logger.debug(
             "event.subscribed",
             event_type=event_type.__name__,
-            handler_name=handler.__name__,
+            handler_name=handler_name,
         )
 
     def dispatch(self, event: DomainEvent) -> None:
@@ -32,10 +33,11 @@ class EventDispatcher:
             try:
                 h(event)
             except Exception as e:
+                handler_name = getattr(h, '__name__', h.__class__.__name__)
                 logger.error(
                     "event.handler_error",
                     event_name=type(event).__name__,
-                    handler_name=h.__name__,
+                    handler_name=handler_name,
                     error=str(e),
                     exc_info=True,
                 )

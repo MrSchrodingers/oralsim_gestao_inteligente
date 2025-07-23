@@ -246,7 +246,10 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         payment_method_repo = providers.Singleton(PaymentMethodRepoImpl)
         
         collection_case_repo = providers.Singleton(CollectionCaseRepoImpl)
-        contact_history_repo = providers.Singleton(ContactHistoryRepoImpl)
+        contact_history_repo = providers.Singleton(
+            ContactHistoryRepoImpl,
+            dispatcher=event_dispatcher,
+        )
         contact_schedule_repo = providers.Singleton(ContactScheduleRepoImpl, 
                                                     installment_repo=installment_repo, 
                                                     contract_repo=contract_repo,

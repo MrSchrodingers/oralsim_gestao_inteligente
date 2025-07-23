@@ -2,28 +2,28 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 # ───────────────────────────────────────────────
 # DTOs para integração com API Oralsin
 # ───────────────────────────────────────────────
 
-class OralsinParcelaAtualDetalheDTO(BaseModel):
-    idContrato: int
-    versaoContrato: int
-    idContratoParcela: int
-    dataVencimento: datetime
-    diasAtraso: int
-    valorOriginal: str
-    valorFinal: str
-    valorMulta: float
-    valorJuros: float
-    idStatusParcela: int
-    statusParcela: str
-    idStatusFinanceiro: int
-    statusFinanceiro: str
-    observacao: str | None
-    dataHoraObs: datetime | None
+# class OralsinParcelaAtualDetalheDTO(BaseModel):
+#     idContrato: int
+#     versaoContrato: int
+#     idContratoParcela: int
+#     dataVencimento: datetime
+#     diasAtraso: int
+#     valorOriginal: str
+#     valorFinal: str
+#     valorMulta: float
+#     valorJuros: float
+#     idStatusParcela: int
+#     statusParcela: str
+#     idStatusFinanceiro: int
+#     statusFinanceiro: str
+#     observacao: str | None
+#     dataHoraObs: datetime | None
     
 class OralsinEnderecoDTO(BaseModel):
     logradouro: str
@@ -68,6 +68,7 @@ class OralsinParcelaDTO(BaseModel):
     nomeFormaPagamento: str
     parcelaUnica: bool
     nomeInstituicao: str | None = None
+    agendado: str | None = None
 
 
 class OralsinContatoHistoricoDTO(BaseModel):
@@ -103,19 +104,9 @@ class OralsinPacienteDTO(BaseModel):
     enderecos: OralsinEnderecoDTO
     contrato: OralsinContratoDTO
     telefones: OralsinTelefoneDTO
-    parcelaAtualDetalhe: OralsinParcelaAtualDetalheDTO | None
     parcelas: list[OralsinParcelaDTO]
     contatoHistorico: list[OralsinContatoHistoricoDTO] | None = None
     
-    @field_validator("parcelaAtualDetalhe", mode="before")
-    @classmethod
-    def _empty_string_to_none(cls, v):
-        # se vier "" (string vazia), trata como None
-        if isinstance(v, str) and v.strip() == "":
-            return None
-        return v
-
-
 class OralsinClinicDTO(BaseModel):
     idClinica: int
     nomeClinica: str
@@ -230,7 +221,6 @@ class OralsinContratoDetalhadoDTO(BaseModel):
     versaoContrato: str | None = None
     contratoStatus: str
     paciente: OralsinPacienteSimplifiedDTO
-    parcelas: list[OralsinParcelaAtualDetalheDTO]
     clinica: OralsinClinicaSimplesDTO
     valorTotal: float
     dataAssinatura: date
