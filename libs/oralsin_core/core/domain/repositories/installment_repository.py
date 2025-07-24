@@ -23,6 +23,10 @@ class InstallmentRepository(ABC):
         self, *, contract_id: uuid.UUID, oralsin_installment_id: int | None = None
     ) -> None:
         ...
+    
+    @abstractmethod
+    def count_remaining_from_current(self, contract_id: uuid.UUID) -> int:
+        ...
         
     @abstractmethod
     def existing_oralsin_ids(self, ids: list[int]) -> set[int]:

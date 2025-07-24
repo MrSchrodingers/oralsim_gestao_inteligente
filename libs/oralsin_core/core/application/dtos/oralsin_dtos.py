@@ -68,7 +68,7 @@ class OralsinParcelaDTO(BaseModel):
     nomeFormaPagamento: str
     parcelaUnica: bool
     nomeInstituicao: str | None = None
-    agendado: str | None = None
+    nomeStatus: str | None = None
 
 
 class OralsinContatoHistoricoDTO(BaseModel):

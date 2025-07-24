@@ -193,6 +193,30 @@ class InstallmentRepoImpl(InstallmentRepository):
         InstallmentModel.objects.filter(id=installment_id).delete()
 
     # ──────────────────────────── MÉTODOS DE CONSULTA ────────────────────────────
+    def count_remaining_from_current(self, contract_id: uuid.UUID) -> int:
+        """
+        Retorna quantas parcelas ainda faltam (não pagas)
+        contando da parcela atual inclusive.
+        """
+        current = (
+            InstallmentModel.objects
+            .filter(contract_id=contract_id, is_current=True)
+            .only("installment_number")
+            .first()
+        )
+        if not current:
+            return 0
+
+        return (
+            InstallmentModel.objects
+            .filter(
+                contract_id=contract_id,
+                received=False,
+                installment_number__gte=current.installment_number,
+            )
+            .count()
+        )
+        
     def count_overdue_by_contract(self, contract_id: str) -> int:
         """
         [NOVO] Conta de forma eficiente o número total de parcelas vencidas e

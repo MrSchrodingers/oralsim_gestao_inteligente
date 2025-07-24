@@ -168,3 +168,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
             contract_id=contract_id,
             oralsin_installment_id=None
         )
+        
+        # 3. Calcula e grava restantes
+        remaining = self.installment_repo.count_remaining_from_current(contract_id)
+        self.contract_repo.set_remaining_installments(contract_id, remaining)

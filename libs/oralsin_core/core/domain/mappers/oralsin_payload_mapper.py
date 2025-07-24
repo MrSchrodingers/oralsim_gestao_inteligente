@@ -273,9 +273,10 @@ class OralsinPayloadMapper:
                     name=p.nomeFormaPagamento,
                 )
 
-            raw_schedule_val = p.nomeStatusFinanceiro
-            is_scheduled = str(raw_schedule_val).strip().lower() in ['agendado']
-
+            normalized_status = str(p.nomeStatus).strip().lower()
+            is_scheduled = normalized_status == 'agendado'
+            is_paid = cls._is_paid(p) and normalized_status == 'baixado'
+            
             out.append(
                 InstallmentEntity(
                     id=cls._uuid(),
@@ -285,7 +286,7 @@ class OralsinPayloadMapper:
                     oralsin_installment_id=p.idContratoParcela,
                     due_date=p.dataVencimento.date(),
                     installment_amount=float(p.valorParcela),
-                    received=cls._is_paid(p),
+                    received=is_paid,
                     payment_method=pm,
                     installment_status=p.nomeStatusFinanceiro,
                     schedule=is_scheduled,

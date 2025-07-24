@@ -56,6 +56,7 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
             "clinic_id": case.clinic_id,
             "opened_at": case.opened_at,
             "amount": case.amount,
+            "stage_id": case.stage_id,  # Adicionado para persistência
             "last_stage_id": case.last_stage_id,
             "deal_id": case.deal_id,
             "deal_sync_status": desired_sync_status,
@@ -69,6 +70,7 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
         )
 
         # 4) devolve a entidade refletindo o registro salvo
+        # ✨ CORREÇÃO APLICADA AQUI ✨
         return CollectionCaseEntity(
             id=model.id,
             patient_id=model.patient_id,
@@ -77,6 +79,7 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
             clinic_id=model.clinic_id,
             opened_at=model.opened_at,
             amount=model.amount,
+            stage_id=model.stage_id,  # Adicionado para retorno
             deal_sync_status=model.deal_sync_status,
             deal_id=model.deal_id,
             last_stage_id=model.last_stage_id,

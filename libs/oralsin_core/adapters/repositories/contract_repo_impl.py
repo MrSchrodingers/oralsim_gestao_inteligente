@@ -77,6 +77,13 @@ class ContractRepoImpl(ContractRepository):
 
     # ────────────────────────── persistência ───────────────────────────
     @transaction.atomic
+    def set_remaining_installments(self, contract_id: uuid.UUID, count: int) -> None:
+        ContractModel.objects.filter(id=contract_id).update(
+            remaining_installments=count,
+            updated_at=timezone.now(),
+        )
+        
+    @transaction.atomic
     def update(self, contract: ContractEntity) -> ContractEntity:
         """
         Atualiza **somente** contratos já existentes.

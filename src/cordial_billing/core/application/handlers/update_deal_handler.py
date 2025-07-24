@@ -28,15 +28,16 @@ from plugins.django_interface.models import (
 
 log = get_logger(__name__)
 
-# Stage “ADM Verificar” no pipeline 3.
-ADM_VERIFICAR_STAGE_ID = 26
+# Etapa para onde os deals são movidos quando a cobrança é pausada ou concluída.
+# Ex: "ADM Verificar", "Auditoria", "Cobrança Pausada", etc.
+INACTIVE_BILLING_STAGE_ID = 26
 
 
-class UpdatePipedriveDealHandler(
-    CommandHandler[UpdatePipedriveDealCommand]
-):
+class UpdatePipedriveDealHandler(CommandHandler[UpdatePipedriveDealCommand]):
     """
-    • Sincroniza o valor ou a etapa de um Deal existente.
+    • Sincroniza o valor ou a etapa de um Deal existente no Pipedrive.
+    • Implementa a lógica robusta para pausar e restaurar a etapa de cobrança
+      com base na flag `do_billings` do contrato.
     • Cria uma Activity explicando o motivo da atualização.
     """
 
@@ -45,106 +46,86 @@ class UpdatePipedriveDealHandler(
         sync_service: PipedriveSyncService,
         activity_repo: ActivityRepository,
     ) -> None:
-        self._sync  = sync_service
-        self._acts  = activity_repo
+        self._sync = sync_service
+        self._acts = activity_repo
 
-    # -----------------------------------------------------------------
-    async def handle(
-        self, cmd: UpdatePipedriveDealCommand
-    ) -> dict[str, Any]:
-        # ----------- carrega CollectionCase + relacionamentos -------
-        case_qs = (
-            CollectionCase.objects
-            .select_related(
-                "patient__address",
-                "clinic__data__address",
-                "contract__payment_method",
+    async def handle(self, cmd: UpdatePipedriveDealCommand) -> dict[str, Any]:
+        case = await self._load_full_collection_case(cmd.collection_case_id)
+
+        if not case or not case.deal_id:
+            log.warning(
+                "case_update_skipped",
+                case_id=cmd.collection_case_id,
+                reason="Case or deal_id not found",
             )
-            .prefetch_related(
-                Prefetch(
-                    "clinic__phones",
-                    queryset=ClinicPhone.objects.all(),
-                    to_attr="prefetched_phones",
-                ),
-                Prefetch(
-                    "contract__installments",
-                    queryset=Installment.objects.all(),
-                    to_attr="prefetched_installments",
-                ),
-                Prefetch(
-                    "patient__phones",
-                    queryset=PatientPhone.objects.all(),
-                    to_attr="prefetched_phones",
-                ),
-            )
-        )
-        case: CollectionCase = await sync_to_async(case_qs.get)(
-            id=cmd.collection_case_id
-        )
+            return {"updated": False, "reason": "without_case_or_deal"}
 
-        if not case.deal_id:
-            log.warning("case_without_deal", case_id=case.id)
-            return {"updated": False, "reason": "without_deal"}
-
-        builder   = PipedriveDealPayloadBuilder(case)
-        payload   = builder.build()              # reaproveita cálculo de valores
-        new_value = payload["value"]             # float
-        overdue   = builder._overdue_count()
-        do_bill   = bool(case.contract.do_billings)
-
-        # ------------------ 1) atualização de VALOR -----------------
+        builder = PipedriveDealPayloadBuilder(case)
         updates: dict[str, Any] = {}
-        reason = None
+        reason_parts = []
 
+        # --- 1. LÓGICA DE ATUALIZAÇÃO DE VALOR (Existente) ---
+        new_value = builder.build()["value"]  # float
         if Decimal(str(new_value)) != case.amount:
-            updates["value"]    = new_value
+            updates["value"] = new_value
             updates["currency"] = "BRL"
-            reason = (
-                f"Valor atualizado para R$ {new_value:,.2f}. "
-                "Motivo: nova parcela vencida/pagamento registrado."
+            reason_parts.append(
+                f"Valor atualizado para R$ {new_value:,.2f} devido a novas parcelas ou pagamentos."
             )
 
-        # ------------------ 2) mudança de ETAPA ---------------------
-        if (overdue == 0 or not do_bill) and case.stage_id != ADM_VERIFICAR_STAGE_ID:
-            updates["stage_id"] = ADM_VERIFICAR_STAGE_ID
-            if reason:
-                reason += " | "
-            reason = (
-                (reason or "")
-                + (
-                    "Paciente sem parcelas vencidas "
-                    if overdue == 0 else
-                    "Cobrança amigável desativada "
-                )
-                + "→ movido(a) para etapa ADM Verificar."
+        # --- 2. NOVA LÓGICA DE TRANSIÇÃO DE ETAPA (baseada em `do_billings`) ---
+        is_billing_active = bool(case.contract.do_billings)
+        is_currently_in_inactive_stage = case.stage_id == INACTIVE_BILLING_STAGE_ID
+        overdue_count = builder._overdue_count()
+        
+        # Cenário A: O paciente não tem mais dívidas vencidas. Mover para a etapa de verificação.
+        if overdue_count == 0 and not is_currently_in_inactive_stage:
+            updates["stage_id"] = INACTIVE_BILLING_STAGE_ID
+            reason_parts.append("Paciente sem parcelas vencidas, movido para verificação.")
+
+        # Cenário B: Cobrança foi DESATIVADA (true -> false)
+        elif not is_billing_active and not is_currently_in_inactive_stage:
+            # Salva a etapa atual antes de mover para a inativa
+            case.last_stage_id = case.stage_id
+            updates["stage_id"] = INACTIVE_BILLING_STAGE_ID
+            reason_parts.append(
+                f"Cobrança desativada. Posição anterior (Etapa ID: {case.last_stage_id}) salva. Movido para verificação."
             )
 
+        # Cenário C: Cobrança foi REATIVADA (false -> true)
+        elif is_billing_active and is_currently_in_inactive_stage and case.last_stage_id:
+            # Restaura a etapa a partir da "memória"
+            updates["stage_id"] = case.last_stage_id
+            reason_parts.append(
+                f"Cobrança reativada. Retornando para a etapa anterior (Etapa ID: {updates['stage_id']})."
+            )
+            # Limpa a memória após o uso para garantir a idempotência
+            case.last_stage_id = None
+        
+        # --- 3. VERIFICAÇÃO FINAL E EXECUÇÃO ---
         if not updates:
-            log.info("deal_update_skip", deal_id=case.deal_id)
+            log.info("deal_update_skip", deal_id=case.deal_id, reason="no_changes_needed")
             return {"updated": False, "reason": "no_changes"}
 
-        # ------------------ 3) chama API Pipedrive ------------------
-        resp = await sync_to_async(
-            self._sync.client._safe_request
-        )(
-            "patch",
-            f"deals/{case.deal_id}",
-            json_body=updates,
-        )
+        final_reason = " | ".join(reason_parts)
 
-        # ------------------ 4) cria Activity ------------------------
+        # --- 4. CHAMA API PIPEDRIVE E PERSISTE O ESTADO ---
+        resp = await self._update_pipedrive_deal(case.deal_id, updates)
+
         if resp.get("ok"):
-            await self._create_activity(
-                deal_id=case.deal_id,
-                subject="TESTE (API) - Atualização automática do negócio",
-                note=reason,
-            )
+            await self._create_activity(deal_id=case.deal_id, subject="Atualização Automática do Negócio", note=final_reason)
             log.info("deal_updated", deal_id=case.deal_id, updates=updates)
-            # persiste últimos dados relevantes no Case
+            
+            # Persiste as alterações no nosso banco de dados
+            # A transação é garantida pelo case.save() que atualiza todos os campos de uma vez.
             if "stage_id" in updates:
                 case.stage_id = updates["stage_id"]
-            case.amount = Decimal(str(new_value))
-            await sync_to_async(case.save)(update_fields=["stage_id", "amount"])
+            if "value" in updates:
+                case.amount = Decimal(str(updates["value"]))
+            
+            # O save irá persistir stage_id, last_stage_id (que pode ter sido alterado) e amount
+            await sync_to_async(case.save)(update_fields=["stage_id", "last_stage_id", "amount"])
+            
             return {"updated": True, "updates": updates}
         else:
             log.error(
@@ -155,12 +136,33 @@ class UpdatePipedriveDealHandler(
             )
             return {"updated": False, "reason": "api_error"}
 
-    # -----------------------------------------------------------------
+    async def _load_full_collection_case(self, case_id: str) -> CollectionCase | None:
+        """Carrega o CollectionCase e todas as suas dependências com prefetch para otimização."""
+        try:
+            case_qs = (
+                CollectionCase.objects.select_related(
+                    "patient__address",
+                    "clinic__data__address",
+                    "contract__payment_method",
+                )
+                .prefetch_related(
+                    Prefetch("clinic__phones", queryset=ClinicPhone.objects.all(), to_attr="prefetched_phones"),
+                    Prefetch("contract__installments", queryset=Installment.objects.all(), to_attr="prefetched_installments"),
+                    Prefetch("patient__phones", queryset=PatientPhone.objects.all(), to_attr="prefetched_phones"),
+                )
+            )
+            return await sync_to_async(case_qs.get)(id=case_id)
+        except CollectionCase.DoesNotExist:
+            return None
+
+    async def _update_pipedrive_deal(self, deal_id: int, payload: dict) -> dict:
+        """Encapsula a chamada à API para atualizar o deal."""
+        return await sync_to_async(self._sync.client._safe_request)(
+            "patch", f"deals/{deal_id}", json_body=payload
+        )
+
     async def _create_activity(self, *, deal_id: int, subject: str, note: str) -> None:
-        """
-        • Cria Activity no Pipedrive
-        • Persiste no ActivityRepository
-        """
+        """Cria uma Activity no Pipedrive e a persiste localmente."""
         body = {
             "subject": subject,
             "note": note,

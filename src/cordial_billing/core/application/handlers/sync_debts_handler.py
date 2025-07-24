@@ -125,7 +125,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                     deal = None
                     if patient and patient.cpf:
                         deal = await self.deal_repo.find_by_cpf(patient.cpf)
-
+                    
                     case = CollectionCaseEntity(
                         id=uuid4(),
                         patient_id=patient_id,
@@ -134,9 +134,10 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                         clinic_id=contract.clinic_id,
                         opened_at=timezone.now(),
                         amount=Decimal(inst.installment_amount),
+                        stage_id=deal.stage_id if deal else None,
                         deal_id=deal.id if deal else None,
-                        last_stage_id=deal.stage_id if deal else None,
-                        deal_sync_status= "pending" if deal else "created",
+                        last_stage_id=None,
+                        deal_sync_status="pending", 
                         status="open",
                     )
 

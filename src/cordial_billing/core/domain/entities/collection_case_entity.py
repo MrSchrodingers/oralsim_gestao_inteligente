@@ -20,7 +20,8 @@ class CollectionCaseEntity(EntityMixin):
     clinic_id:        uuid.UUID
     opened_at:        datetime
     amount:           Decimal
-    deal_id:          int | None      
+    deal_id:          int | None   
+    stage_id:         int | None 
     last_stage_id:    int | None  
     deal_sync_status: Literal["pending", "created", "updated", "error"]
     status:           Literal["open", "closed"]
