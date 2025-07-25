@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 
+from django.db import transaction
 from oralsin_core.adapters.context.request_context import get_current_request
 
 from notification_billing.core.application.commands.contact_commands import (
@@ -13,7 +14,9 @@ from notification_billing.core.application.cqrs import (
     QueryHandler,
 )
 from notification_billing.core.application.queries.contact_queries import ListDueContactsQuery
-from notification_billing.core.domain.events.events import NotificationScheduledEvent, NotificationSentEvent
+from notification_billing.core.application.services.contact_service import ContactSchedulingService
+from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
+from notification_billing.core.domain.events.events import NotificationSentEvent
 from notification_billing.core.domain.repositories import (
     ContactHistoryRepository,
     ContactScheduleRepository,
@@ -22,32 +25,23 @@ from notification_billing.core.domain.services.event_dispatcher import EventDisp
 
 
 class AdvanceContactStepHandler(CommandHandler[AdvanceContactStepCommand]):
-    def __init__(
-        self,
-        schedule_repo: ContactScheduleRepository,
-        dispatcher: EventDispatcher,
-    ):
-        self.schedule_repo = schedule_repo
-        self.dispatcher = dispatcher
+    """
+    Handler para avançar um contato no fluxo. Delega 100% da lógica
+    de negócio para o ContactSchedulingService.
+    """
+    def __init__(self, scheduling_service: ContactSchedulingService):
+        self.scheduling_service = scheduling_service
 
-    def handle(self, cmd: AdvanceContactStepCommand) -> Any:
-        sched = self.schedule_repo.advance_contact_step(cmd.schedule_id)
-        # só dispara se realmente houver próximo step
-        if sched:
-            self.dispatcher.dispatch(
-                NotificationScheduledEvent(
-                    schedule_id=sched.id,
-                    patient_id=sched.patient_id,
-                    contract_id=sched.contract_id,
-                    step=sched.current_step,
-                    channel=sched.channel,
-                    scheduled_date=sched.scheduled_date,
-                )
-            )
-        return sched
+    @transaction.atomic
+    def handle(self, cmd: AdvanceContactStepCommand) -> ContactScheduleEntity | None:
+        return self.scheduling_service.advance_after_success(cmd.schedule_id)
 
 
 class RecordContactSentHandler(CommandHandler[RecordContactSentCommand]):
+    """
+    Registra o histórico de um contato enviado.
+    Esta operação é idempotente por natureza, pois sempre cria um novo registro de histórico.
+    """
     def __init__(
         self,
         schedule_repo: ContactScheduleRepository,
@@ -63,7 +57,7 @@ class RecordContactSentHandler(CommandHandler[RecordContactSentCommand]):
         if not sched:
             return None
 
-        # registra no histórico
+        # Registra no histórico. datetime.utcnow() garante um timestamp único.
         hist = self.history_repo.save_from_schedule(
             schedule=sched,
             sent_at=datetime.utcnow(),
@@ -71,7 +65,8 @@ class RecordContactSentHandler(CommandHandler[RecordContactSentCommand]):
             feedback=cmd.feedback_status,
             observation=cmd.observation,
         )
-        # dispara evento de envio
+        
+        # Dispara evento de domínio para desacoplar outras ações.
         self.dispatcher.dispatch(
             NotificationSentEvent(
                 schedule_id=sched.id,
@@ -84,12 +79,15 @@ class RecordContactSentHandler(CommandHandler[RecordContactSentCommand]):
 
 
 class ListDueContactsHandler(QueryHandler[ListDueContactsQuery, PagedResult[Any]]):
+    """Handler para listar contatos pendentes de envio."""
     def __init__(self, schedule_repo: ContactScheduleRepository):
         self.repo = schedule_repo
 
     def handle(self, query: ListDueContactsQuery) -> PagedResult[Any]:
         filtros = query.filtros or {}
         clinic_id = filtros.get("clinic_id")
+        
+        # Lógica para obter a clínica a partir do contexto da requisição, se aplicável.
         req = get_current_request()
         if not clinic_id and req and getattr(req.user, "role", None) == "clinic":
             clinic_id = getattr(req.user, "clinic_id", None)

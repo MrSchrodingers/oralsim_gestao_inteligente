@@ -183,6 +183,8 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             schedule_repo=contact_schedule_repo,
             installment_repo=installment_repo,
             flow_cfg_repo=flow_step_config_repo,
+            contract_repo=contract_repo,
+            billing_settings_repo=billing_settings_repo,
             dispatcher=event_dispatcher,
         )
         context_builder = providers.Singleton(
@@ -197,6 +199,15 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         letter_service = providers.Factory(
             CordialLetterService,
             template_path="ModeloCartaAmigavel.docx"
+        )
+        contact_scheduling_service = providers.Factory(
+            ContactSchedulingService,
+            schedule_repo=contact_schedule_repo,
+            installment_repo=installment_repo,
+            contract_repo=contract_repo,
+            flow_cfg_repo=flow_step_config_repo,
+            billing_settings_repo=billing_settings_repo,
+            dispatcher=event_dispatcher,
         )
         
         # Facade exposto aos controllers/CLI
@@ -249,8 +260,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         # Handlers de fluxo de contato/notificação
         advance_contact_step_handler = providers.Factory(
             AdvanceContactStepHandler,
-            schedule_repo=contact_schedule_repo,
-            dispatcher=event_dispatcher,
+            scheduling_service=contact_scheduling_service,
         )
         record_contact_sent_handler = providers.Factory(
             RecordContactSentHandler,
@@ -297,11 +307,9 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         bulk_schedule_contacts_handler = providers.Factory(
             BulkScheduleContactsHandler,
             contract_repo=contract_repo,
-            installment_repo=installment_repo,
-            schedule_repo=contact_schedule_repo,
+            scheduling_service=contact_scheduling_service,
             config_repo=flow_step_config_repo,
             pending_call_repo=pending_call_repo,
-            dispatcher=event_dispatcher,
             logger=logger,
         )
         list_pending_calls_handler = providers.Factory(ListPendingCallsHandler, repo=pending_call_repo)

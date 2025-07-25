@@ -252,19 +252,40 @@ class OralsinPayloadMapper:
         contract_id: uuid.UUID,
     ) -> list[InstallmentEntity]:
         """
-        Mapeia DTOs de parcela para Entidades, incluindo o novo campo 'agendado'.
+        Mapeia DTOs de parcela para Entidades com lógica de pagamento robustecida.
 
-        A responsabilidade de definir a flag 'is_current' foi removida
-        desta camada e é calculada posteriormente, com base na nova regra de negócio.
+        A regra de pagamento agora é centralizada e baseada EXCLUSIVAMENTE
+        no status financeiro. Status de negociação ou cancelamento são ignorados.
+        A flag 'is_current' é calculada posteriormente.
         """
         version = str(contrato_version)
         out: list[InstallmentEntity] = []
         seen_ids = set()
+
+        # Status do ciclo de vida que devem ser ignorados
+        STATUS_A_IGNORAR = {"negociação concluída", "estorno concluído", "cancelamento"}
+
         for p in parcelas:
             if p.idContratoParcela in seen_ids:
                 continue
             seen_ids.add(p.idContratoParcela)
 
+            # 1. Filtra parcelas que não devem entrar no cálculo de cobrança
+            normalized_lifecycle_status = str(p.nomeStatus).strip().lower()
+            if normalized_lifecycle_status in STATUS_A_IGNORAR:
+                continue  # Pula para a próxima parcela
+
+            # 2. Determina o estado de pagamento usando a fonte de verdade única
+            is_paid = is_paid_status(p.nomeStatusFinanceiro)
+
+            # 3. O status 'baixado' do ciclo de vida pode ser um reforço positivo,
+            # mas não uma condição obrigatória.
+            # Se o status do ciclo de vida for 'baixado', consideramos pago.
+            if normalized_lifecycle_status == 'baixado':
+                is_paid = True
+            if normalized_lifecycle_status == 'agendado':
+                is_paid = False
+            
             pm = None
             if p.nomeFormaPagamento:
                 pm = PaymentMethodEntity(
@@ -273,10 +294,8 @@ class OralsinPayloadMapper:
                     name=p.nomeFormaPagamento,
                 )
 
-            normalized_status = str(p.nomeStatus).strip().lower()
-            is_scheduled = normalized_status == 'agendado'
-            is_paid = cls._is_paid(p) and normalized_status == 'baixado'
-            
+            is_scheduled = normalized_lifecycle_status == 'agendado'
+
             out.append(
                 InstallmentEntity(
                     id=cls._uuid(),

@@ -545,11 +545,16 @@ class RunAutomatedNotificationsHandler(
             processed = 0
             results: list[dict[str, Any]] = []
 
-            for representative_schedule in self.schedule_repo.stream_pending(
+            max_to_process = 10
+            
+            for i, representative_schedule in enumerate(self.schedule_repo.stream_pending(
                 clinic_id=cmd.clinic_id,
                 only_pending=cmd.only_pending,
                 chunk_size=cmd.batch_size,
-            ):
+            )):
+                if i >= max_to_process:
+                    break
+
                 result = self._process_schedule_group(representative_schedule)
                 if result is not None:
                     results.append(result)
@@ -557,7 +562,6 @@ class RunAutomatedNotificationsHandler(
 
             if processed == 0:
                 return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
- 
 
             return {
                 "clinic_id": cmd.clinic_id,

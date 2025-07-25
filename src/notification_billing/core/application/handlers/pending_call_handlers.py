@@ -4,7 +4,6 @@ from datetime import datetime
 
 from oralsin_core.core.application.cqrs import CommandHandler, PagedResult, QueryHandler
 
-from notification_billing.core.application.commands.contact_commands import AdvanceContactStepCommand
 from notification_billing.core.domain.entities.pending_call_entity import PendingCallEntity
 from notification_billing.core.domain.repositories.contact_history_repository import ContactHistoryRepository
 from notification_billing.core.domain.repositories.contact_schedule_repository import ContactScheduleRepository
@@ -72,9 +71,3 @@ class SetPendingCallDoneHandler(CommandHandler[SetPendingCallDoneCommand]):
                 resolved_at=datetime.utcnow(),
             )
         )
-        
-        # se a chamada foi bem-sucedida, avança para o próximo step
-        if cmd.success and sched_entity:
-            self.dispatcher.dispatch(
-                AdvanceContactStepCommand(schedule_id=sched_id)
-            )

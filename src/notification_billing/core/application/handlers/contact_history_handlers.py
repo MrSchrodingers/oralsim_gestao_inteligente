@@ -1,5 +1,3 @@
-import json
-
 import structlog
 
 from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ
@@ -50,7 +48,7 @@ class PublishContactHistoryToQueueHandler:
         try:
             history = ContactHistory.objects.get(id=event.entity_id)
             dto = build_oralsin_payload(history)
-            payload = json.dumps(dto.model_dump(by_alias=True, exclude_none=True))
+            payload = dto.model_dump_json(by_alias=True, exclude_none=True)
 
             self.rabbit.channel().basic_publish(
                 exchange=self._exchange,

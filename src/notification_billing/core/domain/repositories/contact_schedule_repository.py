@@ -7,16 +7,14 @@ from notification_billing.core.domain.entities.contact_schedule_entity import Co
 
 class ContactScheduleRepository(ABC):
     @abstractmethod
-    def schedule_first_contact(
-        self,
-        patient_id: str,
-        contract_id: str,
-        clinic_id: str,
-        installment_id: str
-    ) -> ContactScheduleEntity:
-        """Cria o primeiro agendamento de contato."""
-        ...
-
+    def has_schedule_for_patient(self, patient_id: str) -> bool:
+        """
+        Verifica de forma eficiente se já existe QUALQUER agendamento
+        (independente do status) para um determinado paciente.
+        Retorna True se o paciente já teve algum contato agendado, False caso contrário.
+        """
+        ... 
+        
     @abstractmethod
     def get_by_patient_contract(self, patient_id: str, contract_id: str) -> ContactScheduleEntity | None:
         """Recupera um agendamento pelo ID do paciente e do contrato."""
@@ -49,13 +47,6 @@ class ContactScheduleRepository(ABC):
     @abstractmethod
     def set_status_done(schedule_id: str) -> ContactScheduleEntity:
         """Marca o agendamento atual como concluído."""
-        ...
-        
-    @abstractmethod
-    def advance_contact_step(self, schedule_id: str) -> ContactScheduleEntity:
-        """Avança a etapa do fluxo para um ContactSchedule existente.
-        Atualiza o current_step, channel, scheduled_date e status para o próximo step.
-        """
         ...
         
     @abstractmethod

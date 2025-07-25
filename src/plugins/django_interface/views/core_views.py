@@ -757,14 +757,20 @@ class InstallmentViewSet(PaginationFilterMixin, viewsets.ViewSet):
         # Se o usuário for do tipo "clinic", força o filtro por clinic_id
         if getattr(request.user, "clinic_id", None):
             filtros["clinic_id"] = str(request.user.clinic_id)
-        # extrai e renomeia para usar no filtros que vai pro repositório
-        contract_uuid = filtros.pop("contract_id", None)
-        if contract_uuid:
-            filtros["contract_id"] = contract_uuid
+            
+        contract_ids_str = filtros.pop("contract_id", None)
+        if contract_ids_str:
+            # Verifica se a string contém múltiplos IDs separados por vírgula.
+            if ',' in contract_ids_str:
+                # Converte a string em uma lista de UUIDs e usa o lookup '__in'.
+                filtros["contract_id__in"] = [uuid.strip() for uuid in contract_ids_str.split(',')]
+            else:
+                # Se for apenas um ID, usa o lookup de igualdade padrão.
+                filtros["contract_id"] = contract_ids_str
         
         q = ListInstallmentsQuery(
             filtros=filtros,
-            payload=ContractQueryDTO(contract_id=contract_uuid),
+            payload=ContractQueryDTO(contract_id=contract_ids_str),
             page=page,
             page_size=page_size,
         )
