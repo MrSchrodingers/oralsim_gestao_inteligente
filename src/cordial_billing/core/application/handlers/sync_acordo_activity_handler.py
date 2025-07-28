@@ -43,8 +43,8 @@ from plugins.django_interface.models import (
 
 log = get_logger(__name__)
 
-_ACTIVITY_DESC = {"call": "Acordo fechado"}
-BATCH_ROUTING_KEY = "call"
+_ACTIVITY_DESC = {"acordo_fechado": "Acordo fechado"}
+BATCH_ROUTING_KEY = "acordo_fechado"
 EXCHANGE = "oralsin.activities"
 DLX = f"{EXCHANGE}.dlx"
 
@@ -56,7 +56,7 @@ class RegexReplace(Func):
 
 class SyncAcordoActivitiesHandler(CommandHandler[SyncAcordoActivitiesCommand]):
     """
-    Lê atividades “call” (acordo fechado) do Pipeboard, mapeia paciente + contrato
+    Lê atividades acordo_fechado (acordo fechado) do Pipeboard, mapeia paciente + contrato
     em nosso banco e publica o contato-histórico na fila “oralsin.activities”.
     """
 

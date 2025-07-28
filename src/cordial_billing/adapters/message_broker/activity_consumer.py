@@ -14,7 +14,7 @@ api = OralsinAPIClient()
 
 _EXCHANGE = "oralsin.activities"
 _QUEUE = _EXCHANGE
-_ROUTING_KEY = "call"
+_ROUTING_KEY = "acordo_fechado"
 
 rabbit = RabbitMQ(url=settings.RABBITMQ_URL)
 ch = rabbit.channel()

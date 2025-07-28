@@ -39,7 +39,7 @@ class PublishContactHistoryToQueueHandler:
         self.rabbit = rabbit
         self.log = structlog.get_logger(__name__)
         self._exchange = "oralsin.activities"
-        self._routing_key = "call"
+        self._routing_key = "acordo_fechado"
 
     def __call__(self, event: ContactHistoryCreated) -> None:
         """
