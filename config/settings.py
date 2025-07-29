@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from celery.schedules import crontab
 from decouple import Csv, config
+from kombu import Exchange, Queue  # noqa: F401
 
 # -------------------------------
 # Diretórios base
@@ -59,19 +61,56 @@ CELERY_TASK_ALWAYS_EAGER          = config('CELERY_TASK_ALWAYS_EAGER', default=F
 CELERY_ACCEPT_CONTENT             = ["json"]
 CELERY_TASK_SERIALIZER            = "json"
 CELERY_TASK_QUEUES = {
-    "email":      {"exchange": "email",      "routing_key": "email"},
-    "sms":        {"exchange": "sms",        "routing_key": "sms"},
-    "whatsapp":   {"exchange": "whatsapp",   "routing_key": "whatsapp"},
-    "payment":    {"exchange": "payment",    "routing_key": "payment"},
-    "metrics":    {"exchange": "metrics",    "routing_key": "metrics"},
-    "sync_notify":{"exchange": "sync_notify","routing_key": "sync_notify"},
-    "sync_process":{"exchange":"sync_process","routing_key":"sync_process"},
+    "default":      {"exchange": "default",      "routing_key": "default"},
+    "dead_letter":  {"exchange": "dead_letter",  "routing_key": "dead_letter"},
+    "email":        {"exchange": "email",        "routing_key": "email"},
+    "sms":          {"exchange": "sms",          "routing_key": "sms"},
+    "whatsapp":     {"exchange": "whatsapp",     "routing_key": "whatsapp"},
+    "payment":      {"exchange": "payment",      "routing_key": "payment"},
+    "metrics":      {"exchange": "metrics",      "routing_key": "metrics"},
+    "sync_notify":  {"exchange": "sync_notify",  "routing_key": "sync_notify"},
+    "sync_process": {"exchange": "sync_process", "routing_key": "sync_process"},
 }
-
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_TASK_DEFAULT_EXCHANGE = 'default'
+CELERY_TASK_DEFAULT_ROUTING_KEY = 'default'
 CELERY_TASK_ROUTES = { 
                       "oralsin_core.adapters.message_broker.tasks.seed_data_task": {"queue": "sync_process"}, 
                       "oralsin_core.adapters.message_broker.tasks.post_seed_setup_task": {"queue": "sync_process"}, 
                       "oralsin_core.adapters.message_broker.tasks.run_sync_command_task": {"queue": "sync_process"}, 
+}
+
+# --- AGENDADOR (CELERY BEAT) ---
+# Define a execução periódica das tarefas orquestradoras.
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+CELERY_BEAT_SCHEDULE = {
+    # Executa a garantia de agendamentos para novos inadimplentes diariamente às 2 da manhã.
+    'ensure-schedules-daily': {
+        'task': 'cobranca_inteligente_api.tasks.run_maintenance_command',
+        'schedule': crontab(minute=0, hour=2),
+        'args': ('ensure_schedules',), # Nome do novo management command
+    },
+    # Inicia o resync diário de inadimplência para todas as clínicas às 3 da manhã.
+    'schedule-daily-resync': {
+        'task': 'cobranca_inteligente_api.tasks.schedule_daily_resync',
+        'schedule': crontab(minute=0, hour=3),
+    },
+    # Agenda a atualização de deals no Pipedrive a cada 2 horas.
+    'schedule-pipedrive-updates': {
+        'task': 'cobranca_inteligente_api.tasks.schedule_pipedrive_updates',
+        'schedule': crontab(minute=0, hour='*/2'),
+    },
+    # Agenda o envio de notificações e cartas toda TERÇA-FEIRA.
+    'schedule-notifications-and-letters': {
+        'task': 'cobranca_inteligente_api.tasks.schedule_daily_notifications',
+        'schedule': crontab(minute=30, hour=8, day_of_week=2), # 0=Dom, 1=Seg, 2=Ter...
+    },
+    # Agenda a sincronização de acordos e dívidas antigas.
+    'schedule-sync-tasks': {
+        'task': 'cobranca_inteligente_api.tasks.schedule_daily_syncs',
+        'schedule': crontab(minute=0, hour=4),
+    },
 }
 
 # -------------------------------

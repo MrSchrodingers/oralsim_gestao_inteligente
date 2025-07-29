@@ -38,10 +38,10 @@ class LetterNotifier(BaseNotifier):
         contract_id = context.get("contract_oralsin_id", "s/n")
         
         attachment = {
-            "content": encoded_file,
+            "@odata.type": "#microsoft.graph.fileAttachment",
             "name": f"Notificacao_Amigavel_{patient_name.replace(' ', '_')}_Contrato_{contract_id}.docx",
-            "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "disposition": "attachment"
+            "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "contentBytes": encoded_file, # A chave mudou de "content" para "contentBytes"
         }
 
         # 3. Define o conteúdo do e-mail

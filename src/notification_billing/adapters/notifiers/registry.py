@@ -6,7 +6,7 @@ from functools import lru_cache
 from typing import Literal
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
-from notification_billing.adapters.notifiers.email.brevo import BrevoEmail
+from notification_billing.adapters.notifiers.email.microsoft_graph import MicrosoftGraphEmail
 
 # from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
 from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
@@ -23,9 +23,11 @@ def get_sms_notifier(key: str = "assertiva") -> BaseNotifier:
 
 
 @lru_cache
-def get_email_notifier(key: str = "sendgrid") -> BaseNotifier:
-    return BrevoEmail(
-        api_key=os.getenv("BREVO_API_KEY"),
+def get_email_notifier(key: str = "msgraph") -> BaseNotifier:
+    return MicrosoftGraphEmail(
+        tenant_id=os.getenv("MS_TENANT_ID"),
+        client_id=os.getenv("MS_CLIENT_ID"),
+        client_secret=os.getenv("MS_CLIENT_SECRET"),
         from_email=os.getenv("DEFAULT_FROM_EMAIL"),
     )
 
