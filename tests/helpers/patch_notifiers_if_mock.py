@@ -7,7 +7,7 @@ def patch_notifiers_if_mock():
     """
     if os.getenv("MOCK_NOTIFIERS", "false").lower() == "true":
         patches = [
-            patch("notification_billing.adapters.notifiers.email.sendgrid.SendGridEmail.send", autospec=True),
+            patch("notification_billing.adapters.notifiers.email.microsoft_graph.MicrosoftGraphEmail.send", autospec=True),
             patch("notification_billing.adapters.notifiers.sms.assertiva.AssertivaSMS.send", autospec=True),
             patch("notification_billing.adapters.notifiers.whatsapp.debtapp.DebtAppWhatsapp.send", autospec=True),
         ]

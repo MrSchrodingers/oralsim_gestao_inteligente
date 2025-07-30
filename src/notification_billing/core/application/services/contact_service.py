@@ -56,7 +56,13 @@ class ContactSchedulingService:
             step = 1
             when = timezone.now()
         else:
-            # Se já houve contato, calcula o step proporcional ao atraso real.
+            # Já existe um agendamento pendente para este paciente?
+            if self.schedule_repo.has_pending_for_patient(patient_id):
+                # Se sim, não faz nada. O fluxo já está ativo e não deve ser interrompido.
+                # Este é o "pule" que mencionaste.
+                return None 
+
+            # Se não há pendentes, aí sim calcula o step proporcional para (re)iniciar o fluxo.
             step, when = self._calculate_proportional_step_and_date(inst)
 
         return self._upsert_schedule(

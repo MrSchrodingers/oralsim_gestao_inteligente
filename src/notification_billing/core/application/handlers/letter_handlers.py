@@ -7,9 +7,7 @@ from oralsin_core.core.domain.repositories.clinic_repository import ClinicReposi
 from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 
-from notification_billing.adapters.notifiers.email.brevo import BrevoEmail
-
-# from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
+from notification_billing.adapters.notifiers.email.microsoft_graph import MicrosoftGraphEmail
 from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
 from notification_billing.core.application.commands.letter_commands import SendPendingLettersCommand
 
@@ -151,7 +149,7 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
         self.clinic_repo = clinic_repo
         self.context_builder = context_builder
         self.letter_notifier = letter_notifier
-        self.email_sender: BrevoEmail = letter_notifier.email_notifier
+        self.email_sender: MicrosoftGraphEmail = letter_notifier.email_notifier
         self.command_bus = command_bus
 
     def handle(self, command: SendPendingLettersCommand) -> None:

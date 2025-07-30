@@ -37,7 +37,7 @@ class BaseTaskWithDLQ(Task):
 # TAREFAS DE SINCRONIZAÇÃO DE DADOS (SYNC)
 # -----------------------------------------------------------------------------
 
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=300, acks_late=True)
+@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=300, acks_late=True, queue='sync_process')
 def execute_resync_for_clinic(self, clinic_oralsin_id: str):
     """
     [Execução Granular] Executa a sincronização de inadimplência para UMA ÚNICA clínica.
@@ -48,22 +48,18 @@ def execute_resync_for_clinic(self, clinic_oralsin_id: str):
         final_date = today + timedelta(days=1)
         
         logger.info(f"Executando resync para clínica {clinic_oralsin_id} na janela de {initial_date} a {final_date}.")
-        
-        # CORREÇÃO: Chamamos um comando granular, não o 'resync_daily' que faz o loop.
-        # Assumindo que a lógica do SyncInadimplenciaCommand está em um comando chamado 'sync_inadimplencia'.
-        # Se o comando tiver outro nome, ajuste aqui.
+
         call_command(
-            'sync_inadimplencia',  # Comando hipotético que encapsula SyncInadimplenciaCommand
+            'sync_inadimplencia',
             '--oralsin-clinic-id', clinic_oralsin_id,
             '--data-inicio', initial_date.isoformat(),
-            '--data-fim', final_date.isoformat(),
-            '--resync'
+            '--data-fim', final_date.isoformat()
         )
     except Exception as exc:
         logger.error(f"Erro no resync da clínica {clinic_oralsin_id}: {exc}", exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task
+@shared_task(queue='sync_process')
 def schedule_daily_resync():
     """
     [Orquestração] Busca todas as clínicas ativas e dispara uma tarefa de resync para cada uma.
@@ -77,7 +73,7 @@ def schedule_daily_resync():
     logger.info(f"{len(list(active_clinics_ids))} tarefas de resync diário foram enfileiradas.")
 
 
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60, acks_late=True, queue='sync_process')
 def execute_sync_for_clinic(self, command_name: str, clinic_id: str):
     """
     [Execução Genérica] Executa um comando que requer --clinic-id para uma clínica.
@@ -89,7 +85,7 @@ def execute_sync_for_clinic(self, command_name: str, clinic_id: str):
         logger.error(f"Erro ao executar '{command_name}' para clinic_id {clinic_id}: {exc}", exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task
+@shared_task(queue='sync_process')
 def schedule_daily_syncs():
     """
     [Orquestração] Agenda a execução de múltiplos comandos de sincronização que iteram por clínica.
@@ -97,7 +93,7 @@ def schedule_daily_syncs():
     commands_to_run = ['sync_acordo_activities', 'sync_old_debts']
     logger.info(f"Agendando os seguintes comandos de sync para todas as clínicas: {commands_to_run}")
     
-    clinic_ids: QuerySet[str] = Clinic.objects.filter(is_active=True).values_list('id', flat=True)
+    clinic_ids: QuerySet[str] = Clinic.objects.values_list('oralsin_clinic_id', flat=True)
     
     for clinic_id in clinic_ids:
         for command in commands_to_run:
@@ -110,7 +106,7 @@ def schedule_daily_syncs():
 # TAREFAS DO PIPEDRIVE (DEALS)
 # -----------------------------------------------------------------------------
 
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60, acks_late=True)
+@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60, acks_late=True, queue='sync_process')
 def execute_pipedrive_command_for_case(self, command_name: str, collection_case_id: str):
     """
     [Execução Genérica] Executa um comando Pipedrive para um CollectionCase.
@@ -122,13 +118,13 @@ def execute_pipedrive_command_for_case(self, command_name: str, collection_case_
         logger.error(f"Erro ao executar '{command_name}' para collection_case_id {collection_case_id}: {exc}", exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task
+@shared_task(queue='sync_process')
 def schedule_pipedrive_updates():
     """
     [Orquestração] Busca todos os CollectionCase ativos e agenda tarefas de criação e atualização.
     """
     logger.info("Iniciando agendamento de criação/atualização de deals no Pipedrive.")
-    case_ids: QuerySet[str] = CollectionCase.objects.filter(is_active=True).values_list('id', flat=True)
+    case_ids: QuerySet[str] = CollectionCase.objects.values_list('id', flat=True)
     
     for case_id in case_ids:
         execute_pipedrive_command_for_case.delay('create_pipedrive_deal', str(case_id))
@@ -141,7 +137,7 @@ def schedule_pipedrive_updates():
 # TAREFAS DE NOTIFICAÇÃO E CARTAS
 # -----------------------------------------------------------------------------
 
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=2, default_retry_delay=180, acks_late=True)
+@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=2, default_retry_delay=180, acks_late=True, queue='sync_process')
 def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field: str = '--clinic-id'):
     """
     [Execução Genérica e Flexível] Executa um comando para uma clínica, permitindo especificar o nome do campo de ID.
@@ -153,7 +149,7 @@ def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field
         logger.error(f"Erro ao executar '{command_name}' para clínica {clinic_id}: {exc}", exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task
+@shared_task(queue='sync_process')
 def schedule_daily_notifications():
     """
     [Orquestração] Agenda a execução de notificações e envio de cartas para todas as clínicas.
@@ -182,7 +178,7 @@ def schedule_daily_notifications():
 # TAREFAS DE MANUTENÇÃO
 # -----------------------------------------------------------------------------
 
-@shared_task(base=BaseTaskWithDLQ, bind=True, acks_late=True)
+@shared_task(base=BaseTaskWithDLQ, bind=True, acks_late=True, queue='sync_process')
 def run_maintenance_command(self, command_name: str):
     """
     [Execução] Executa um comando de manutenção, como o 'ensure_schedules'.

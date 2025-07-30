@@ -1,17 +1,24 @@
 import os
 
 from celery import Celery
-from django.conf import settings
 
+# Define o módulo de configurações do Django para o Celery.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
+# Cria a instância do app Celery.
 app = Celery('cobranca_inteligente_api')
-app.config_from_object('django.conf:settings', namespace='CELERY', force=True)
 
-tasks_to_discover = list(settings.INSTALLED_APPS) 
-tasks_to_discover.append('oralsin_core.adapters.message_broker') 
-app.autodiscover_tasks(tasks_to_discover)
+# Carrega a configuração a partir do arquivo settings.py do Django.
+# O namespace 'CELERY' significa que todas as configurações do Celery devem
+# começar com CELERY_ (ex: CELERY_BROKER_URL).
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Isso instrui o Celery a inspecionar todos os apps em settings.INSTALLED_APPS
+# em busca de um arquivo chamado tasks.py, que é o padrão e a melhor prática.
+app.autodiscover_tasks()
+
 
 @app.task(bind=True)
 def debug_task(self):
+    """Uma tarefa de debug para verificar se o worker está funcionando."""
     print(f'Request: {self.request!r}')

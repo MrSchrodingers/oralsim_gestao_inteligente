@@ -134,6 +134,10 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
     def has_schedule_for_patient(self, patient_id: str) -> bool:
         """Verifica eficientemente se já existe QUALQUER agendamento para um paciente."""
         return Schedule.objects.filter(patient_id=patient_id).exists()
+    
+    def has_pending_for_patient(self, patient_id: str) -> bool:
+        """Verifica eficientemente se já existe QUALQUER agendamento com status PENDING para um paciente."""
+        return Schedule.objects.filter(patient_id=patient_id, status=Schedule.Status.PENDING).exists()
 
     # Método filter para compatibilidade com a interface
     def filter(self, **filtros) -> list[ContactScheduleEntity]:

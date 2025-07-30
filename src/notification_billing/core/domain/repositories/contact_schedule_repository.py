@@ -14,7 +14,12 @@ class ContactScheduleRepository(ABC):
         Retorna True se o paciente já teve algum contato agendado, False caso contrário.
         """
         ... 
-        
+    
+    @abstractmethod
+    def has_pending_for_patient(self, patient_id: str) -> bool:
+        """Verifica eficientemente se já existe QUALQUER agendamento com status PENDING para um paciente."""
+        ...
+           
     @abstractmethod
     def get_by_patient_contract(self, patient_id: str, contract_id: str) -> ContactScheduleEntity | None:
         """Recupera um agendamento pelo ID do paciente e do contrato."""

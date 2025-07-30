@@ -2,9 +2,7 @@ import base64
 from typing import Any
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
-from notification_billing.adapters.notifiers.email.brevo import BrevoEmail
-
-# from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
+from notification_billing.adapters.notifiers.email.microsoft_graph import MicrosoftGraphEmail
 from notification_billing.core.application.services.letter_service import CordialLetterService
 
 FIXED_RECIPIENT_EMAIL = "mrschrodingers@gmail.com"
@@ -15,7 +13,7 @@ class LetterNotifier(BaseNotifier):
     como um anexo de e-mail para um destinatário fixo.
     """
 
-    def __init__(self, template_path: str, email_notifier: BrevoEmail):
+    def __init__(self, template_path: str, email_notifier: MicrosoftGraphEmail):
         super().__init__("internal", "letter")
         self.letter_service = CordialLetterService(template_path)
         self.email_notifier = email_notifier

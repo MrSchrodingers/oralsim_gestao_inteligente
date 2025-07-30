@@ -7,8 +7,6 @@ from typing import Literal
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
 from notification_billing.adapters.notifiers.email.microsoft_graph import MicrosoftGraphEmail
-
-# from notification_billing.adapters.notifiers.email.sendgrid import SendGridEmail
 from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
 from notification_billing.adapters.notifiers.sms.assertiva import AssertivaSMS
 from notification_billing.adapters.notifiers.whatsapp.debtapp import DebtAppWhatsapp
@@ -51,9 +49,9 @@ def get_notifier(channel: Literal["sms", "email", "whatsapp", "letter"]) -> Base
     Retorna o provedor de notificação para o canal especificado.
 
     - 'sms' → AssertivaSMS
-    - 'email' → SendGridEmail
+    - 'email' → MS Graph
     - 'whatsapp' → DebtAppWhatsapp
-    - 'letter' → SendGridEmail (fixo)
+    - 'letter' → MS Graph (fixo)
     """
     if channel == "sms":
         return get_sms_notifier()

@@ -89,7 +89,7 @@ CELERY_BEAT_SCHEDULE = {
     'ensure-schedules-daily': {
         'task': 'cobranca_inteligente_api.tasks.run_maintenance_command',
         'schedule': crontab(minute=0, hour=2),
-        'args': ('ensure_schedules',), # Nome do novo management command
+        'args': ('ensure_schedules',),
     },
     # Inicia o resync diário de inadimplência para todas as clínicas às 3 da manhã.
     'schedule-daily-resync': {
