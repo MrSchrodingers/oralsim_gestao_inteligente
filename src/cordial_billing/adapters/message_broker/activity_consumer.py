@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 
 import structlog
@@ -12,20 +10,46 @@ from notification_billing.adapters.message_broker.rabbitmq import RabbitMQ, retr
 log = structlog.get_logger(__name__)
 api = OralsinAPIClient()
 
-_EXCHANGE = "oralsin.activities"
-_QUEUE = _EXCHANGE
-_ROUTING_KEY = "acordo_fechado"
+# --- 1. Definimos o exchange, a fila e AMBAS as chaves de roteamento ---
+EXCHANGE = "oralsin.activities"
+QUEUE_NAME = "oralsin.activities.processor" 
+ROUTING_KEY_ACORDO = "acordo_fechado"
+ROUTING_KEY_CONTATO = "contato_realizado"
 
+# --- 2. Configuramos o RabbitMQ ---
 rabbit = RabbitMQ(url=settings.RABBITMQ_URL)
+
+# Declara o exchange e a fila (garante que existam)
+rabbit.declare_exchange(EXCHANGE)
+rabbit.declare_queue(QUEUE_NAME)
+
+# --- 3. Vinculamos (bind) a MESMA fila às DUAS chaves de roteamento ---
+rabbit.bind_queue(QUEUE_NAME, EXCHANGE, ROUTING_KEY_ACORDO)
+rabbit.bind_queue(QUEUE_NAME, EXCHANGE, ROUTING_KEY_CONTATO)
+
+# --- 4. O consumidor ouve a fila, que agora recebe ambas as mensagens ---
 ch = rabbit.channel()
-ch.basic_qos(prefetch_count=50)   # tuning
+ch.basic_qos(prefetch_count=50)
+
+@retry_consume(queue=QUEUE_NAME)
+def on_message(ch, method, _props, body):
+    """
+    Esta função agora processará mensagens de AMBOS os tipos,
+    pois ambas são direcionadas para a mesma fila.
+    """
+    routing_key = method.routing_key
+    log.info("activity.received", routing_key=routing_key)
     
-@retry_consume(queue=_QUEUE)
-def _on_message(ch, method, _props, body):
     dto = OralsinContatoHistoricoEnvioDTO(**json.loads(body))
     api.post_contact_history(dto)
-    log.info("activity.sent_to_oralsin", activity_id=dto.idContrato or "sem-contrato")
+    
+    log.info(
+        "activity.sent_to_oralsin",
+        routing_key=routing_key,
+        paciente_id=dto.idPaciente,
+        contrato_id=dto.idContrato
+    )
 
-ch.basic_consume(_QUEUE, on_message_callback=_on_message)
-log.info("[*] Waiting for acordo_fechado activities…")
+ch.basic_consume(QUEUE_NAME, on_message_callback=on_message)
+log.info(f"[*] Waiting for activities on queue '{QUEUE_NAME}'...")
 ch.start_consuming()

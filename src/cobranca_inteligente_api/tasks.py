@@ -1,14 +1,18 @@
-# src/cobranca_inteligente_api/tasks.py
-
-import logging
-from datetime import date, timedelta
-
+import structlog
 from celery import Task, shared_task
-from django.core.management import call_command
-from django.db.models import QuerySet
+from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContatoHistoricoEnvioDTO
 
-# Ajuste o caminho de importação conforme a localização real dos seus modelos
-from plugins.django_interface.models import Clinic, CollectionCase
+log = structlog.get_logger(__name__)
+api = OralsinAPIClient()
+
+import logging  # noqa: E402
+from datetime import date, timedelta  # noqa: E402
+
+from django.core.management import call_command  # noqa: E402
+from django.db.models import QuerySet  # noqa: E402
+
+from plugins.django_interface.models import Clinic, CollectionCase  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -155,14 +159,14 @@ def schedule_daily_notifications():
     [Orquestração] Agenda a execução de notificações e envio de cartas para todas as clínicas.
     """
     logger.info("Agendando notificações e envio de cartas para todas as clínicas ativas.")
-    active_clinics: QuerySet[dict] = Clinic.objects.filter(is_active=True).values('id', 'oralsin_clinic_id')
+    active_clinics: QuerySet[dict] = Clinic.objects.values('id', 'oralsin_clinic_id')
 
     for clinic in active_clinics:
         # Tarefa de notificação usa oralsin_clinic_id
         execute_command_for_clinic.delay(
             'run_automated_notifications', 
             str(clinic['oralsin_clinic_id']), 
-            '--clinic-id' # O comando usa o UUID da clínica, não a PK interna
+            '--clinic-id'
         )
         # Tarefa de cartas usa a PK interna (id)
         execute_command_for_clinic.delay(
@@ -191,3 +195,25 @@ def run_maintenance_command(self, command_name: str):
         # Se falhar, é melhor investigar manualmente.
         logger.critical(f"Erro CRÍTICO ao executar o comando de manutenção '{command_name}': {exc}", exc_info=True)
         raise  # A falha será capturada pela BaseTaskWithDLQ e enviada para a DLQ.
+    
+    
+@shared_task(name="notification_billing.process_activity")
+def process_activity_task(payload: dict):
+    """
+    Tarefa Celery para processar uma atividade (contato_realizado ou acordo_fechado)
+    e enviá-la para a API da Oralsin.
+    """
+    try:
+        # O payload já vem como um dicionário do RabbitMQ
+        dto = OralsinContatoHistoricoEnvioDTO(**payload)
+        api.post_contact_history(dto)
+        
+        log.info(
+            "activity.sent_to_oralsin_via_celery",
+            paciente_id=dto.idPaciente,
+            contrato_id=dto.idContrato
+        )
+    except Exception as e:
+        log.error("celery_task.process_activity.failed", error=str(e), payload=payload)
+        # A tarefa pode ser configurada para tentar novamente em caso de falha
+        raise

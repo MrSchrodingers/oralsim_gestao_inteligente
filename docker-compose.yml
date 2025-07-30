@@ -133,7 +133,7 @@ services:
       celery -A cobranca_inteligente_api worker
       --loglevel=INFO
       --concurrency=4
-      --queues=email,sms,whatsapp,sync_notify,sync_process,payment_reminder,update_metrics
+      --queues=default,email,sms,whatsapp,sync_notify,sync_process,payment_reminder,sync_process,oralsin_activities_processor,sync_notify
     networks:
       - oralsin_network
 

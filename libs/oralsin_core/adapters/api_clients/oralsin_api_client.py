@@ -124,6 +124,6 @@ class OralsinAPIClient(BaseAPIClient):
         """Envia histórico de contato para a Oralsin."""
         self._post(
             "/relatorio/inadimplencia/contato",
-            json=payload.model_dump(by_alias=True, exclude_none=True),
+            json=payload.model_dump(mode='json', by_alias=True, exclude_none=True),
             response_model=None,
         )

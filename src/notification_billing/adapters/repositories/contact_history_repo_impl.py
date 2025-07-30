@@ -5,6 +5,8 @@ import structlog
 from django.db import transaction
 from oralsin_core.core.application.cqrs import PagedResult
 
+from cobranca_inteligente_api.tasks import process_activity_task
+from notification_billing.core.application.services.oralsin_payload_builder import build_oralsin_payload
 from notification_billing.core.domain.entities.contact_history_entity import ContactHistoryEntity
 from notification_billing.core.domain.entities.contact_schedule_entity import (
     ContactScheduleEntity,
@@ -99,10 +101,23 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
         model = ContactHistoryModel.objects.create(**base_kwargs)
         entity = ContactHistoryEntity.from_model(model)
 
-        event = ContactHistoryCreated(entity_id=entity.id)
-        transaction.on_commit(
-            lambda: self.dispatcher.dispatch(event)
-        )
+        if entity.success:
+            try:
+                dto = build_oralsin_payload(model)
+                payload_dict = dto.model_dump(mode='json', by_alias=True, exclude_none=True)
+                
+                process_activity_task.delay(payload=payload_dict)
+                
+                self.log.info("contact_history.task_enqueued", history_id=entity.id)
+            
+            except Exception as e:
+                self.log.error(
+                    "contact_history.task_enqueue_failed", 
+                    history_id=entity.id, 
+                    error=str(e),
+                    exc_info=True,
+                )
+        
         return entity
 
     # ------------------------------------------------------------------  find_by_id

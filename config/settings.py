@@ -60,17 +60,22 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ALWAYS_EAGER          = config('CELERY_TASK_ALWAYS_EAGER', default=False, cast=bool)
 CELERY_ACCEPT_CONTENT             = ["json"]
 CELERY_TASK_SERIALIZER            = "json"
-CELERY_TASK_QUEUES = {
-    "default":      {"exchange": "default",      "routing_key": "default"},
-    "dead_letter":  {"exchange": "dead_letter",  "routing_key": "dead_letter"},
-    "email":        {"exchange": "email",        "routing_key": "email"},
-    "sms":          {"exchange": "sms",          "routing_key": "sms"},
-    "whatsapp":     {"exchange": "whatsapp",     "routing_key": "whatsapp"},
-    "payment":      {"exchange": "payment",      "routing_key": "payment"},
-    "metrics":      {"exchange": "metrics",      "routing_key": "metrics"},
-    "sync_notify":  {"exchange": "sync_notify",  "routing_key": "sync_notify"},
-    "sync_process": {"exchange": "sync_process", "routing_key": "sync_process"},
-}
+oralsin_exchange = Exchange('oralsin.activities', type='direct')
+CELERY_TASK_QUEUES = (
+    Queue('default', exchange=Exchange('default'), routing_key='default'),
+    Queue('dead_letter', exchange=Exchange('dead_letter'), routing_key='dead_letter'),
+    Queue('email', exchange=Exchange('email'), routing_key='email'),
+    Queue('sms', exchange=Exchange('sms'), routing_key='sms'),
+    Queue('whatsapp', exchange=Exchange('whatsapp'), routing_key='whatsapp'),
+    Queue('payment_reminder', exchange=Exchange('payment'), routing_key='payment'),
+    Queue('update_metrics', exchange=Exchange('metrics'), routing_key='metrics'),
+    Queue('sync_notify', exchange=Exchange('sync_notify'), routing_key='sync_notify'),
+    Queue('sync_process', exchange=Exchange('sync_process'), routing_key='sync_process'),
+    Queue('oralsin_activities_processor', bindings=[
+        oralsin_exchange.binding(routing_key='contato_realizado'),
+        oralsin_exchange.binding(routing_key='acordo_fechado'),
+    ]),
+)
 CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_TASK_DEFAULT_EXCHANGE = 'default'
 CELERY_TASK_DEFAULT_ROUTING_KEY = 'default'
@@ -78,6 +83,7 @@ CELERY_TASK_ROUTES = {
                       "oralsin_core.adapters.message_broker.tasks.seed_data_task": {"queue": "sync_process"}, 
                       "oralsin_core.adapters.message_broker.tasks.post_seed_setup_task": {"queue": "sync_process"}, 
                       "oralsin_core.adapters.message_broker.tasks.run_sync_command_task": {"queue": "sync_process"}, 
+                      'notification_billing.tasks.process_activity': {'queue': 'oralsin_activities_processor'},
 }
 
 # --- AGENDADOR (CELERY BEAT) ---

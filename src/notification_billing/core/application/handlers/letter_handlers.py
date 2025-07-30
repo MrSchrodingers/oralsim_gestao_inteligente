@@ -25,6 +25,7 @@ from notification_billing.core.domain.repositories.flow_step_config_repository i
 from plugins.django_interface.models import ContactSchedule
 
 BATCH_LETTER_RECIPIENT = "mrschrodingers@gmail.com" 
+BATCH_SIZE = 50
 
 logger = structlog.get_logger(__name__)
 
@@ -164,7 +165,8 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
             return
 
         all_attachments = []
-        processed_schedules = []
+        schedules_by_attachment_name = {}
+        clinic_name = ""
 
         for schedule in pending_schedules:
             try:
@@ -179,16 +181,19 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
                 
                 patient_name = context.get("patient_name", "paciente").replace(" ", "_")
                 contract_id = context.get("contract_oralsin_id", "SN")
-                
                 clinic_name = self.clinic_repo.find_by_id(command.clinic_id).name
+                
+                attachment_name = f"Carta_{patient_name}_{contract_id}.docx"
+                
+                attachment = {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "contentBytes": encoded_file,
+                    "name": attachment_name,
+                }
+                
+                all_attachments.append(attachment)
+                schedules_by_attachment_name[attachment_name] = schedule
 
-                all_attachments.append({
-                    "content": encoded_file,
-                    "name": f"Carta_{patient_name}_{contract_id}.docx",
-                    "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    "disposition": "attachment"
-                })
-                processed_schedules.append(schedule)
             except Exception as e:
                 logger.error("letter_batch.generation.failed", schedule_id=schedule.id, error=str(e))
 
@@ -196,29 +201,58 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
             logger.warn("letter_batch.no_attachments_generated", clinic_id=command.clinic_id)
             return
 
-        try:
-            subject = f"Lote de Cartas para Impressão - Clínica {clinic_name} (Oralsin-DEBT)"
-            html_content = f"<p>Segue em anexo um lote de {len(all_attachments)} cartas para impressão.</p>"
+        total_letters = len(all_attachments)
+        
+        for i in range(0, total_letters, BATCH_SIZE):
+            attachment_batch = all_attachments[i:i + BATCH_SIZE]
             
-            self.email_sender.send(
-                recipients=[BATCH_LETTER_RECIPIENT],
-                subject=subject,
-                html=html_content,
-                attachments=all_attachments
+            processed_schedules_batch = [
+                schedules_by_attachment_name[att["name"]] for att in attachment_batch
+            ]
+            
+            batch_number = (i // BATCH_SIZE) + 1
+            total_batches = (total_letters + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            logger.info(
+                "letter_batch.sending_batch",
+                clinic_id=command.clinic_id,
+                batch_number=batch_number,
+                total_batches=total_batches,
+                batch_size=len(attachment_batch),
             )
-            logger.info("letter_batch.email.sent", count=len(all_attachments), recipient=BATCH_LETTER_RECIPIENT)
-
-            now = timezone.now()
-            for schedule in processed_schedules:
-                self.history_repo.save_from_schedule(
-                    schedule=schedule,
-                    success=True,
-                    channel="letter",
-                    sent_at=now,
-                    feedback=None,
-                    observation=f"Enviado em lote para {BATCH_LETTER_RECIPIENT}",
-                    message=None
+            
+            try:
+                subject = (
+                    f"Lote de Cartas ({batch_number}/{total_batches}) - "
+                    f"Clínica {clinic_name} (Oralsin-DEBT)"
+                )
+                html_content = (
+                    f"<p>Segue em anexo o lote {batch_number} de {total_batches}, "
+                    f"contendo {len(attachment_batch)} cartas para impressão.</p>"
                 )
                 
-        except Exception as e:
-            logger.error("letter_batch.email.failed", error=str(e))
+                self.email_sender.send(
+                    recipients=[BATCH_LETTER_RECIPIENT],
+                    subject=subject,
+                    html=html_content,
+                    attachments=attachment_batch
+                )
+                logger.info("letter_batch.email.sent", batch=batch_number, count=len(attachment_batch))
+
+                now = timezone.now()
+                for schedule in processed_schedules_batch:
+                    self.history_repo.save_from_schedule(
+                        schedule=schedule,
+                        success=True,
+                        channel="letter",
+                        sent_at=now,
+                        observation=f"Enviado no lote {batch_number}/{total_batches} para {BATCH_LETTER_RECIPIENT}",
+                    )
+            
+            except Exception as e:
+                logger.error(
+                    "letter_batch.email.failed",
+                    batch=batch_number,
+                    error=str(e),
+                    exc_info=True,
+                )

@@ -511,18 +511,15 @@ class RunAutomatedNotificationsHandler(
                         schedule.channel, schedule.current_step, schedule.clinic_id
                     )
 
-                    # Registra o histórico para cada tentativa, com seu resultado real.
-                    ContactHistory.objects.get_or_create(
-                        schedule_id=schedule.id,
-                        contact_type=schedule.channel,
-                        defaults=dict(
-                            patient_id=schedule.patient.id,
-                            contract_id=schedule.contract.id,
-                            clinic_id=schedule.clinic.id,
-                            message_id=msg.id if msg else None,
-                            sent_at=timezone.now(),
-                            success=success,
-                        ),
+                    observation = "automated send" if success else f"error sending via {schedule.channel}"
+                
+                    self.history_repo.save_from_schedule(
+                        schedule=schedule,
+                        sent_at=timezone.now(),
+                        success=success,
+                        channel=schedule.channel,
+                        observation=observation,
+                        message=msg
                     )
 
             if step_should_advance:
