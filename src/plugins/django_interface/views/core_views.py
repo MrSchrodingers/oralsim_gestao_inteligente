@@ -315,7 +315,11 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
             qs = qs.filter(collectioncase__isnull=False)
 
         # ────────── 2) página paginada pelo CQRS ────────────────────
-        filtros_for_query = {**filtros, **({"flow_type": flow_type} if flow_type else {})}
+        filtros_for_query = {
+            **filtros,
+            **({"flow_type": flow_type} if flow_type else {}),
+            **({"search": search} if search else {}),
+        }
         res = core_query_bus.dispatch(
             ListPatientsQuery(filtros=filtros_for_query, page=page, page_size=page_size)
         )

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import operator
+import re
 import uuid
+from functools import reduce
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Func, Q, Value
 from django.utils import timezone
 
 from oralsin_core.core.application.cqrs import PagedResult
@@ -160,11 +163,32 @@ class PatientRepoImpl(PatientRepository):
             qs = qs.filter(**filtros)
 
         if search:
-            qs = qs.filter(
-                Q(name__icontains=search)
-                | Q(cpf__icontains=search)
-                | Q(email__icontains=search)
-            )
+            cpf_digits = re.sub(r"\D", "", search)
+
+            # Constrói as condições dinamicamente
+            conds = [
+                Q(name__icontains=search),
+                Q(contact_name__icontains=search),
+                Q(email__icontains=search),
+            ]
+
+            # Se o termo contém ao menos 4 dígitos, assume que é busca por CPF
+            if len(cpf_digits) >= 4:  # noqa: PLR2004
+                qs = qs.annotate(
+                    cpf_clean=Func(
+                        Func(Func(F("cpf"), Value("."), Value(""), function="replace"),
+                            Value("-"), Value(""), function="replace"),
+                        Value("/"), Value(""), function="replace"),
+                )
+                conds += [
+                    Q(cpf__icontains=cpf_digits),
+                    Q(cpf_clean__icontains=cpf_digits),
+                ]
+            else:
+                # Busca textual genérica em CPF (ex.: “371.”)
+                conds.append(Q(cpf__icontains=search))
+
+            qs = qs.filter(reduce(operator.or_, conds))
 
         total = qs.count()
         offset = (page - 1) * page_size
