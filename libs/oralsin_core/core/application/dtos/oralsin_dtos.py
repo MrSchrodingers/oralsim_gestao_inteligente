@@ -185,6 +185,13 @@ class InadimplenciaQueryDTO(BaseModel):
     idClinica: int
     dataVencimentoInicio: date
     dataVencimentoFim: date
+    
+    def to_query_params(self) -> dict[str, str]:
+        return {
+            "idClinica": str(self.idClinica),
+            "dataVencimentoInicio": self.dataVencimentoInicio.isoformat(),
+            "dataVencimentoFim":    self.dataVencimentoFim.isoformat(),
+        }
 
 
 class ContratoDetalheQueryDTO(BaseModel):

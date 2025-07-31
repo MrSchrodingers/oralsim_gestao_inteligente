@@ -2,6 +2,7 @@ class NotificationError(Exception):
     """Classe base para todas as exceções de notificação."""
     pass
 
+
 class PermanentNotificationError(NotificationError):
     """
     Representa um erro permanente que não deve ser retentado.
@@ -9,6 +10,10 @@ class PermanentNotificationError(NotificationError):
     - 4xx: Destinatário inválido (e-mail não existe, telefone formatado incorretamente).
     - API Key inválida.
     """
+    pass
+
+class MissingContactInfoError(PermanentNotificationError):
+    """Exceção para casos onde o paciente não possui o contato necessário."""
     pass
 
 class TemporaryNotificationError(NotificationError):

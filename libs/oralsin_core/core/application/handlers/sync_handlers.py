@@ -71,7 +71,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         start_time = time.perf_counter()
 
         logger.info(f"[SYNC_START] Clínica: {cmd.oralsin_clinic_id}, Resync: {cmd.resync}")
-
+        logger.info(f"[CMD] - {cmd}")
         clinic = self.clinic_repo.get_or_create_by_oralsin_id(cmd.oralsin_clinic_id)
         dtos = self._fetch_dtos(cmd)
 
@@ -89,6 +89,10 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         )
 
     def _fetch_dtos(self, cmd: SyncInadimplenciaCommand) -> list[OralsinPacienteDTO]:
+        logger.info(
+            f"[SYNC_END] Clínica: {cmd.oralsin_clinic_id}. "
+            f"[QUERY]: idClinica: {cmd.oralsin_clinic_id}, dataVencimentoInicio: {cmd.data_inicio}, dataVencimentoFim: {cmd.data_fim}"
+        )
         query = InadimplenciaQueryDTO(
             idClinica=cmd.oralsin_clinic_id,
             dataVencimentoInicio=cmd.data_inicio,

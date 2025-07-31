@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -13,7 +13,6 @@ from oralsin_core.core.application.commands.coverage_commands import (
     LinkUserClinicCommand,
     RegisterCoverageClinicCommand,
 )
-from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import (
     CommandHandler,
     PaginatedQueryDTO,
@@ -127,16 +126,6 @@ class RegisterCoverageClinicHandler(
                 clinic_id=saved_covered.id,
                 oralsin_clinic_id=saved_covered.oralsin_clinic_id,
                 name=saved_covered.name,
-            )
-        )
-
-        # 6️⃣  dispara sync curto (somente hoje)
-        today = date.today()
-        self.bus.dispatch(
-            SyncInadimplenciaCommand(
-                oralsin_clinic_id=saved_covered.oralsin_clinic_id,
-                data_inicio=today,
-                data_fim=today,
             )
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -52,7 +53,7 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
         self.log = logger or get_logger(__name__)
 
     # ----------------------------------------------------------------- #
-    async def handle(self, cmd: SyncOldDebtsCommand) -> dict[str, int]:
+    async def handle(self, cmd: SyncOldDebtsCommand) -> dict[str, int]:  # noqa: PLR0912
         created, skipped = 0, 0
         start = time.perf_counter()
 
@@ -110,43 +111,59 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                     break
 
                 for inst in overdue_page.items:
-                    exists = await sync_to_async(self.case_repo.exists_for_installment)(inst.id)
-                    if exists:
+                    # Busca o caso existente em vez de apenas checar se existe
+                    case = await sync_to_async(self.case_repo.find_by_installment_id)(inst.id)
+
+                    # Se o caso já existe e JÁ TEM um deal_id, podemos pular
+                    if case and case.deal_id:
                         skipped += 1
                         CASES_SKIPPED.labels(cmd.clinic_id).inc()
                         continue
 
+                    # Busca o paciente e o deal (negócio)
                     patient_id = contract.patient_id
-                    if patient_id in processed_patients:
-                        skipped += 1
-                        continue
-
                     patient = await sync_to_async(self.patient_repo.find_by_id)(patient_id)
                     deal = None
                     if patient and patient.cpf:
                         deal = await self.deal_repo.find_by_cpf(patient.cpf)
                     
-                    case = CollectionCaseEntity(
-                        id=uuid4(),
-                        patient_id=patient_id,
-                        contract_id=inst.contract_id,
-                        installment_id=inst.id,
-                        clinic_id=contract.clinic_id,
-                        opened_at=timezone.now(),
-                        amount=Decimal(inst.installment_amount),
-                        stage_id=deal.stage_id if deal else None,
-                        deal_id=deal.id if deal else None,
-                        last_stage_id=None,
-                        deal_sync_status="pending", 
-                        status="open",
-                    )
+                    # Se NÃO encontrou um deal, não há o que atualizar/criar com deal_id.
+                    if not deal:
+                        # Se o caso nem existia, você pode querer criá-lo sem deal_id
+                        # ou simplesmente pular. Vou pular para manter simples.
+                        if not case:
+                            skipped += 1
+                        continue
 
-                    await sync_to_async(self.case_repo.save)(case)
-                    created += 1
-                    CASES_CREATED.labels(cmd.clinic_id).inc()
+                    # Se o caso não existia, cria uma nova entidade
+                    if not case:
+                        case = CollectionCaseEntity(
+                            id=uuid4(),
+                            patient_id=patient_id,
+                            contract_id=inst.contract_id,
+                            installment_id=inst.id,
+                            clinic_id=contract.clinic_id,
+                            opened_at=timezone.now(),
+                            amount=Decimal(inst.installment_amount),
+                            status="open",
+                            deal_sync_status="pending",
+                            deal_id=None, # Inicializa como None
+                            stage_id=None, # Inicializa como None
+                            last_stage_id=None, # Inicializa como None
+                        )
+                        created += 1
+                        CASES_CREATED.labels(cmd.clinic_id).inc()
+                    
+                    updated_case = replace(case, deal_id=deal.id, stage_id=deal.stage_id)
+                    
+                    # Salva a nova entidade atualizada no banco.
+                    await sync_to_async(self.case_repo.save)(updated_case)
+
+                    # Se foi uma criação, dispara o evento
+                    if created > 0: # Uma forma simples de checar se foi criado neste loop
+                        self.dispatcher.dispatch(DebtEscalatedEvent(case_id=case.id))
+
                     processed_patients.add(patient_id)
-
-                    self.dispatcher.dispatch(DebtEscalatedEvent(case_id=case.id))
 
                 page += 1
 

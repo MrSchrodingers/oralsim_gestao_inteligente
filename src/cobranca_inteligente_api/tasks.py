@@ -25,7 +25,7 @@ class BaseTaskWithDLQ(Task):
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         logger.critical(
             f"Task {self.name} [{task_id}] failed after retries. Sending to DLQ.",
-            extra={"args": args, "kwargs": kwargs, "error": str(exc)}
+            extra={"task_args": args, "kwargs": kwargs, "error": str(exc)}
         )
         self.app.send_task(
             self.name,

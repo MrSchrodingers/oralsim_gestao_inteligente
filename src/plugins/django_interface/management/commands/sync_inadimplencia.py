@@ -55,10 +55,11 @@ class Command(BaseCommand):
         clinic_id = options["oralsin_clinic_id"]
         is_resync = options["resync"]
         
-        # Define as datas padrão se não forem fornecidas
         today = date.today()
-        initial_date = options["data_inicio"] or (today - timedelta(days=1))
-        final_date = options["data_fim"] or (today + timedelta(days=1))
+        start = today - timedelta(days=200)
+        end   = today + timedelta(days=730)
+        initial_date = options["data_inicio"] or start
+        final_date = options["data_fim"] or end
 
         self.stdout.write(
             self.style.NOTICE(

@@ -10,6 +10,10 @@ from cordial_billing.core.domain.entities.collection_case_entity import (
 
 class CollectionCaseRepository(ABC):
     @abstractmethod
+    def find_by_installment_id(self, installment_id: str) -> CollectionCaseEntity | None:
+        ...
+        
+    @abstractmethod
     def find_by_id(self, collection_case_id: str) -> CollectionCaseEntity | None:
         ...
     @abstractmethod

@@ -57,7 +57,7 @@ def _run_seed_and_sync(*, clinic_name: str, owner_name: str, min_days_billing: i
                 "seed_data", clinic_name=clinic_name, owner_name=owner_name,
                 min_days_billing=min_days_billing, skip_admin=True,
                 skip_full_sync=False, clinic_email=email, clinic_pass=password,
-                force=True # Garante que o seed rode para esta clínica específica
+                force=True, resync=False
             )
             # Após o comando rodar com sucesso, buscamos o ID para as próximas etapas
             from plugins.django_interface.models import CoveredClinic

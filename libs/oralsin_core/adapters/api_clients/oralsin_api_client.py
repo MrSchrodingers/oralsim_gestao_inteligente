@@ -100,7 +100,7 @@ class OralsinAPIClient(BaseAPIClient):
     def get_inadimplencia(
         self, query: InadimplenciaQueryDTO
     ) -> Sequence[OralsinPacienteDTO]:
-        params = query.dict(by_alias=True, exclude_none=True)
+        params = query.to_query_params() 
         raw = self._get(
             "/relatorio/inadimplencia",
             params=params,

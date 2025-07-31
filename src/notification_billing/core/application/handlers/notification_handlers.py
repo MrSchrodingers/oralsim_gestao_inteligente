@@ -39,7 +39,12 @@ from notification_billing.core.domain.entities.contact_schedule_entity import (
     ContactScheduleEntity,
 )
 from notification_billing.core.domain.events.events import NotificationSentEvent
-from notification_billing.core.domain.events.exceptions import NotificationError, PermanentNotificationError, TemporaryNotificationError
+from notification_billing.core.domain.events.exceptions import (
+    MissingContactInfoError,
+    NotificationError,
+    PermanentNotificationError,
+    TemporaryNotificationError,
+)
 from notification_billing.core.domain.repositories import (
     ContactHistoryRepository,
     ContactScheduleRepository,
@@ -577,18 +582,27 @@ class RunAutomatedNotificationsHandler(
             
     def _send_through_notifier(self, schedule: ContactSchedule, channel: str) -> bool:
         """
-        Resolvido aqui para não depender de atributo privado de NotificationSenderService.
+        Valida e envia a notificação, tratando a ausência de contatos como um erro permanente.
         """
         inst = self.notification_service.installment_repo.get_current_installment(schedule.contract)
         if not inst:
             logger.error("send_notifier.precondition_failed", reason="current_installment_not_found", schedule_id=schedule.id, contract_id=schedule.contract_id)
             return False
+        
         patient = self.notification_service.patient_repo.find_by_id(str(schedule.patient.id))
         msg = self.message_repo.get_message(channel, schedule.current_step, schedule.clinic)
+        
         if not (patient and msg and inst):
             logger.error("send_notifier.precondition_failed", reason="patient_msg_or_inst_missing", schedule_id=schedule.id)
             return False
+
         try:
+            if channel == "email" and not patient.email:
+                raise MissingContactInfoError(f"Paciente {patient.id} não possui e-mail cadastrado.")
+            
+            if channel in ("sms", "whatsapp") and (not hasattr(patient, 'phones') or not patient.phones):
+                raise MissingContactInfoError(f"Paciente {patient.id} não possui telefones cadastrados.")
+
             self.notification_service.send(msg, patient, inst)
             logger.info(
                 "send_notifier.success",
@@ -598,13 +612,12 @@ class RunAutomatedNotificationsHandler(
                 msg_type=msg.type
             )
             return True
+        
         except PermanentNotificationError as e:
-            # ERRO GRAVE E PERMANENTE: Logamos como ERRO.
-            # A notificação é descartada (retorna False) e não será tentada novamente.
-            # O log detalhado é a prova para compliance de que o envio falhou por um motivo válido e imutável.
+            # ERRO GRAVE E PERMANENTE (incluindo MissingContactInfoError)
             logger.error(
                 "send_notifier.permanent_failure",
-                reason="O destinatário ou a requisição são inválidos. A notificação não será reenviada.",
+                reason="O destinatário, a requisição ou os dados de contato são inválidos.",
                 schedule_id=schedule.id,
                 patient_id=schedule.patient.id,
                 channel=channel,
@@ -614,9 +627,6 @@ class RunAutomatedNotificationsHandler(
             
         except TemporaryNotificationError as e:
             # ERRO TEMPORÁRIO: Logamos como AVISO.
-            # A notificação falhou, mas a causa pode ser resolvida (ex: servidor voltou ao ar).
-            # Por enquanto, retornamos False. No futuro, aqui entraria a lógica de retentativa.
-            # O log como 'warning' ajuda a monitorar a saúde dos serviços de terceiros.
             logger.warning(
                 "send_notifier.temporary_failure",
                 reason="O serviço do provedor falhou ou houve um erro de rede. Pode ser tentado novamente.",
@@ -629,7 +639,6 @@ class RunAutomatedNotificationsHandler(
 
         except Exception as _e:
             # ERRO INESPERADO: Logamos com 'exception' para capturar o traceback completo.
-            # Essencial para debugar problemas não previstos na programação.
             logger.exception(
                 "send_notifier.unhandled_error",
                 reason="Uma falha inesperada ocorreu no fluxo de envio.",

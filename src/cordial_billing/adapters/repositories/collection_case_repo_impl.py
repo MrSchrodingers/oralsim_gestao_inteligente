@@ -18,6 +18,13 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
     Persistência de `CollectionCase` via Django ORM, agora incluindo
     controle de deal_sync_status conforme deal_id.
     """
+    def find_by_installment_id(self, installment_id: str) -> CollectionCaseEntity | None:
+        try:
+            model = CaseModel.objects.get(installment_id=installment_id)
+            return CollectionCaseEntity.from_model(model)
+        except CaseModel.DoesNotExist:
+            return None
+        
     def find_by_id(self, collection_case_id: str) -> CollectionCaseEntity | None:
         try:
             m = CaseModel.objects.get(id=collection_case_id)
