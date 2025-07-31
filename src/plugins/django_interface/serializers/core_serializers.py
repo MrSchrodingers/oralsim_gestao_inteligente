@@ -290,6 +290,7 @@ class PendingSyncSerializer(serializers.Serializer):
 class CollectionCaseSerializer(serializers.Serializer):
     id               = serializers.UUIDField()
     patient_id       = serializers.UUIDField()
+    stage_id         = serializers.IntegerField(allow_null=True)
     contract_id      = serializers.UUIDField()
     installment_id   = serializers.UUIDField()
     clinic_id        = serializers.UUIDField()

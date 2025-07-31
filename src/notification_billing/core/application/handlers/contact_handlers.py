@@ -85,16 +85,15 @@ class ListDueContactsHandler(QueryHandler[ListDueContactsQuery, PagedResult[Any]
 
     def handle(self, query: ListDueContactsQuery) -> PagedResult[Any]:
         filtros = query.filtros or {}
-        clinic_id = filtros.get("clinic_id")
-        
-        # Lógica para obter a clínica a partir do contexto da requisição, se aplicável.
         req = get_current_request()
-        if not clinic_id and req and getattr(req.user, "role", None) == "clinic":
-            clinic_id = getattr(req.user, "clinic_id", None)
+        if "clinic_id" not in filtros and req and getattr(req.user, "role", None) == "clinic":
+            filtros["clinic_id"] = getattr(req.user, "clinic_id", None)
             
-        return self.repo.list_due(
-            clinic_id=clinic_id,
-            now=datetime.utcnow(),
-            offset=(query.page - 1) * query.page_size,
-            limit=query.page_size,
+        filtros["status"] = "pending"
+        filtros["scheduled_date__lte"] = datetime.utcnow()
+
+        return self.repo.list(
+            filtros=filtros,
+            page=query.page,
+            page_size=query.page_size,
         )
