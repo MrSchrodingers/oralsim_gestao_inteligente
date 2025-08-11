@@ -1,5 +1,3 @@
-import os
-
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -109,9 +107,3 @@ async def metrics(request):
 app = Starlette(routes=[
     Route("/metrics", metrics),
 ])
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("oralsin_core.adapters.observability.metrics:app",
-                host="0.0.0.0", port=int(os.getenv("APP_METRICS_PORT")))

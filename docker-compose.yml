@@ -90,13 +90,8 @@ services:
         condition: service_healthy
     expose:
       - "8000"
-      - "9108"
     ports:
       - "${APP_EXTERNAL_PORT:-8000}:8000"
-      - "${APP_METRICS_EXTERNAL_PORT:-9108}:9108"
-    labels:
-      - "prometheus.enable=true"
-      - "prometheus.port=9108"
     entrypoint: ./docker-entrypoint.sh
     networks:
       - oralsin_network
@@ -256,77 +251,9 @@ services:
     networks:
       - oralsin_network
   
-  # --------------------------------------------------------------------------
-  # Pushgateway (Prometheus)
-  # --------------------------------------------------------------------------
-  pushgateway:
-    image: prom/pushgateway:v1.8.0
-    container_name: oralsin_pushgateway
-    restart: unless-stopped
-    expose:
-      - "9091"
-    ports:
-      - "${PUSHGATEWAY_EXTERNAL_PORT:-9091}:9091"
-    networks:
-      - oralsin_network
-
-  # --------------------------------------------------------------------------
-  # Prometheus
-  # --------------------------------------------------------------------------
-  prometheus:
-    image: prom/prometheus:v2.53.0
-    container_name: oralsin_prometheus
-    restart: unless-stopped
-    volumes:
-      - ./bin/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    expose:
-      - "9095"
-    ports:
-      - "${PROMETHEUS_EXTERNAL_PORT:-9090}:9095"
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'
-    depends_on:
-      pushgateway:
-        condition: service_started
-      oralsin-celery-exporter:
-        condition: service_started
-      app:
-        condition: service_healthy
-    networks:
-      - oralsin_network
-
-  # --------------------------------------------------------------------------
-  # Grafana
-  # --------------------------------------------------------------------------
-  grafana:
-    image: grafana/grafana:10.4.3
-    container_name: oralsin_grafana
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
-      GF_SERVER_HTTP_PORT: 3000
-    expose:
-      - "3000"
-    ports:
-      - "${GRAFANA_EXTERNAL_PORT:-3000}:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning/:/etc/grafana/provisioning/
-    depends_on:
-      prometheus:
-        condition: service_started
-    networks:
-      - oralsin_network
-
 volumes:
   postgres_data:
   rabbitmq_data:
-  grafana_data:
-  pushgateway_data:
 
 networks:
   oralsin_network:

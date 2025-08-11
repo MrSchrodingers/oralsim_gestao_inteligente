@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -15,7 +14,6 @@ from oralsin_core.core.domain.repositories.installment_repository import Install
 from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 from structlog import get_logger
 
-from cordial_billing.adapters.observability.metrics import CASES_CREATED, CASES_SKIPPED, SYNC_DURATION
 from cordial_billing.core.application.commands.collect_commands import SyncOldDebtsCommand
 from cordial_billing.core.domain.entities.collection_case_entity import CollectionCaseEntity
 from cordial_billing.core.domain.events.events import DebtEscalatedEvent
@@ -55,7 +53,6 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
     # ----------------------------------------------------------------- #
     async def handle(self, cmd: SyncOldDebtsCommand) -> dict[str, int]:  # noqa: PLR0912
         created, skipped = 0, 0
-        start = time.perf_counter()
 
         # 0️⃣  Recupera configuração de min_days_overdue da clínica
         covered = await sync_to_async(
@@ -117,7 +114,6 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                     # Se o caso já existe e JÁ TEM um deal_id, podemos pular
                     if case and case.deal_id:
                         skipped += 1
-                        CASES_SKIPPED.labels(cmd.clinic_id).inc()
                         continue
 
                     # Busca o paciente e o deal (negócio)
@@ -152,7 +148,6 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                             last_stage_id=None, # Inicializa como None
                         )
                         created += 1
-                        CASES_CREATED.labels(cmd.clinic_id).inc()
                     
                     updated_case = replace(case, deal_id=deal.id, stage_id=deal.stage_id)
                     
@@ -173,5 +168,4 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
             created=created,
             skipped=skipped,
         )
-        SYNC_DURATION.labels(cmd.clinic_id).observe(time.perf_counter() - start)
         return {"created": created, "skipped": skipped}

@@ -68,7 +68,6 @@ CELERY_TASK_QUEUES = (
     Queue('sms', exchange=Exchange('sms'), routing_key='sms'),
     Queue('whatsapp', exchange=Exchange('whatsapp'), routing_key='whatsapp'),
     Queue('payment_reminder', exchange=Exchange('payment'), routing_key='payment'),
-    Queue('update_metrics', exchange=Exchange('metrics'), routing_key='metrics'),
     Queue('sync_notify', exchange=Exchange('sync_notify'), routing_key='sync_notify'),
     Queue('sync_process', exchange=Exchange('sync_process'), routing_key='sync_process'),
     Queue('oralsin_activities_processor', bindings=[

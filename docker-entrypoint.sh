@@ -56,9 +56,5 @@ echo "🚀 Coletando arquivos estáticos…"
 python manage.py collectstatic --no-input
 
 # 6) Iniciar Uvicorn (métricas) em background e, em seguida, Daphne (API)
-echo "🚀 Iniciando Uvicorn para métricas na porta 9108…"
-uvicorn oralsin_core.adapters.observability.metrics:app \
-    --host 0.0.0.0 --port 9108 &
-
 echo "🚀 Iniciando Daphne para a API na porta 8000…"
 daphne -b 0.0.0.0 -p 8000 cobranca_inteligente_api.asgi:application

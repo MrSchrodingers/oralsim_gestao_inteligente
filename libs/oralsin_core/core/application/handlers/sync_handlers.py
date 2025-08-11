@@ -8,11 +8,6 @@ from django.db import transaction
 from django.utils import timezone
 
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
-from oralsin_core.adapters.observability.metrics import (
-    SYNC_DURATION,
-    SYNC_PATIENTS,
-    SYNC_RUNS,
-)
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import CommandHandler
 from oralsin_core.core.application.dtos.oralsin_dtos import (
@@ -67,7 +62,6 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
 
     @transaction.atomic
     def handle(self, cmd: SyncInadimplenciaCommand) -> None:
-        SYNC_RUNS.labels(str(cmd.oralsin_clinic_id)).inc()
         start_time = time.perf_counter()
 
         logger.info(f"[SYNC_START] Clínica: {cmd.oralsin_clinic_id}, Resync: {cmd.resync}")
@@ -82,7 +76,6 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         processed, errors = self._persist_all(dtos, clinic.id, cmd.resync)
 
         elapsed = time.perf_counter() - start_time
-        SYNC_DURATION.labels(str(cmd.oralsin_clinic_id)).observe(elapsed)
         logger.info(
             f"[SYNC_END] Clínica: {cmd.oralsin_clinic_id}. "
             f"Processados: {processed}, Falhas: {errors}, Duração: {elapsed:.2f}s"
@@ -117,7 +110,6 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
                 # 3. Persiste Parcelas e define a 'is_current'
                 self._persist_and_set_current_installment(dto, contract_entity.id)
                 
-                SYNC_PATIENTS.labels(str(clinic_id)).inc()
                 ok_count += 1
             except Exception as e:
                 error_count += 1

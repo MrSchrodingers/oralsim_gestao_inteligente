@@ -1,4 +1,3 @@
-import time
 from typing import Any
 
 import structlog
@@ -17,10 +16,6 @@ from requests.exceptions import HTTPError
 
 from notification_billing.adapters.message_broker.rabbitmq import publish
 from notification_billing.adapters.notifiers.registry import get_notifier
-from notification_billing.adapters.observability.metrics import (
-    NOTIFICATION_FLOW_COUNT,
-    NOTIFICATION_FLOW_DURATION,
-)
 from notification_billing.core.application.commands.contact_commands import (
     AdvanceContactStepCommand,
 )
@@ -172,8 +167,6 @@ class SendManualNotificationHandler(
     # ------------------------------------------------------------------ #
     @publish(exchange="notifications", routing_key="manual")
     def handle(self, cmd: SendManualNotificationCommand) -> dict[str, Any]:
-        start = time.perf_counter()
-        success = True
         try:
             sched = self.schedule_repo.get_by_patient_contract(
                 cmd.patient_id, cmd.contract_id
@@ -242,13 +235,8 @@ class SendManualNotificationHandler(
                 and sent_hist.sent_at.isoformat(),
             }
         except Exception:
-            success = False
+            _success = False
             raise
-        finally:
-            NOTIFICATION_FLOW_COUNT.labels("manual", str(success)).inc()
-            NOTIFICATION_FLOW_DURATION.labels("manual").observe(
-                time.perf_counter() - start
-            )
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -540,8 +528,6 @@ class RunAutomatedNotificationsHandler(
     def handle(
         self, cmd: RunAutomatedNotificationsCommand
     ) -> dict[str, Any]:
-        start = time.perf_counter()
-        success = True
         try:
             _now = timezone.now()
             processed = 0
@@ -572,13 +558,9 @@ class RunAutomatedNotificationsHandler(
             }
 
         except Exception:
-            success = False
+            _success = False
             raise
-        finally:
-            NOTIFICATION_FLOW_COUNT.labels("automated", str(success)).inc()
-            NOTIFICATION_FLOW_DURATION.labels("automated").observe(
-                time.perf_counter() - start
-            )
+
             
     def _send_through_notifier(self, schedule: ContactSchedule, channel: str) -> bool:
         """

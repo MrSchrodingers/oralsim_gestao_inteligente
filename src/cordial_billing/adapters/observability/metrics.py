@@ -1,5 +1,3 @@
-import os
-
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -8,9 +6,7 @@ from prometheus_client import (
     generate_latest,
     multiprocess,
 )
-from starlette.applications import Starlette
 from starlette.responses import Response
-from starlette.routing import Route
 
 registry = CollectorRegistry()
 multiprocess.MultiProcessCollector(registry)
@@ -40,14 +36,3 @@ CASES_SKIPPED = Counter(
 def metrics(request):
     data = generate_latest(registry)
     return Response(data, media_type=CONTENT_TYPE_LATEST)
-
-app = Starlette(routes=[Route("/metrics", metrics)])
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "cordial_billing.adapters.observability.metrics:app",
-        host="0.0.0.0",
-        port=int(os.getenv("APP_METRICS_PORT")),
-    )
