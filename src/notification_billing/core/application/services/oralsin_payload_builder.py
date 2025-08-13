@@ -25,12 +25,12 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
     # --- 1. Acesse os dados pré-carregados para evitar novas consultas ---
     # Estes acessos agora são praticamente instantâneos e não tocam no banco.
     patient = history.patient
-    clinic = history.clinic
+    # clinic = history.clinic
     contract = history.contract
     schedule = history.schedule
     
     # --- 2. Extraia informações dos objetos relacionados de forma segura ---
-    message_desc = history.message.content if history.message else "Sem mensagem registrada"
+    # message_desc = history.message.content if history.message else "Sem mensagem registrada"
     
     # Acessa a parcela através do agendamento (schedule)
     installment = schedule.installment if schedule else None

@@ -79,14 +79,14 @@ class OralsinContatoHistoricoDTO(BaseModel):
     descricao: str | None = None
 
 class OralsinContatoHistoricoEnvioDTO(BaseModel):
-    idClinica: int
+    # idClinica: int
     idPaciente: int
     idContrato: int | None = None
     dataHoraInseriu: datetime
     observacao: str | None = None
-    contatoTipo: str | None = None
+    # contatoTipo: str | None = None
     idContatoTipo: int | None = None
-    descricao: str | None = None
+    # descricao: str | None = None
     id_status_contato: int = Field(alias="idStatusContato", default=1) # 1 = Contato bem sucedido
     data_hora_retornar: datetime | None = Field(alias="dataHoraRetornar", default=None)
     versao_contrato: str | None = Field(alias="versaoContrato", default=None)
