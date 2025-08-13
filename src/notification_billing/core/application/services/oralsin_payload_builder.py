@@ -37,13 +37,13 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
     
     # --- 3. Construa o DTO com os dados extraídos ---
     return OralsinContatoHistoricoEnvioDTO(
-        idClinica=clinic.oralsin_clinic_id,
+        # idClinica=clinic.oralsin_clinic_id,
         idPaciente=patient.oralsin_patient_id,
         idContrato=getattr(contract, "oralsin_contract_id", None),
         dataHoraInseriu=history.sent_at or timezone.now(),
         observacao=history.observation or "",
-        contatoTipo=_CONTACT_TYPE_DESC.get(history.contact_type, history.contact_type),
-        descricao=message_desc,
+        # contatoTipo=_CONTACT_TYPE_DESC.get(history.contact_type, history.contact_type),
+        # descricao=message_desc,
         idStatusContato=1,
         
         # A data de retorno vem diretamente do agendamento ligado ao histórico
