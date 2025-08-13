@@ -51,7 +51,7 @@ class AssertivaSMS(BaseNotifier):
             f"{self._base_url}/sms/v3/send",
             json=payload,
             headers={
-                "Authorization": f"Bearer {token}",
+                "Authorization": f"Basic {token}",
                 "Content-Type": "application/json",
             },
         )
