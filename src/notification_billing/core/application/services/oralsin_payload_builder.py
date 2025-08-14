@@ -28,6 +28,7 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
     # clinic = history.clinic
     contract = history.contract
     schedule = history.schedule
+    observacao_descritiva = f"Mensagem enviada por {_CONTACT_TYPE_DESC.get(history.contact_type, history.contact_type)}"
     
     # --- 2. Extraia informações dos objetos relacionados de forma segura ---
     # message_desc = history.message.content if history.message else "Sem mensagem registrada"
@@ -41,7 +42,7 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
         idPaciente=patient.oralsin_patient_id,
         idContrato=getattr(contract, "oralsin_contract_id", None),
         dataHoraInseriu=history.sent_at or timezone.now(),
-        observacao=history.observation or "",
+        observacao=observacao_descritiva or "",
         # contatoTipo=_CONTACT_TYPE_DESC.get(history.contact_type, history.contact_type),
         # descricao=message_desc,
         idStatusContato=1,
