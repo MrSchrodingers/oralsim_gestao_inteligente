@@ -54,7 +54,7 @@ class BulkScheduleContactsHandler(CommandHandler[BulkScheduleContactsCommand]):
         )
 
         for contract in contracts:
-            if not getattr(contract, "do_billing", False):
+            if not contract.do_notifications:
                 total_ignored += 1
                 continue
 
