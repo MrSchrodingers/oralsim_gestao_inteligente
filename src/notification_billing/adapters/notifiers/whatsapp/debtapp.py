@@ -57,7 +57,7 @@ class DebtAppWhatsapp(BaseNotifier):
         payload = {
             "number": number,
             "options": options or self._DEFAULT_OPTIONS,
-            "textMessage": {"text": text},
+            "text": text,
         }
 
         self._request(
