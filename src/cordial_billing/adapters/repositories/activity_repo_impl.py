@@ -13,7 +13,7 @@ from cordial_billing.core.domain.repositories.activity_repository import Activit
 _SQL_ACORDO = """
 SELECT *
   FROM atividades
- WHERE type = 'call'
+ WHERE type = 'acordo_fechado'
    AND id > CAST(:after AS BIGINT)
  ORDER BY id ASC
  LIMIT :limit

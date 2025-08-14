@@ -7,7 +7,7 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 
 import structlog
@@ -28,8 +28,8 @@ class AssertivaSMS(BaseNotifier):
 
     - Enquanto o IP estiver bloqueado, opera em modo OFFLINE:
       * send(): APENAS ACUMULA as linhas (não envia API, não manda e-mail).
-      * flush_offline_buffer(): gera UM XLSX com TODOS os registros acumulados
-        e envia UM ÚNICO E-MAIL via provider de Carta.
+      * flush_offline_buffer(): divide em LOTES se necessário, gerando 1..N XLSX
+        e enviando 1..M e-mails via provider de Carta, respeitando limites.
 
     - Quando voltar ao modo online, reative a chamada da API na função send().
 
@@ -47,6 +47,16 @@ class AssertivaSMS(BaseNotifier):
     _OFFLINE_LOCK = threading.Lock()
     _OFFLINE_BUFFER: list[tuple[str, str, str]] = []  # (timestamp_iso, phone, message)
     _OFFLINE_REPORTER: Callable[[str, str, list[dict]], None] | None = None
+
+    # ---------- Limites configuráveis (com defaults seguros) ----------
+    # Tamanho alvo por ARQUIVO (bytes). Padrão 8 MiB ~ bem abaixo de 25 MiB com folga.
+    _FILE_MAX_BYTES = int(os.getenv("SMS_OFFLINE_FILE_MAX_BYTES", str(8 * 1024 * 1024)))
+    # Máximo de LINHAS por arquivo (limite lógico para dividir trabalhos grandes)
+    _FILE_MAX_ROWS = int(os.getenv("SMS_OFFLINE_FILE_MAX_ROWS", "10000"))
+
+    # Limites por E-MAIL
+    _EMAIL_MAX_ATTACH = int(os.getenv("SMS_OFFLINE_EMAIL_MAX_ATTACH", "5"))
+    _EMAIL_MAX_BYTES = int(os.getenv("SMS_OFFLINE_EMAIL_MAX_BYTES", str(20 * 1024 * 1024)))  # 20 MiB
 
     def __init__(
         self,
@@ -110,13 +120,20 @@ class AssertivaSMS(BaseNotifier):
         # logger.info("sms.sent", provider=self.provider, total=len(phones))
 
     # ──────────────────────────────────────────────────────────
-    # Flush único (gera XLSX e envia 1 e-mail)
+    # Flush (gera 1..N XLSX e envia 1..M e-mails em lotes)
     # ──────────────────────────────────────────────────────────
     @classmethod
     def flush_offline_buffer(cls, subject_prefix: str = "[SMS OFFLINE]") -> tuple[int, str | None]:
         """
-        Gera UM XLSX com TODO o buffer acumulado e envia UM e-mail via reporter.
-        Retorna (total_linhas, caminho_arquivo_temporario_ou_None).
+        Divide em lotes automaticamente:
+        - fatia as linhas em múltiplos ARQUIVOS respeitando:
+            * FILE_MAX_ROWS
+            * FILE_MAX_BYTES
+        - agrupa os anexos em 1..N E-MAILS respeitando:
+            * EMAIL_MAX_ATTACH
+            * EMAIL_MAX_BYTES (tamanho total dos anexos do e-mail)
+
+        Retorna (total_linhas, caminho_de_um_tempfile_qualquer_ou_None).
 
         Se o buffer estiver vazio, não envia nada e retorna (0, None).
         """
@@ -131,55 +148,23 @@ class AssertivaSMS(BaseNotifier):
             logger.info("sms.offline_buffer_empty")
             return 0, None
 
-        # monta XLSX
-        ts = datetime.now(UTC)
-        ts_str = ts.strftime("%Y-%m-%d_%H-%M-%S_UTC")
+        total = len(rows)
+        ts_master = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S_UTC")
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "sms_pendentes"
-        ws.append(["timestamp_utc", "phone", "message"])
-        for (t, phone, msg) in rows:
-            ws.append([t, phone, msg])
+        # 1) Criar anexos (1..K arquivos) dentro dos limites por ARQUIVO
+        files: list[tuple[str, bytes, int]] = cls._chunk_rows_into_files(rows, ts_master)
 
-        # grava em arquivo temporário (mantemos uma cópia em disco p/ auditoria)
-        with tempfile.NamedTemporaryFile(prefix="sms_offline_", suffix=".xlsx", delete=False) as tmp:
-            tmp_path = tmp.name
-            wb.save(tmp_path)
+        # 2) Enviar 1..M e-mails agrupando anexos por limites por E-MAIL
+        sent_emails, sample_path = cls._send_files_in_batched_emails(files, subject_prefix, ts_master, total)
 
-        # gera bytes para anexo (Graph usa base64)
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        xlsx_b64 = base64.b64encode(buf.read()).decode("ascii")
-
-        attach = [{
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": f"sms_offline_{ts_str}.xlsx",
-            "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "contentBytes": xlsx_b64,
-        }]
-
-        subject = f"{subject_prefix} {len(rows)} mensagens pendentes — {ts_str}"
-        html = (
-            f"<p>Relatório único de SMS offline gerado em {ts_str}.</p>"
-            f"<p>Total de mensagens: <b>{len(rows)}</b></p>"
-            "<p>Arquivo em anexo com colunas: <code>timestamp_utc, phone, message</code>.</p>"
-            "<p>Motivo: bloqueio de IP no provedor Assertiva. Executar envio manual local.</p>"
+        logger.info(
+            "sms.offline_report_sent_batched",
+            total_rows=total,
+            total_files=len(files),
+            emails_sent=sent_emails,
+            sample_path=sample_path,
         )
-
-        reporter = cls._OFFLINE_REPORTER
-        if not reporter:
-            logger.error("sms.offline_reporter_missing")
-            return len(rows), tmp_path
-
-        try:
-            reporter(subject, html, attach)
-            logger.info("sms.offline_report_sent", total=len(rows), path=tmp_path)
-        except Exception as e:  # pragma: no cover
-            logger.error("sms.offline_report_failed", err=str(e), path=tmp_path)
-            # arquivo fica no disco para resgate manual
-        return len(rows), tmp_path
+        return total, sample_path
 
     # ──────────────────────────────────────────────────────────
     # (mantido para o futuro modo online)
@@ -210,3 +195,182 @@ class AssertivaSMS(BaseNotifier):
             self._token_exp = time.time() + max(30, exp - 10)
             logger.info("assertiva.token_refreshed", expires_in=exp)
             return self._token
+
+    # ──────────────────────────────────────────────────────────
+    # Helpers de loteamento
+    # ──────────────────────────────────────────────────────────
+    @classmethod
+    def _chunk_rows_into_files(cls, rows: list[tuple[str, str, str]], ts_master: str) -> list[tuple[str, bytes, int]]:
+        """
+        Converte as linhas em vários arquivos XLSX, cada qual obedecendo:
+          - no máx. _FILE_MAX_ROWS linhas
+          - no máx. _FILE_MAX_BYTES bytes
+
+        Retorna lista de tuplas: (file_name, file_bytes, row_count)
+        """
+        files: list[tuple[str, bytes, int]] = []
+
+        # fatia bruta por limite de linhas; refinamos por tamanho
+        for i in range(0, len(rows), cls._FILE_MAX_ROWS):
+            chunk = rows[i : i + cls._FILE_MAX_ROWS]
+            # agora garantimos que o tamanho em bytes não estoura
+            chunks_fit = cls._split_chunk_by_size(chunk, ts_master)
+            files.extend(chunks_fit)
+
+        return files
+
+    @classmethod
+    def _split_chunk_by_size(cls, chunk: list[tuple[str, str, str]], ts_master: str) -> list[tuple[str, bytes, int]]:
+        """
+        Recebe um chunk (limitado por linhas) e, se o XLSX ficar maior que _FILE_MAX_BYTES,
+        divide recursivamente até todos os arquivos caberem no limite.
+        """
+        result: list[tuple[str, bytes, int]] = []
+        # Tenta criar um arquivo com o chunk inteiro
+        fn, fb, rc = cls._build_xlsx_bytes(chunk, ts_master, index=len(result) + 1)
+        if len(fb) <= cls._FILE_MAX_BYTES:
+            result.append((fn, fb, rc))
+            return result
+
+        # Se excedeu, divide em dois sub-chunks e trata recursivamente (estratégia de divisão e conquista)
+        mid = max(1, len(chunk) // 2)
+        left = chunk[:mid]
+        right = chunk[mid:]
+
+        # left
+        result.extend(cls._split_chunk_by_size(left, ts_master))
+        # right
+        result.extend(cls._split_chunk_by_size(right, ts_master))
+
+        return result
+
+    @staticmethod
+    def _write_rows_to_ws(ws, rows: Iterable[tuple[str, str, str]]) -> int:
+        ws.title = "sms_pendentes"
+        ws.append(["timestamp_utc", "phone", "message"])
+        count = 0
+        for (t, phone, msg) in rows:
+            ws.append([t, phone, msg])
+            count += 1
+        return count
+
+    @classmethod
+    def _build_xlsx_bytes(cls, rows: list[tuple[str, str, str]], ts_master: str, index: int) -> tuple[str, bytes, int]:
+        """
+        Constrói um XLSX em memória e retorna (nome_arquivo, bytes, quantidade_de_linhas).
+        """
+        wb = Workbook()
+        ws = wb.active
+        count = cls._write_rows_to_ws(ws, rows)
+
+        # grava em arquivo temporário (ficará para auditoria)
+        with tempfile.NamedTemporaryFile(prefix=f"sms_offline_{ts_master}_", suffix=".xlsx", delete=False) as tmp:
+            tmp_path = tmp.name
+            wb.save(tmp_path)
+
+        # bytes para e-mail (Graph usa base64)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        file_bytes = buf.read()
+
+        file_name = os.path.basename(tmp_path)
+        logger.debug("sms.offline_file_built", file=file_name, rows=count, bytes=len(file_bytes), path=tmp_path)
+        # Retornamos somente o nome (sem o caminho) para o anexo; o path fica logado
+        return file_name, file_bytes, count
+
+    @classmethod
+    def _send_files_in_batched_emails(
+        cls,
+        files: list[tuple[str, bytes, int]],
+        subject_prefix: str,
+        ts_master: str,
+        total_rows: int,
+    ) -> tuple[int, str | None]:
+        """
+        Agrupa anexos em e-mails respeitando:
+          - _EMAIL_MAX_ATTACH anexos por e-mail
+          - _EMAIL_MAX_BYTES bytes somados dos anexos por e-mail
+
+        Retorna (emails_enviados, sample_path_or_None)
+        """
+        reporter = cls._OFFLINE_REPORTER
+        if not reporter:
+            logger.error("sms.offline_reporter_missing")
+            return 0, None
+
+        emails_sent = 0
+        batch_attachments: list[dict] = []
+        batch_bytes = 0
+        batch_rows = 0
+        email_idx = 1
+        sample_path = None
+
+        def flush_email_batch():
+            nonlocal emails_sent, batch_attachments, batch_bytes, batch_rows, email_idx, sample_path
+            if not batch_attachments:
+                return
+            subject = f"{subject_prefix} {total_rows} mensagens pendentes — {ts_master} (lote {email_idx})"
+            html = (
+                f"<p>Relatório de SMS offline (lote <b>{email_idx}</b>) gerado em {ts_master}.</p>"
+                f"<p>Total deste e-mail: <b>{batch_rows}</b> linhas, <b>{len(batch_attachments)}</b> anexo(s).</p>"
+                f"<p>Total do ciclo: <b>{total_rows}</b> linhas.</p>"
+                "<p>Colunas: <code>timestamp_utc, phone, message</code>.</p>"
+            )
+            try:
+                reporter(subject, html, batch_attachments)
+                emails_sent += 1
+                logger.info(
+                    "sms.offline_email_batch_sent",
+                    email_index=email_idx,
+                    attachments=len(batch_attachments),
+                    batch_bytes=batch_bytes,
+                    batch_rows=batch_rows,
+                )
+                if sample_path is None:
+                    # Não temos o path aqui (ficou só no log de build), retornamos None; mantemos por compat.
+                    sample_path = None
+            except Exception as e:  # pragma: no cover
+                logger.error("sms.offline_email_batch_failed", email_index=email_idx, err=str(e))
+            finally:
+                email_idx += 1
+                batch_attachments = []
+                batch_bytes = 0
+                batch_rows = 0
+
+        for (fname, fbytes, frows) in files:
+            # Se o arquivo sozinho já excede o limite de e-mail (raro, mas possível se limites forem baixos),
+            # mandamos um e-mail só com ele.
+            one_attach = cls._to_graph_attachment(fname, fbytes)
+            one_size = len(fbytes)
+
+            over_attach_count = len(batch_attachments) + 1 > cls._EMAIL_MAX_ATTACH
+            over_bytes = (batch_bytes + one_size) > cls._EMAIL_MAX_BYTES
+
+            if batch_attachments and (over_attach_count or over_bytes):
+                flush_email_batch()
+
+            batch_attachments.append(one_attach)
+            batch_bytes += one_size
+            batch_rows += frows
+
+            # Se já atingiu exatamente o limite, já dispara e começa outro
+            if len(batch_attachments) >= cls._EMAIL_MAX_ATTACH or batch_bytes >= cls._EMAIL_MAX_BYTES:
+                flush_email_batch()
+
+        # Envia o que restou
+        flush_email_batch()
+
+        return emails_sent, sample_path
+
+    @staticmethod
+    def _to_graph_attachment(file_name: str, file_bytes: bytes) -> dict:
+        """
+        Converte bytes em anexo Microsoft Graph (base64).
+        """
+        return {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": file_name,
+            "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "contentBytes": base64.b64encode(file_bytes).decode("ascii"),
+        }

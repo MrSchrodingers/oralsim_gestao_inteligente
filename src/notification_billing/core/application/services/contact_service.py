@@ -59,7 +59,6 @@ class ContactSchedulingService:
             # Já existe um agendamento pendente para este paciente?
             if self.schedule_repo.has_pending_for_patient(patient_id):
                 # Se sim, não faz nada. O fluxo já está ativo e não deve ser interrompido.
-                # Este é o "pule" que mencionaste.
                 return None 
 
             # Se não há pendentes, aí sim calcula o step proporcional para (re)iniciar o fluxo.
