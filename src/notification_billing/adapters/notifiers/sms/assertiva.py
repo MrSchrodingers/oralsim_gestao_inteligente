@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import threading
 import time
 
@@ -21,13 +22,6 @@ class AssertivaSMS(BaseNotifier):
 
     def __init__(self, auth_token: str, base_url: str):
         super().__init__("assertiva", "sms")
-        logger.info(
-            "assertiva.init_debug", 
-            auth_token_received=auth_token,
-            auth_token_type=str(type(auth_token)),
-            is_auth_token_present=bool(auth_token and auth_token.strip())
-        )
-
         self._basic_auth    = auth_token
         self._base_url      = base_url.rstrip("/")
 
@@ -74,12 +68,15 @@ class AssertivaSMS(BaseNotifier):
         with AssertivaSMS._TOKEN_LOCK:
             if self._token and now < self._token_exp:          # race-check
                 return self._token
+            auth_bytes = self._basic_auth.encode("utf-8")
+            base64_auth = base64.b64encode(auth_bytes).decode("utf-8")
+            
             response = self._request(
                 "POST",
                 f"{self._base_url}/oauth2/v3/token",
                 data="grant_type=client_credentials",
                 headers={
-                    "Authorization": f"Basic {self._basic_auth}",
+                    "Authorization": f"Basic {base64_auth}",
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
             )
