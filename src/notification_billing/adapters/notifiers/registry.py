@@ -7,16 +7,28 @@ from typing import Literal
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
 from notification_billing.adapters.notifiers.email.microsoft_graph import MicrosoftGraphEmail
-from notification_billing.adapters.notifiers.letter.letter_notifier import LetterNotifier
+from notification_billing.adapters.notifiers.letter.letter_notifier import FIXED_RECIPIENT_EMAIL, LetterNotifier
 from notification_billing.adapters.notifiers.sms.assertiva import AssertivaSMS
 from notification_billing.adapters.notifiers.whatsapp.debtapp import DebtAppWhatsapp
 
 
 @lru_cache
 def get_sms_notifier(key: str = "assertiva") -> BaseNotifier:
+    letter = get_letter_notifier()
+
+    def _report_via_letter(subject: str, html: str, attachments: list[dict]) -> None:
+        letter.email_notifier.send(
+            recipients=[FIXED_RECIPIENT_EMAIL],
+            subject=subject,
+            html=html,
+            attachments=attachments,
+        )
+
     return AssertivaSMS(
         auth_token=os.getenv("ASSERTIVA_AUTH_TOKEN"),
-        base_url=os.getenv("ASSERTIVA_BASE_URL")
+        base_url=os.getenv("ASSERTIVA_BASE_URL"),
+        offline_reporter=_report_via_letter,
+        force_offline=True,
     )
 
 
