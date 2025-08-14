@@ -1,3 +1,4 @@
+# adapters/notifiers/sms/assertiva.py
 from __future__ import annotations
 
 import base64
@@ -6,7 +7,7 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import structlog
@@ -17,7 +18,7 @@ logger = structlog.get_logger()
 
 try:
     from openpyxl import Workbook
-except Exception as _e:
+except Exception as _e:  # pragma: no cover
     Workbook = None
 
 
@@ -25,20 +26,27 @@ class AssertivaSMS(BaseNotifier):
     """
     Assertiva SMS
 
-    - Em produção normal: usa OAuth2 client_credentials e envia via API.
-    - Modo offline (default enquanto há bloqueio de IP): registra o lote,
-      gera XLSX temporário e envia por e-mail usando o provider de Carta.
+    - Enquanto o IP estiver bloqueado, opera em modo OFFLINE:
+      * send(): APENAS ACUMULA as linhas (não envia API, não manda e-mail).
+      * flush_offline_buffer(): gera UM XLSX com TODOS os registros acumulados
+        e envia UM ÚNICO E-MAIL via provider de Carta.
+
+    - Quando voltar ao modo online, reative a chamada da API na função send().
 
     Parâmetros:
-    - auth_token: base64(client_id:client_secret) (quando online)
+    - auth_token: base64(client_id:client_secret) (para modo online futuro)
     - base_url: URL base da Assertiva
     - offline_reporter: callable(subject, html, attachments) -> None
-      (attachments no formato Microsoft Graph fileAttachment)
-    - force_offline: se True, SEMPRE usa a rota XLSX+email (ignora API)
-      (ou defina env SMS_OFFLINE_MODE=1)
+        (attachments no formato Microsoft Graph fileAttachment)
+    - force_offline: força o modo offline. Default: True neste período.
     """
 
     _TOKEN_LOCK = threading.Lock()
+
+    # ---- Buffer global (process-wide) para acumular registros offline ----
+    _OFFLINE_LOCK = threading.Lock()
+    _OFFLINE_BUFFER: list[tuple[str, str, str]] = []  # (timestamp_iso, phone, message)
+    _OFFLINE_REPORTER: Callable[[str, str, list[dict]], None] | None = None
 
     def __init__(
         self,
@@ -49,131 +57,141 @@ class AssertivaSMS(BaseNotifier):
     ):
         super().__init__("assertiva", "sms")
 
-        # offline mode por env ou parâmetro explícito
-        env_offline = os.getenv("SMS_OFFLINE_MODE", "").strip() in {"1", "true", "yes"}
-        self._offline_only = bool(force_offline if force_offline is not None else env_offline or True)  # <- TRUE por enquanto
+        env_offline = os.getenv("SMS_OFFLINE_MODE", "").strip().lower() in {"1", "true", "yes"}
+        # Enquanto o VPN não está ativo, deixamos True
+        self._offline_only = bool(force_offline if force_offline is not None else (env_offline or True))
 
         self._basic_auth = (auth_token or "").strip()
         self._base_url = (base_url or "").rstrip("/")
         self._token: str | None = None
         self._token_exp: float = 0.0
 
-        if not offline_reporter:
-            # não geramos ciclo de import: o factory injeta isso
-            raise ValueError("offline_reporter não fornecido (use o provider de Carta via factory)")
-
-        self._offline_reporter = offline_reporter
+        if offline_reporter is None:
+            raise ValueError("offline_reporter não fornecido (injete via factory usando o provider de Carta)")
+        # guarda o reporter em nível de classe (flush é classmethod)
+        AssertivaSMS._OFFLINE_REPORTER = offline_reporter
 
         if self._offline_only:
-            logger.warning("assertiva.offline_mode_enabled", reason="IP block / VPN pending")
+            logger.warning("assertiva.offline_mode_enabled", reason="IP block / usando relatório XLSX único")
 
     # ──────────────────────────────────────────────────────────
     # Interface pública
     # ──────────────────────────────────────────────────────────
     def send(self, phones: list[str], message: str) -> None:
+        """
+        MODO OFFLINE: acumula registros no buffer global.
+        (Cada phone vira uma linha separada no XLSX final.)
+        """
         if not phones:
             return
 
-        # Enquanto o IP está bloqueado, forçamos o fluxo offline.
         if self._offline_only:
-            self._send_offline(phones, message)
+            ts = datetime.now(UTC).isoformat()
+            with AssertivaSMS._OFFLINE_LOCK:
+                for p in phones:
+                    AssertivaSMS._OFFLINE_BUFFER.append((ts, p, message))
+            logger.info("sms.offline_buffer_append", added=len(phones), total=len(AssertivaSMS._OFFLINE_BUFFER))
             return
 
-        # try:
-        #     token = self._ensure_token()
-        #     payload = {
-        #         "can_receive_status": False,
-        #         "can_receive_answer": False,
-        #         "route_type": 1,
-        #         "arraySms": [{"number": p, "message": message, "filter_value": "GestaoRecebiveis"} for p in phones],
-        #     }
-        #     self._request(
-        #         "POST",
-        #         f"{self._base_url}/sms/v3/send",
-        #         json=payload,
-        #         headers={
-        #             "Authorization": f"Bearer {token}",
-        #             "Accept": "application/json",
-        #         },
-        #     )
-        #     logger.info("sms.sent", provider=self.provider, total=len(phones))
-        # except Exception as e:
-        #     logger.error("assertiva.api_failed_falling_back_offline", err=str(e))
-        #     self._send_offline(phones, message)
-
-        # Como o modo offline está ativo por padrão, chegaremos aqui apenas se você reativar o trecho acima.
+        # ====== (modo online — comentado por enquanto) ======
+        # token = self._ensure_token()
+        # payload = {
+        #     "can_receive_status": False,
+        #     "can_receive_answer": False,
+        #     "route_type": 1,
+        #     "arraySms": [{"number": p, "message": message, "filter_value": "GestaoRecebiveis"} for p in phones],
+        # }
+        # self._request(
+        #     "POST",
+        #     f"{self._base_url}/sms/v3/send",
+        #     json=payload,
+        #     headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        # )
+        # logger.info("sms.sent", provider=self.provider, total=len(phones))
 
     # ──────────────────────────────────────────────────────────
-    # Helpers — OFFLINE
+    # Flush único (gera XLSX e envia 1 e-mail)
     # ──────────────────────────────────────────────────────────
-    def _send_offline(self, phones: Iterable[str], message: str) -> None:
+    @classmethod
+    def flush_offline_buffer(cls, subject_prefix: str = "[SMS OFFLINE]") -> tuple[int, str | None]:
         """
-        Gera um XLSX temporário com as linhas (timestamp_utc, phone, message)
-        e envia por e-mail usando o provider de Carta (via offline_reporter).
+        Gera UM XLSX com TODO o buffer acumulado e envia UM e-mail via reporter.
+        Retorna (total_linhas, caminho_arquivo_temporario_ou_None).
+
+        Se o buffer estiver vazio, não envia nada e retorna (0, None).
         """
         if Workbook is None:
-            raise RuntimeError(
-                "openpyxl não está instalado. Instale com: pip install openpyxl"
-            )
+            raise RuntimeError("openpyxl não instalado. Instale: pip install openpyxl")
 
+        with cls._OFFLINE_LOCK:
+            rows = list(cls._OFFLINE_BUFFER)
+            cls._OFFLINE_BUFFER.clear()
+
+        if not rows:
+            logger.info("sms.offline_buffer_empty")
+            return 0, None
+
+        # monta XLSX
         ts = datetime.now(UTC)
         ts_str = ts.strftime("%Y-%m-%d_%H-%M-%S_UTC")
-        rows = [(ts.isoformat(), p, message) for p in phones]
 
-        # cria workbook em memória
         wb = Workbook()
         ws = wb.active
         ws.title = "sms_pendentes"
         ws.append(["timestamp_utc", "phone", "message"])
-        for r in rows:
-            ws.append(list(r))
+        for (t, phone, msg) in rows:
+            ws.append([t, phone, msg])
 
-        # escreve XLSX num arquivo temporário (também preservamos em bytes)
+        # grava em arquivo temporário (mantemos uma cópia em disco p/ auditoria)
         with tempfile.NamedTemporaryFile(prefix="sms_offline_", suffix=".xlsx", delete=False) as tmp:
             tmp_path = tmp.name
             wb.save(tmp_path)
 
+        # gera bytes para anexo (Graph usa base64)
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
-        xlsx_bytes = buf.read()
-        xlsx_b64 = base64.b64encode(xlsx_bytes).decode("ascii")
+        xlsx_b64 = base64.b64encode(buf.read()).decode("ascii")
 
-        attachment = {
+        attach = [{
             "@odata.type": "#microsoft.graph.fileAttachment",
             "name": f"sms_offline_{ts_str}.xlsx",
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "contentBytes": xlsx_b64,
-        }
+        }]
 
-        subject = f"[SMS OFFLINE] {len(rows)} mensagens pendentes — {ts_str}"
+        subject = f"{subject_prefix} {len(rows)} mensagens pendentes — {ts_str}"
         html = (
-            f"<p>Gerado automaticamente em {ts_str}.</p>"
+            f"<p>Relatório único de SMS offline gerado em {ts_str}.</p>"
             f"<p>Total de mensagens: <b>{len(rows)}</b></p>"
-            "<p>Arquivo em anexo contendo colunas: <code>timestamp_utc, phone, message</code>.</p>"
-            "<p>Motivo: bloqueio de IP no provedor Assertiva. Enviar manualmente pelo canal local.</p>"
+            "<p>Arquivo em anexo com colunas: <code>timestamp_utc, phone, message</code>.</p>"
+            "<p>Motivo: bloqueio de IP no provedor Assertiva. Executar envio manual local.</p>"
         )
 
+        reporter = cls._OFFLINE_REPORTER
+        if not reporter:
+            logger.error("sms.offline_reporter_missing")
+            return len(rows), tmp_path
+
         try:
-            self._offline_reporter(subject, html, [attachment])
+            reporter(subject, html, attach)
             logger.info("sms.offline_report_sent", total=len(rows), path=tmp_path)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             logger.error("sms.offline_report_failed", err=str(e), path=tmp_path)
-            # mesmo se o envio falhar, mantemos o arquivo temporário no disco para resgate manual
+            # arquivo fica no disco para resgate manual
+        return len(rows), tmp_path
 
     # ──────────────────────────────────────────────────────────
-    # Helpers — ONLINE (mantidos para quando reativar)
+    # (mantido para o futuro modo online)
     # ──────────────────────────────────────────────────────────
     def _ensure_token(self) -> str:
         now = time.time()
         if self._token and now < self._token_exp:
             return self._token
-
         with AssertivaSMS._TOKEN_LOCK:
             if self._token and now < self._token_exp:
                 return self._token
-
-            response = self._request(
+            resp = self._request(
                 "POST",
                 f"{self._base_url}/oauth2/v3/token",
                 data={"grant_type": "client_credentials"},
@@ -183,14 +201,12 @@ class AssertivaSMS(BaseNotifier):
                     "Accept": "application/json",
                 },
             )
-
-            data = response.json()
-            access_token = data.get("access_token")
-            expires_in = int(data.get("expires_in", 3600))
-            if not access_token:
+            data = resp.json()
+            tok = data.get("access_token")
+            exp = int(data.get("expires_in", 3600))
+            if not tok:
                 raise RuntimeError(f"Token inválido. Resposta: {data}")
-
-            self._token = access_token
-            self._token_exp = time.time() + max(30, expires_in - 10)
-            logger.info("assertiva.token_refreshed", expires_in=expires_in)
+            self._token = tok
+            self._token_exp = time.time() + max(30, exp - 10)
+            logger.info("assertiva.token_refreshed", expires_in=exp)
             return self._token
