@@ -21,6 +21,12 @@ class AssertivaSMS(BaseNotifier):
 
     def __init__(self, auth_token: str, base_url: str):
         super().__init__("assertiva", "sms")
+        logger.info(
+            "assertiva.init_debug", 
+            auth_token_received=auth_token,
+            auth_token_type=str(type(auth_token)),
+            is_auth_token_present=bool(auth_token and auth_token.strip())
+        )
 
         self._basic_auth    = auth_token
         self._base_url      = base_url.rstrip("/")
