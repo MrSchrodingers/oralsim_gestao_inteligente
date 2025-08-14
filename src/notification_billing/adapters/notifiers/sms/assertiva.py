@@ -5,7 +5,6 @@ import threading
 import time
 
 import structlog
-
 from notification_billing.adapters.notifiers.base import BaseNotifier
 
 logger = structlog.get_logger()
@@ -14,17 +13,20 @@ class AssertivaSMS(BaseNotifier):
     """
     Adapter para o serviço Assertiva SMS.
     * Refresh de token OAuth2 (client-credentials) é thread-safe.
-    * Timeout padrão e retry exponencial herdados de BaseNotifier.
+    * Timeout e retry herdados de BaseNotifier.
     """
 
     _TOKEN_LOCK = threading.Lock()
 
     def __init__(self, auth_token: str, base_url: str):
         super().__init__("assertiva", "sms")
-        self._basic_auth = auth_token
-        self._base_url = base_url.rstrip("/")
-        self._host = self._base_url.replace("https://", "")
+        if not auth_token:
+            raise ValueError("ASSERTIVA_AUTH_TOKEN não definido")
+        if not base_url:
+            raise ValueError("ASSERTIVA_BASE_URL não definido")
 
+        self._basic_auth = auth_token.strip()  # base64(client_id:client_secret)
+        self._base_url = base_url.rstrip("/")
         self._token: str | None = None
         self._token_exp: float = 0.0
 
@@ -45,21 +47,16 @@ class AssertivaSMS(BaseNotifier):
                 for p in phones
             ],
         }
-        
-        # 1. Converte o payload para uma string JSON e depois para bytes para calcular o tamanho
-        payload_str = json.dumps(payload)
-        payload_bytes = payload_str.encode('utf-8')
-        
+
+        # Envia como JSON (deixe httpx serializar e calcular o Content-Length)
         self._request(
             "POST",
             f"{self._base_url}/sms/v3/send",
-            # 2. Usa o parâmetro 'content' para enviar os dados brutos
-            content=payload_bytes,
+            json=payload,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
-                "Host": self._host,
-                "Content-Length": str(len(payload_bytes)),
+                "Accept": "application/json",
             },
         )
         logger.info("sms.sent", provider=self.provider, total=len(phones))
@@ -76,24 +73,28 @@ class AssertivaSMS(BaseNotifier):
             if self._token and now < self._token_exp:  # race-check
                 return self._token
 
-            # 1. Prepara os dados e cabeçalhos manualmente
-            data_to_send = "grant_type=client_credentials"
-            data_bytes = data_to_send.encode('utf-8')
-
+            # Usa x-www-form-urlencoded com auth Basic CORRETO
             response = self._request(
                 "POST",
                 f"{self._base_url}/oauth2/v3/token",
-                # 2. Usa o parâmetro 'content'
-                content=data_bytes,
+                data={"grant_type": "client_credentials"},
                 headers={
-                    "Authorization": f"Basic {self._token}",
+                    "Authorization": f"Basic {self._basic_auth}",
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "Host": self._host,
-                    "Content-Length": str(len(data_bytes)),
+                    "Accept": "application/json",
                 },
             )
+
+            # Se houver 4xx/5xx, BaseNotifier._request deve levantar; logue o corpo para diagnóstico
             data = response.json()
-            self._token = data["access_token"]
-            self._token_exp = time.time() + data.get("expires_in", 3600) - 10
-            logger.info("assertiva.token_refreshed")
+
+            access_token = data.get("access_token")
+            expires_in = int(data.get("expires_in", 3600))
+            if not access_token:
+                raise RuntimeError(f"Token inválido. Resposta: {data}")
+
+            # Guarda com pequena folga
+            self._token = access_token
+            self._token_exp = time.time() + max(30, expires_in - 10)
+            logger.info("assertiva.token_refreshed", expires_in=expires_in)
             return self._token
