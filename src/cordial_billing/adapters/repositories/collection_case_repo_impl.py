@@ -77,7 +77,6 @@ class CollectionCaseRepoImpl(CollectionCaseRepository):
         )
 
         # 4) devolve a entidade refletindo o registro salvo
-        # ✨ CORREÇÃO APLICADA AQUI ✨
         return CollectionCaseEntity(
             id=model.id,
             patient_id=model.patient_id,

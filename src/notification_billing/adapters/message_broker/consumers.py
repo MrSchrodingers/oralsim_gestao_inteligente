@@ -8,7 +8,7 @@ from notification_billing.core.application.services.notification_service import 
 def start_consuming():
     setup_di_container_from_settings(settings)
     
-    from notification_billing.adapters.config.composition_root import container
+    from notification_billing.adapters.config.composition_root import container  # noqa: PLC0415
     rabbit: RabbitMQ = container.rabbit()
     notification_service: NotificationFacadeService = container.notification_service()
 
