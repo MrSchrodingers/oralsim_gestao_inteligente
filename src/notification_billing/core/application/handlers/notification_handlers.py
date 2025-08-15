@@ -1,3 +1,4 @@
+import atexit
 from typing import Any
 
 import structlog
@@ -16,6 +17,7 @@ from requests.exceptions import HTTPError
 
 from notification_billing.adapters.message_broker.rabbitmq import publish
 from notification_billing.adapters.notifiers.registry import get_notifier
+from notification_billing.adapters.notifiers.sms.assertiva import AssertivaSMS
 from notification_billing.core.application.commands.contact_commands import (
     AdvanceContactStepCommand,
 )
@@ -95,12 +97,6 @@ class NotificationSenderService:
         cfg = FlowStepConfig.objects.get(step_number=schedule.current_step)
         return [c for c in cfg.channels if c not in ("letter", "pending_call")]
 
-    def _send_channel(self, schedule: ContactSchedule, channel: str) -> bool:
-        """Envia mensagem e devolve True/False (sucesso)."""
-        try:
-            return self._dispatcher.send(schedule, channel)
-        except Exception:
-            return False
     # ------------------------------------------------------------------ #
     def send(self, msg, patient, inst) -> None:
         content = self._render_content(msg, patient, inst)
@@ -548,14 +544,24 @@ class RunAutomatedNotificationsHandler(
                     results.append(result)
                 processed += 1
 
-            if processed == 0:
-                return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
 
-            return {
+            
+            payload = {
                 "clinic_id": cmd.clinic_id,
                 "processed": processed,
                 "results": results,
             }
+
+            try:
+                total, sample = AssertivaSMS.flush_offline_buffer(f"[SMS OFFLINE][RUN][clinic={cmd.clinic_id}]")
+                logger.info("sms.offline_flush_forced", total=total, sample_path=sample)
+            except Exception:
+                logger.exception("sms.offline_flush_failed")
+
+            if processed == 0:
+                return {"clinic_id": cmd.clinic_id, "processed": 0, "results": results}
+            
+            return payload
 
         except Exception:
             _success = False
@@ -629,3 +635,11 @@ class RunAutomatedNotificationsHandler(
                 channel=channel,
             )
             return False
+        
+def _flush_sms_offline_on_exit():
+    try:
+        AssertivaSMS.flush_offline_buffer("[SMS OFFLINE][EXIT]")
+    except Exception:
+        logger.exception("sms.offline_exit_flush_failed")
+
+atexit.register(_flush_sms_offline_on_exit)

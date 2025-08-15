@@ -1,4 +1,3 @@
-# adapters/notifiers/sms/assertiva.py
 from __future__ import annotations
 
 import base64
