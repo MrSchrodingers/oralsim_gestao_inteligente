@@ -53,20 +53,19 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
     # ----------------------------------------------------------------- #
     async def handle(self, cmd: SyncOldDebtsCommand) -> dict[str, int]:  # noqa: PLR0912
         created, skipped = 0, 0
+        skipped_no_deal_and_created_case = 0  
+        skipped_existing_case_with_deal = 0   
+        skipped_existing_case_without_deal = 0  
 
-        # 0️⃣  Recupera configuração de min_days_overdue da clínica
-        covered = await sync_to_async(
-            self.covered_clinic_repo.find_by_api_id
-        )(cmd.clinic_id)
+        covered = await sync_to_async(self.covered_clinic_repo.find_by_api_id)(cmd.clinic_id)
         if not covered:
             raise ValueError(f"Oralsin clinic {cmd.clinic_id} não mapeada em CoveredClinic")
         clinic_uuid = covered.clinic_id
-        
+
         settings = await sync_to_async(self.billing_settings_repo.get)(clinic_uuid)
         min_days = settings.min_days_overdue
         self.log.info("using_billing_settings", clinic_id=cmd.clinic_id, min_days_overdue=min_days)
 
-        # 1️⃣  pega todos os contratos da clínica
         contracts = await sync_to_async(self.contract_repo.list_by_clinic)(clinic_uuid)
 
         self.log.info(
@@ -82,56 +81,43 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
             if not contract.do_billings:
                 continue
 
-            effective_min_days = min_days
             page = 0
             while True:
-                # 2️⃣ busca parcelas vencidas usando min_days da configuração
-                overdue_page: PagedResult[Any] = await sync_to_async(
-                    self.installment_repo.list_current_overdue
-                )(
+                overdue_page: PagedResult[Any] = await sync_to_async(self.installment_repo.list_current_overdue)(
                     contract_id=contract.id,
-                    min_days_overdue=effective_min_days,
+                    min_days_overdue=min_days,
                     offset=page * 1000,
                     limit=1000,
                 )
-
                 if not overdue_page.items:
-                    break
-                    
-                if not contract.do_billings:
-                    self.log.info(
-                        "Permissão para cobrança negada:",
-                        contract_id=contract.id,
-                        contract_do_billings=contract.do_billings,
-                        contract_patient_id=contract.patient_id,
-                    )
                     break
 
                 for inst in overdue_page.items:
-                    # Busca o caso existente em vez de apenas checar se existe
-                    case = await sync_to_async(self.case_repo.find_by_installment_id)(inst.id)
+                    patient_id = contract.patient_id
 
-                    # Se o caso já existe e JÁ TEM um deal_id, podemos pular
-                    if case and case.deal_id:
-                        skipped += 1
+                    # 🔒 permitir apenas 1 case por paciente por execução:
+                    if patient_id in processed_patients:
                         continue
 
-                    # Busca o paciente e o deal (negócio)
-                    patient_id = contract.patient_id
+                    # Tenta localizar um case existente
+                    case = await sync_to_async(self.case_repo.find_by_installment_id)(inst.id)
+
+                    # Se já existe e já tem deal, ignore
+                    if case and case.deal_id:
+                        skipped += 1
+                        skipped_existing_case_with_deal += 1
+                        continue
+
+                    # Busca paciente e deal por CPF
                     patient = await sync_to_async(self.patient_repo.find_by_id)(patient_id)
                     deal = None
                     if patient and patient.cpf:
+                        # Normalizar CPF no repositório de deal é responsabilidade do repo
                         deal = await self.deal_repo.find_by_cpf(patient.cpf)
-                    
-                    # Se NÃO encontrou um deal, não há o que atualizar/criar com deal_id.
-                    if not deal:
-                        # Se o caso nem existia, você pode querer criá-lo sem deal_id
-                        # ou simplesmente pular. Vou pular para manter simples.
-                        if not case:
-                            skipped += 1
-                        continue
 
-                    # Se o caso não existia, cria uma nova entidade
+                    created_now = False
+
+                    # Se o case não existe ainda, crie-o (mesmo sem deal)
                     if not case:
                         case = CollectionCaseEntity(
                             id=uuid4(),
@@ -143,19 +129,30 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
                             amount=Decimal(inst.installment_amount),
                             status="open",
                             deal_sync_status="pending",
-                            deal_id=None, # Inicializa como None
-                            stage_id=None, # Inicializa como None
-                            last_stage_id=None, # Inicializa como None
+                            deal_id=None,
+                            stage_id=None,
+                            last_stage_id=None,
                         )
                         created += 1
-                    
-                    updated_case = replace(case, deal_id=deal.id, stage_id=deal.stage_id)
-                    
-                    # Salva a nova entidade atualizada no banco.
-                    await sync_to_async(self.case_repo.save)(updated_case)
+                        created_now = True
 
-                    # Se foi uma criação, dispara o evento
-                    if created > 0: # Uma forma simples de checar se foi criado neste loop
+                    # Se achou deal, vincule
+                    if deal:
+                        case = replace(case, deal_id=deal.id, stage_id=getattr(deal, "stage_id", None))
+                        
+                    # Não achou deal: mantém deal_id=None, apenas registra diagnóstico
+                    elif not created_now:
+                        # já existia o case e segue sem deal
+                        skipped_existing_case_without_deal += 1
+                    else:
+                        # criado agora, sem deal ainda
+                        skipped_no_deal_and_created_case += 1
+
+                    # Persiste (tanto criação quanto atualização)
+                    await sync_to_async(self.case_repo.save)(case)
+
+                    # Dispara evento somente para criação naquela iteração
+                    if created_now:
                         self.dispatcher.dispatch(DebtEscalatedEvent(case_id=case.id))
 
                     processed_patients.add(patient_id)
@@ -167,5 +164,8 @@ class SyncOldDebtsHandler(CommandHandler[SyncOldDebtsCommand]):
             clinic_id=cmd.clinic_id,
             created=created,
             skipped=skipped,
+            diag_skipped_existing_case_with_deal=skipped_existing_case_with_deal,
+            diag_skipped_existing_case_without_deal=skipped_existing_case_without_deal,
+            diag_created_without_deal_pending=skipped_no_deal_and_created_case,
         )
         return {"created": created, "skipped": skipped}
