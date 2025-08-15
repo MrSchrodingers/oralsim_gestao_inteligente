@@ -26,7 +26,6 @@ class Command(BaseCommand):
         'schedule_daily_notifications': tasks.schedule_daily_notifications,
 
         # Tarefas de Execução (para testes granulares)
-        'run_maintenance_command': tasks.run_maintenance_command,
         'execute_resync_for_clinic': tasks.execute_resync_for_clinic,
         'execute_sync_for_clinic': tasks.execute_sync_for_clinic,
         'execute_pipedrive_command_for_case': tasks.execute_pipedrive_command_for_case,
