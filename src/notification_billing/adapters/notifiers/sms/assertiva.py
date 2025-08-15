@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import structlog
+from django.utils import timezone
 
 from notification_billing.adapters.notifiers.base import BaseNotifier
 
@@ -171,7 +172,7 @@ class AssertivaSMS(BaseNotifier):
             return 0, None
 
         total = len(rows)
-        ts_master = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S_UTC")
+        ts_master = timezone.localtime().strftime("%d/%m/%Y %H:%M:%S")
 
         # 1) Criar anexos (1..K arquivos) dentro dos limites por ARQUIVO
         files: list[_BuiltXLSX] = cls._chunk_rows_into_files(rows, ts_master)
@@ -300,7 +301,7 @@ class AssertivaSMS(BaseNotifier):
     @staticmethod
     def _write_rows_to_ws(ws, rows: Iterable[tuple[str, str, str]]) -> int:
         ws.title = "sms_pendentes"
-        ws.append(["timestamp_utc", "phone", "message"])
+        ws.append(["Data/Hora de envio", "Telefone", "Mensagem"])
         count = 0
         for (t, phone, msg) in rows:
             ws.append([t, phone, msg])
@@ -316,8 +317,9 @@ class AssertivaSMS(BaseNotifier):
         ws = wb.active
         count = cls._write_rows_to_ws(ws, rows)
 
+        safe_ts = timezone.localtime().strftime("%Y-%m-%d")
         # grava em arquivo temporário (ficará para auditoria)
-        with tempfile.NamedTemporaryFile(prefix=f"sms_offline_{ts_master}_", suffix=".xlsx", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(prefix=f"sms_offline_{safe_ts}_", suffix=".xlsx", delete=False) as tmp:
             tmp_path = tmp.name
             wb.save(tmp_path)
 
@@ -367,7 +369,7 @@ class AssertivaSMS(BaseNotifier):
                 f"<p>Relatório de SMS offline (lote <b>{email_idx}</b>) gerado em {ts_master}.</p>"
                 f"<p>Total deste e-mail: <b>{batch_rows}</b> linhas, <b>{len(batch_attachments)}</b> anexo(s).</p>"
                 f"<p>Total do ciclo: <b>{total_rows}</b> linhas.</p>"
-                "<p>Colunas: <code>timestamp_utc, phone, message</code>.</p>"
+                "<p>Colunas: <code>Data de Envio, Telefone, Mensagem</code>.</p>"
             )
             try:
                 reporter(subject, html, batch_attachments)

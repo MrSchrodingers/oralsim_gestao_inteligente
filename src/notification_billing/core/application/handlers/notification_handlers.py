@@ -553,7 +553,7 @@ class RunAutomatedNotificationsHandler(
             }
 
             try:
-                total, sample = AssertivaSMS.flush_offline_buffer(f"[SMS OFFLINE][RUN][clinic={cmd.clinic_id}]")
+                total, sample = AssertivaSMS.flush_offline_buffer("[SMS OFFLINE][RUN]")
                 logger.info("sms.offline_flush_forced", total=total, sample_path=sample)
             except Exception:
                 logger.exception("sms.offline_flush_failed")
