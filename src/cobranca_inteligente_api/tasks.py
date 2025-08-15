@@ -1,219 +1,254 @@
+import logging
+import time
+from collections.abc import Iterable
+from contextlib import contextmanager
+from datetime import date, timedelta
+
 import structlog
-from celery import Task, shared_task
+from celery import Task, chain, shared_task
+from django.core.cache import cache
+from django.core.management import call_command
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
 from oralsin_core.core.application.dtos.oralsin_dtos import OralsinContatoHistoricoEnvioDTO
 
+from plugins.django_interface.models import Clinic, CollectionCase
+
 log = structlog.get_logger(__name__)
+logger = logging.getLogger(__name__)
 api = OralsinAPIClient()
 
-import logging  # noqa: E402
-from datetime import date, timedelta  # noqa: E402
+# ──────────────────────────────────────────────────────────────────────────
+# Constantes de filas e parâmetros
+# ──────────────────────────────────────────────────────────────────────────
+QUEUE_SYNC          = "sync_process"
+QUEUE_NOTIF_SERIAL  = "notifications_serial"  # fila “lenta” para notificação/carta
+BUSY_RETRY_SECONDS  = 60                      # espera se o lock por clínica já estiver ocupado
+CLINIC_LOCK_TTL_SEC = 10 * 60                 # TTL do lock (10 min) — ajuste conforme duração típica
+TASK_RATE_LIMIT     = "60/m"                  # limite global por worker para essa task — ajuste p/ provedores
 
-from django.core.management import call_command  # noqa: E402
-from django.db.models import QuerySet  # noqa: E402
-
-from plugins.django_interface.models import Clinic, CollectionCase  # noqa: E402
-
-logger = logging.getLogger(__name__)
-
-
+# ──────────────────────────────────────────────────────────────────────────
+# Base Task com DLQ
+# ──────────────────────────────────────────────────────────────────────────
 class BaseTaskWithDLQ(Task):
     """
-    Classe base para tarefas Celery que implementa o roteamento para a Dead Letter Queue (DLQ)
-    em caso de falha após todas as retentativas.
+    Envia p/ Dead Letter Queue quando falhar após todas as retentativas.
     """
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         logger.critical(
             f"Task {self.name} [{task_id}] failed after retries. Sending to DLQ.",
             extra={"task_args": args, "kwargs": kwargs, "error": str(exc)}
         )
+        # A própria task é reenfileirada na DLQ com os mesmos args/kwargs
         self.app.send_task(
             self.name,
             args=args,
             kwargs=kwargs,
-            queue='dead_letter',
-            routing_key='dead_letter'
+            queue="dead_letter",
+            routing_key="dead_letter",
         )
         super().on_failure(exc, task_id, args, kwargs, einfo)
 
+# ──────────────────────────────────────────────────────────────────────────
+# Lock distribuído por clínica (evita concorrência do MESMO clinic_id)
+# ──────────────────────────────────────────────────────────────────────────
+@contextmanager
+def clinic_lock(clinic_id: str, namespace: str, ttl: int = CLINIC_LOCK_TTL_SEC):
+    """
+    Usa o backend de cache (Redis recomendado) para garantir exclusão por clínica.
+    """
+    key = f"locks:{namespace}:clinic:{clinic_id}"
+    acquired = cache.add(key, str(time.time()), ttl)  # True se adicionou a chave (lock obtido)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            cache.delete(key)
 
-# -----------------------------------------------------------------------------
-# TAREFAS DE SINCRONIZAÇÃO DE DADOS (SYNC)
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────
+# Funções utilitárias
+# ──────────────────────────────────────────────────────────────────────────
+def iter_clinic_dicts() -> Iterable[dict]:
+    return Clinic.objects.values("id", "oralsin_clinic_id", "coverage__active")
 
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=300, acks_late=True, queue='sync_process')
+def iter_active_oralsin_ids() -> Iterable[str]:
+    return Clinic.objects.filter(coverage__active=True).values_list("oralsin_clinic_id", flat=True)
+
+# ──────────────────────────────────────────────────────────────────────────
+# Tarefas de Resync (por clínica)
+# ──────────────────────────────────────────────────────────────────────────
+@shared_task(
+    base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=300,
+    acks_late=True, queue=QUEUE_SYNC
+)
 def execute_resync_for_clinic(self, clinic_oralsin_id: str):
     """
-    [Execução Granular] Executa a sincronização de inadimplência para UMA ÚNICA clínica.
+    [Granular] Resync de inadimplência para UMA clínica, janela +/- 1 dia.
     """
     try:
         today = date.today()
         initial_date = today - timedelta(days=1)
         final_date = today + timedelta(days=1)
-        
-        logger.info(f"Executando resync para clínica {clinic_oralsin_id} na janela de {initial_date} a {final_date}.")
-
-        call_command(
-            'sync_inadimplencia',
-            '--oralsin-clinic-id', clinic_oralsin_id,
-            '--data-inicio', initial_date.isoformat(),
-            '--data-fim', final_date.isoformat()
+        logger.info(
+            "resync.start",
+            clinic_oralsin_id=clinic_oralsin_id,
+            initial_date=initial_date.isoformat(),
+            final_date=final_date.isoformat(),
         )
+        call_command(
+            "sync_inadimplencia",
+            "--oralsin-clinic-id", clinic_oralsin_id,
+            "--data-inicio", initial_date.isoformat(),
+            "--data-fim", final_date.isoformat(),
+        )
+        logger.info("resync.ok", clinic_oralsin_id=clinic_oralsin_id)
     except Exception as exc:
-        logger.error(f"Erro no resync da clínica {clinic_oralsin_id}: {exc}", exc_info=True)
+        logger.error("resync.error", clinic_oralsin_id=clinic_oralsin_id, exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task(queue='sync_process')
+@shared_task(queue=QUEUE_SYNC)
 def schedule_daily_resync():
     """
-    [Orquestração] Busca todas as clínicas ativas e dispara uma tarefa de resync para cada uma.
+    [Orquestração] Dispara uma tarefa de resync para cada clínica ativa.
     """
-    logger.info("Iniciando agendamento do resync diário para todas as clínicas.")
-    active_clinics_ids: QuerySet[str] = Clinic.objects.filter(coverage__active=True).values_list("oralsin_clinic_id", flat=True)
-    
-    for clinic_id in active_clinics_ids:
-        execute_resync_for_clinic.delay(clinic_id)
-    
-    logger.info(f"{len(list(active_clinics_ids))} tarefas de resync diário foram enfileiradas.")
+    clinic_ids = list(iter_active_oralsin_ids())
+    for cid in clinic_ids:
+        execute_resync_for_clinic.delay(cid)
+    logger.info("resync.enqueued", total=len(clinic_ids))
 
-
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60, acks_late=True, queue='sync_process')
+# ──────────────────────────────────────────────────────────────────────────
+# Tarefas de Sync genéricas (por clínica)
+# ──────────────────────────────────────────────────────────────────────────
+@shared_task(
+    base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60,
+    acks_late=True, queue=QUEUE_SYNC
+)
 def execute_sync_for_clinic(self, command_name: str, clinic_id: str):
     """
-    [Execução Genérica] Executa um comando que requer --clinic-id para uma clínica.
+    [Genérica] Executa um comando que aceita --clinic-id.
     """
     try:
-        logger.info(f"Executando comando '{command_name}' para clinic_id: {clinic_id}")
-        call_command(command_name, '--clinic-id', clinic_id)
+        logger.info("sync.run", command=command_name, clinic_id=clinic_id)
+        call_command(command_name, "--clinic-id", clinic_id)
+        logger.info("sync.ok", command=command_name, clinic_id=clinic_id)
     except Exception as exc:
-        logger.error(f"Erro ao executar '{command_name}' para clinic_id {clinic_id}: {exc}", exc_info=True)
+        logger.error("sync.error", command=command_name, clinic_id=clinic_id, exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task(queue='sync_process')
+@shared_task(queue=QUEUE_SYNC)
 def schedule_daily_syncs():
     """
-    [Orquestração] Agenda a execução de múltiplos comandos de sincronização que iteram por clínica.
+    [Orquestração] Enfileira comandos de sync por clínica.
     """
-    commands_to_run = ['sync_acordo_activities', 'sync_old_debts']
-    logger.info(f"Agendando os seguintes comandos de sync para todas as clínicas: {commands_to_run}")
-    
-    clinic_ids: QuerySet[str] = Clinic.objects.values_list('oralsin_clinic_id', flat=True)
-    
+    commands_to_run = ["sync_acordo_activities", "sync_old_debts"]
+    clinic_ids: list[str] = list(Clinic.objects.values_list("oralsin_clinic_id", flat=True))
     for clinic_id in clinic_ids:
-        for command in commands_to_run:
-            execute_sync_for_clinic.delay(command, str(clinic_id))
-    
-    logger.info(f"Tarefas de sync enfileiradas para {len(list(clinic_ids))} clínicas.")
+        for cmd in commands_to_run:
+            execute_sync_for_clinic.delay(cmd, str(clinic_id))
+    logger.info("syncs.enqueued", clinics=len(clinic_ids), commands=len(commands_to_run))
 
-
-# -----------------------------------------------------------------------------
-# TAREFAS DO PIPEDRIVE (DEALS)
-# -----------------------------------------------------------------------------
-
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60, acks_late=True, queue='sync_process')
+# ──────────────────────────────────────────────────────────────────────────
+# Tarefas do Pipedrive (deals)
+# ──────────────────────────────────────────────────────────────────────────
+@shared_task(
+    base=BaseTaskWithDLQ, bind=True, max_retries=3, default_retry_delay=60,
+    acks_late=True, queue=QUEUE_SYNC
+)
 def execute_pipedrive_command_for_case(self, command_name: str, collection_case_id: str):
-    """
-    [Execução Genérica] Executa um comando Pipedrive para um CollectionCase.
-    """
     try:
-        logger.info(f"Executando '{command_name}' para collection_case_id: {collection_case_id}")
-        call_command(command_name, '--collection-case-id', collection_case_id)
+        logger.info("pd.run", command=command_name, case_id=collection_case_id)
+        call_command(command_name, "--collection-case-id", collection_case_id)
+        logger.info("pd.ok", command=command_name, case_id=collection_case_id)
     except Exception as exc:
-        logger.error(f"Erro ao executar '{command_name}' para collection_case_id {collection_case_id}: {exc}", exc_info=True)
+        logger.error("pd.error", command=command_name, case_id=collection_case_id, exc_info=True)
         raise self.retry(exc=exc)  # noqa: B904
 
-@shared_task(queue='sync_process')
+@shared_task(queue=QUEUE_SYNC)
 def schedule_pipedrive_updates():
-    """
-    [Orquestração] Busca todos os CollectionCase ativos e agenda tarefas de criação e atualização.
-    """
-    logger.info("Iniciando agendamento de criação/atualização de deals no Pipedrive.")
-    case_ids: QuerySet[str] = CollectionCase.objects.values_list('id', flat=True)
-    
-    for case_id in case_ids:
-        execute_pipedrive_command_for_case.delay('create_pipedrive_deal', str(case_id))
-        execute_pipedrive_command_for_case.delay('update_pipedrive_deal', str(case_id))
-        
-    logger.info(f"{len(list(case_ids))} pares de tarefas (create/update deal) foram enfileirados.")
+    logger.info("pd.schedule.start")
+    case_ids: list[str] = list(CollectionCase.objects.values_list("id", flat=True))
+    for cid in case_ids:
+        execute_pipedrive_command_for_case.delay("create_pipedrive_deal", str(cid))
+        execute_pipedrive_command_for_case.delay("update_pipedrive_deal", str(cid))
+    logger.info("pd.schedule.enqueued", total=len(case_ids))
 
-
-# -----------------------------------------------------------------------------
-# TAREFAS DE NOTIFICAÇÃO E CARTAS
-# -----------------------------------------------------------------------------
-
-@shared_task(base=BaseTaskWithDLQ, bind=True, max_retries=2, default_retry_delay=180, acks_late=True, queue='sync_process')
-def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field: str = '--clinic-id'):
+# ──────────────────────────────────────────────────────────────────────────
+# Notificações & Cartas — Sequência por clínica + rate limit + lock
+# ──────────────────────────────────────────────────────────────────────────
+@shared_task(
+    base=BaseTaskWithDLQ, bind=True, max_retries=2, default_retry_delay=180,
+    acks_late=True, queue=QUEUE_NOTIF_SERIAL, rate_limit=TASK_RATE_LIMIT
+)
+def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field: str = "--clinic-id"):
     """
-    [Execução Genérica e Flexível] Executa um comando para uma clínica, permitindo especificar o nome do campo de ID.
+    Executa um comando para UMA clínica, com:
+      - lock distribuído por clínica (evita concorrência do MESMO clinic_id)
+      - rate_limit (evita estouro em providers)
     """
-    try:
-        logger.info(f"Executando '{command_name}' para clínica com ID {clinic_id} (usando campo {id_field}).")
-        call_command(command_name, id_field, clinic_id)
-    except Exception as exc:
-        logger.error(f"Erro ao executar '{command_name}' para clínica {clinic_id}: {exc}", exc_info=True)
-        raise self.retry(exc=exc)  # noqa: B904
+    lock_ns = f"cmd:{command_name}"
+    with clinic_lock(clinic_id, lock_ns) as ok:
+        if not ok:
+            logger.warning("clinic_lock.busy", command=command_name, clinic_id=clinic_id)
+            raise self.retry(countdown=BUSY_RETRY_SECONDS)
 
-@shared_task(queue='sync_process')
+        try:
+            logger.info("clinic.cmd.run", command=command_name, clinic_id=clinic_id, field=id_field)
+            call_command(command_name, id_field, clinic_id)
+            logger.info("clinic.cmd.ok", command=command_name, clinic_id=clinic_id)
+        except Exception as exc:
+            logger.error("clinic.cmd.error", command=command_name, clinic_id=clinic_id, exc_info=True)
+            raise self.retry(exc=exc)  # noqa: B904
+
+@shared_task(queue=QUEUE_NOTIF_SERIAL)
 def schedule_daily_notifications():
     """
-    [Orquestração] Agenda a execução de notificações e envio de cartas para todas as clínicas.
+    [Orquestração] Sequencial por clínica:
+      1) run_automated_notifications (usa oralsin_clinic_id)
+      2) send_pending_letters        (usa PK interna 'id')
+    Encadeado via chain → ordem garantida POR clínica.
     """
-    logger.info("Agendando notificações e envio de cartas para todas as clínicas ativas.")
-    active_clinics: QuerySet[dict] = Clinic.objects.values('id', 'oralsin_clinic_id')
+    clinics = list(Clinic.objects.values("id", "oralsin_clinic_id", "coverage__active"))
+    total = 0
+    for c in clinics:
+        # Pula clínicas desativadas
+        if not c.get("coverage__active"):
+            continue
 
-    for clinic in active_clinics:
-        # Tarefa de notificação usa oralsin_clinic_id
-        execute_command_for_clinic.delay(
-            'run_automated_notifications', 
-            str(clinic['oralsin_clinic_id']), 
-            '--clinic-id'
-        )
-        # Tarefa de cartas usa a PK interna (id)
-        execute_command_for_clinic.delay(
-            'send_pending_letters', 
-            str(clinic['id']), 
-            '--clinic-id'
-        )
+        # cadeia por clínica garante ordem (notif -> cartas)
+        chain(
+            execute_command_for_clinic.s("run_automated_notifications", str(c["oralsin_clinic_id"]), "--clinic-id"),
+            execute_command_for_clinic.s("send_pending_letters",        str(c["id"]),               "--clinic-id"),
+        ).apply_async(queue=QUEUE_NOTIF_SERIAL)
+        total += 1
 
-    logger.info(f"{len(list(active_clinics))} pares de tarefas (notificações/cartas) foram enfileirados.")
+    logger.info("notifications.schedule.enqueued", clinics=total)
 
-
-# -----------------------------------------------------------------------------
-# TAREFAS DE MANUTENÇÃO
-# -----------------------------------------------------------------------------
-
-@shared_task(base=BaseTaskWithDLQ, bind=True, acks_late=True, queue='sync_process')
+# ──────────────────────────────────────────────────────────────────────────
+# Manutenção
+# ──────────────────────────────────────────────────────────────────────────
+@shared_task(
+    base=BaseTaskWithDLQ, bind=True, acks_late=True, queue=QUEUE_SYNC
+)
 def run_maintenance_command(self, command_name: str):
-    """
-    [Execução] Executa um comando de manutenção, como o 'ensure_schedules'.
-    """
     try:
-        logger.info(f"Executando comando de manutenção: {command_name}")
+        logger.info("maint.run", command=command_name)
         call_command(command_name)
-    except Exception as exc:
-        # Tarefas de manutenção geralmente não devem ter retentativas automáticas.
-        # Se falhar, é melhor investigar manualmente.
-        logger.critical(f"Erro CRÍTICO ao executar o comando de manutenção '{command_name}': {exc}", exc_info=True)
-        raise  # A falha será capturada pela BaseTaskWithDLQ e enviada para a DLQ.
-    
-    
+        logger.info("maint.ok", command=command_name)
+    except Exception as _exc:
+        logger.critical("maint.critical", command=command_name, exc_info=True)
+        raise
+
+# ──────────────────────────────────────────────────────────────────────────
+# Atividades → Oralsin
+# ──────────────────────────────────────────────────────────────────────────
 @shared_task(name="notification_billing.process_activity")
 def process_activity_task(payload: dict):
     """
-    Tarefa Celery para processar uma atividade (contato_realizado ou acordo_fechado)
-    e enviá-la para a API da Oralsin.
+    Processa uma atividade e envia à API da Oralsin.
     """
     try:
-        # O payload já vem como um dicionário do RabbitMQ
         dto = OralsinContatoHistoricoEnvioDTO(**payload)
         api.post_contact_history(dto)
-        
-        log.info(
-            "activity.sent_to_oralsin_via_celery",
-            paciente_id=dto.idPaciente,
-            contrato_id=dto.idContrato
-        )
+        log.info("activity.sent_to_oralsin_via_celery", paciente_id=dto.idPaciente, contrato_id=dto.idContrato)
     except Exception as e:
         log.error("celery_task.process_activity.failed", error=str(e), payload=payload)
-        # A tarefa pode ser configurada para tentar novamente em caso de falha
         raise
