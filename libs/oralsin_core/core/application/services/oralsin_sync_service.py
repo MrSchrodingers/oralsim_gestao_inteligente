@@ -67,8 +67,8 @@ class OralsinSyncService:
         data_fim: date,
     ) -> Sequence[OralsinPacienteDTO]:
         """Método auxiliar para obter dados brutos da Oralsin sem persistir."""
-        from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
-        from oralsin_core.core.application.dtos.oralsin_dtos import InadimplenciaQueryDTO
+        from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient  # noqa: PLC0415
+        from oralsin_core.core.application.dtos.oralsin_dtos import InadimplenciaQueryDTO  # noqa: PLC0415
 
         client = OralsinAPIClient()
         return client.get_inadimplencia(

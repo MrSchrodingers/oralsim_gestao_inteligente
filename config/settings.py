@@ -90,12 +90,6 @@ CELERY_TASK_ROUTES = {
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 CELERY_BEAT_SCHEDULE = {
-    # Executa a garantia de agendamentos para novos inadimplentes diariamente às 2 da manhã.
-    'ensure-schedules-daily': {
-        'task': 'cobranca_inteligente_api.tasks.run_maintenance_command',
-        'schedule': crontab(minute=0, hour=2),
-        'args': ('ensure_schedules',),
-    },
     # Inicia o resync diário de inadimplência para todas as clínicas às 3 da manhã.
     'schedule-daily-resync': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_resync',

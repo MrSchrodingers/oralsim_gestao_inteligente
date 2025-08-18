@@ -93,12 +93,12 @@ def iter_active_oralsin_ids() -> Iterable[str]:
 )
 def execute_resync_for_clinic(self, clinic_oralsin_id: str):
     """
-    [Granular] Resync de inadimplência para UMA clínica, janela +/- 1 dia.
+    [Granular] Resync de inadimplência para UMA clínica.
     """
     try:
         today = date.today()
-        initial_date = today - timedelta(days=1)
-        final_date = today + timedelta(days=1)
+        initial_date = today - timedelta(days=15)
+        final_date = today + timedelta(days=200)
         log.info(
             "resync.start",
             clinic_oralsin_id=clinic_oralsin_id,
