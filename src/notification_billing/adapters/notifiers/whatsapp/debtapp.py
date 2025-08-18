@@ -18,7 +18,7 @@ class DebtAppWhatsapp(BaseNotifier):
     """
 
     _DEFAULT_OPTIONS: Final[dict] = {
-        "delay": 1200,
+        "delay": 15000,
         "presence": "composing",
         "linkPreview": False,
     }
