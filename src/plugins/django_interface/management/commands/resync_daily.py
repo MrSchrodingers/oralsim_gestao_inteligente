@@ -27,9 +27,8 @@ class Command(BaseCommand):
         cmd_bus = container.command_bus()
 
         today = date.today()
-        # Janela de 3 dias para garantir a captura de pagamentos recentes e vencimentos próximos
-        initial = today - timedelta(days=1)
-        final = today + timedelta(days=1)
+        initial = today - timedelta(days=200)
+        final = today + timedelta(days=730)
 
         clinics = Clinic.objects.filter(coverage__active=True).values_list(
             "oralsin_clinic_id", flat=True
