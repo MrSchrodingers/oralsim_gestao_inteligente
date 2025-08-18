@@ -17,13 +17,13 @@ class Command(BaseCommand):
     help = 'Dispara uma tarefa Celery para teste, com argumentos separados por vírgula.'
 
     # Mapeamento central de tarefas disponíveis para chamada.
-    # Isso evita a execução de qualquer função arbitrária e serve como documentação.
     TASKS_MAP = {
         # Tarefas Orquestradoras
         'schedule_daily_resync': tasks.schedule_daily_resync,
         'schedule_daily_syncs': tasks.schedule_daily_syncs,
         'schedule_pipedrive_updates': tasks.schedule_pipedrive_updates,
         'schedule_daily_notifications': tasks.schedule_daily_notifications,
+        'process_activity_task': tasks.process_activity_task,
 
         # Tarefas de Execução (para testes granulares)
         'execute_resync_for_clinic': tasks.execute_resync_for_clinic,

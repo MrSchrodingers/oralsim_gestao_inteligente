@@ -90,25 +90,30 @@ CELERY_TASK_ROUTES = {
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 CELERY_BEAT_SCHEDULE = {
-    # Inicia o resync diário de inadimplência para todas as clínicas às 3 da manhã.
+    # Inicia o resync diário de inadimplência para todas as clínicas. Todo dia às 3 AM.
     'schedule-daily-resync': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_resync',
         'schedule': crontab(minute=0, hour=3),
     },
-    # Agenda a atualização de deals no Pipedrive a cada 2 horas.
+    # Agenda a atualização de deals no Pipedrive. Todo dia às 2 AM.
     'schedule-pipedrive-updates': {
         'task': 'cobranca_inteligente_api.tasks.schedule_pipedrive_updates',
-        'schedule': crontab(minute=0, hour='*/2'),
+        'schedule': crontab(minute=0, hour=2),
     },
     # Agenda o envio de notificações e cartas toda TERÇA-FEIRA.
     'schedule-notifications-and-letters': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_notifications',
         'schedule': crontab(minute=30, hour=8, day_of_week=2), # 0=Dom, 1=Seg, 2=Ter...
     },
-    # Agenda a sincronização de acordos e dívidas antigas.
+    # Agenda a sincronização de acordos e dívidas antigas. Todo dia às 4 AM.
     'schedule-sync-tasks': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_syncs',
         'schedule': crontab(minute=0, hour=4),
+    },
+    # Agenda a sincronização de Atividades no Pipedrive. Todo dia às 1 AM.
+    'process_activity_task': {
+        'task': 'cobranca_inteligente_api.tasks.process_activity_task',
+        'schedule': crontab(minute=0, hour=1),
     },
 }
 

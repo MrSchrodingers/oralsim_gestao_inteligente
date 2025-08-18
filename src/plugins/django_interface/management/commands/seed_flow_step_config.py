@@ -5,21 +5,21 @@ from plugins.django_interface.models import FlowStepConfig
 
 # Configuração de fluxo (steps 0 a 14)
 FLOW_STEP_CONFIG = [
-    { 'step_number': 0,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 0: WhatsApp',               'cooldown_days': 7 },
-    { 'step_number': 1,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 1: WhatsApp + SMS',         'cooldown_days': 7 },
-    { 'step_number': 2,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 2: WhatsApp',               'cooldown_days': 7 },
-    { 'step_number': 3,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 3: E-mail',                 'cooldown_days': 7 },
-    { 'step_number': 4,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 4: WhatsApp',               'cooldown_days': 7 },
-    { 'step_number': 5,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 5: Ligação',                'cooldown_days': 7 },
-    { 'step_number': 6,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 6: WhatsApp + SMS',         'cooldown_days': 7 },
-    { 'step_number': 7,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 7: WhatsApp',               'cooldown_days': 7 },
-    { 'step_number': 8,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 8: WhatsApp',               'cooldown_days': 7 },
-    { 'step_number': 9,  'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 9: Ligação',                'cooldown_days': 7 },
-    { 'step_number': 10, 'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 10: Ligação',               'cooldown_days': 7 },
-    { 'step_number': 11, 'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 11: Ligação',               'cooldown_days': 7 },
-    { 'step_number': 12, 'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 12: SMS',                   'cooldown_days': 7 },
-    { 'step_number': 13, 'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Semana 13: Ligação',               'cooldown_days': 7 },
-    { 'step_number': 14, 'channels': ['letter', 'sms', 'phonecall', 'whatsapp', 'email'], 'active': True,  'description': 'Cobrança Encerrada: SMS',          'cooldown_days': 7 },
+    { 'step_number': 0,  'channels': ['sms','whatsapp'],        'active': True,  'description': 'Semana 0 (Aviso): SMS + WhatsApp',     'cooldown_days': 7 },
+    { 'step_number': 1,  'channels': ['sms','whatsapp'],        'active': True,  'description': 'Semana 1: SMS + WhatsApp',             'cooldown_days': 7 },
+    { 'step_number': 2,  'channels': ['email','whatsapp'],      'active': True,  'description': 'Semana 2: Email + WhatsApp',           'cooldown_days': 7 },
+    { 'step_number': 3,  'channels': ['sms', 'whatsapp'],       'active': True,  'description': 'Semana 3: SMS + WhatsApp',             'cooldown_days': 7 },
+    { 'step_number': 4,  'channels': ['phonecall','email'],     'active': True,  'description': 'Semana 4: Ligação + Email',            'cooldown_days': 7 },
+    { 'step_number': 5,  'channels': ['sms','whatsapp'],        'active': True,  'description': 'Semana 5: SMS + WhatsApp',             'cooldown_days': 7 },
+    { 'step_number': 6,  'channels': ['letter'],                'active': True,  'description': 'Semana 6: Carta Amigável',             'cooldown_days': 7 },
+    { 'step_number': 7,  'channels': ['email','whatsapp'],      'active': True,  'description': 'Semana 7: Email + WhatsApp',           'cooldown_days': 7 },
+    { 'step_number': 8,  'channels': ['phonecall','email'],     'active': True,  'description': 'Semana 8: Ligação + Email',            'cooldown_days': 7 },
+    { 'step_number': 9,  'channels': ['whatsapp'],              'active': True,  'description': 'Semana 9: WhatsApp',                   'cooldown_days': 7 },
+    { 'step_number': 10, 'channels': ['sms', 'whatsapp'],       'active': True,  'description': 'Semana 10: SMS + WhatsApp',            'cooldown_days': 7 },
+    { 'step_number': 11, 'channels': ['letter'],                'active': True,  'description': 'Semana 11: Carta Amigável',            'cooldown_days': 7 },
+    { 'step_number': 12, 'channels': ['phonecall', 'whatsapp'], 'active': True,  'description': 'Semana 12: Ligação + WhatsApp',        'cooldown_days': 7 },
+    { 'step_number': 13, 'channels': ['email', 'whatsapp'],     'active': True,  'description': 'Semana 13: Ligação + WhatsApp',        'cooldown_days': 7 },
+    { 'step_number': 14, 'channels': ['whatsapp', 'email'],     'active': True,  'description': 'Cobrança Encerrada: WhatsApp + Email', 'cooldown_days': 7 },
 ]
 
 class Command(BaseCommand):
