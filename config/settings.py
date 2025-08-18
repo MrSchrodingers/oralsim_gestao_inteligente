@@ -110,11 +110,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_syncs',
         'schedule': crontab(minute=0, hour=4),
     },
-    # Agenda a sincronização de Atividades no Pipedrive. Todo dia às 1 AM.
-    'process_activity_task': {
-        'task': 'cobranca_inteligente_api.tasks.process_activity_task',
-        'schedule': crontab(minute=0, hour=1),
-    },
+    # # Agenda a sincronização de Atividades no Pipedrive. Todo dia às 1 AM.
+    # 'process_activity_task': {
+    #     'task': 'cobranca_inteligente_api.tasks.process_activity_task',
+    #     'schedule': crontab(minute=0, hour=1),
+    # },
 }
 
 # -------------------------------
