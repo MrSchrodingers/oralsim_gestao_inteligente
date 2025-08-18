@@ -222,8 +222,8 @@ def schedule_daily_notifications():
     for c in clinics:
         # cadeia por clínica garante ordem (notif -> cartas)
         chain(
-            execute_command_for_clinic.s("run_automated_notifications", str(c["oralsin_clinic_id"]), "--clinic-id"),
-            execute_command_for_clinic.s("send_pending_letters",        str(c["id"]),               "--clinic-id"),
+            execute_command_for_clinic.si("run_automated_notifications", str(c["oralsin_clinic_id"]), "--clinic-id"),
+            execute_command_for_clinic.si("send_pending_letters",       str(c["id"]),               "--clinic-id"),
         ).apply_async(queue=QUEUE_NOTIF_SERIAL)
         total += 1
 

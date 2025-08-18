@@ -7,11 +7,11 @@ from plugins.django_interface.models import ContactHistory
 
 ContactType = Literal["phonecall", "sms", "whatsapp", "email", "letter"]
 _CONTACT_TYPE_DESC: dict[ContactType, str] = {
-"phonecall": "Ligação telefônica",
+"phonecall": "Ligacao telefonica",
 "sms": "SMS",
 "whatsapp": "WhatsApp",
 "email": "E-mail",
-"letter": "Carta Amigável"
+"letter": "Carta Amigavel"
 }
 
 def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnvioDTO:
