@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Union
 
 import structlog
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from oralsin_core.core.application.cqrs import PagedResult
 
 from cobranca_inteligente_api.tasks import process_activity_task
@@ -98,7 +98,20 @@ class ContactHistoryRepoImpl(ContactHistoryRepository):
                 base_kwargs["message"] = message
 
         # --- cria & devolve -------------------------------------------------------
-        model = ContactHistoryModel.objects.create(**base_kwargs)
+        lookup = dict(
+            schedule_id=base_kwargs["schedule_id"],
+            contact_type=base_kwargs["contact_type"],
+            advance_flow=base_kwargs["advance_flow"],
+        )
+        defaults = base_kwargs
+        
+        try:
+            model, _created = ContactHistoryModel.objects.update_or_create(
+                **lookup, defaults=defaults
+            )
+        except IntegrityError:
+            model = ContactHistoryModel.objects.get(**lookup)
+            
         entity = ContactHistoryEntity.from_model(model)
 
         if entity.success:

@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Any
 
 from django.db import transaction
-from django.db.models import F
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
 
@@ -55,18 +54,21 @@ class PendingCallRepoImpl(PendingCallRepository):
     # ────────────────────────────────── #
     @transaction.atomic
     def set_done(self, call_id: str, success: bool, notes: str | None = None) -> None:
-        """Marca a ligação como concluída (DONE) ou falhou (FAILED)."""
-        status = (
-            PendingCallModel.Status.DONE if success else PendingCallModel.Status.FAILED
-        )
-        rows = PendingCallModel.objects.filter(id=call_id).update(
-            status=status,
-            last_attempt_at=timezone.now(),
-            attempts=F("attempts") + 1,
-            result_notes=notes,
-        )
-        if rows == 0:  # pragma: no cover
-            raise PendingCallModel.DoesNotExist(f"PendingCall {call_id} não encontrada")
+        status = PendingCallModel.Status.DONE if success else PendingCallModel.Status.FAILED
+
+        obj = (PendingCallModel.objects
+               .select_for_update()
+               .get(id=call_id))
+
+        # idempotência: se já finalizada, não faz nada
+        if obj.status in (PendingCallModel.Status.DONE, PendingCallModel.Status.FAILED):
+            return
+
+        obj.status = status
+        obj.last_attempt_at = timezone.now()
+        obj.attempts = (obj.attempts or 0) + 1
+        obj.result_notes = notes
+        obj.save(update_fields=["status","last_attempt_at","attempts","result_notes","updated_at"])
 
     # ────────────────────────────────── #
     # Consultas

@@ -61,7 +61,7 @@ class SetPendingCallDoneHandler(CommandHandler[SetPendingCallDoneCommand]):
             )
             
         # disparar evento de domínio de resolução de pendência
-        from notification_billing.core.domain.events.events import PendingCallResolvedEvent
+        from notification_billing.core.domain.events.events import PendingCallResolvedEvent  # noqa: PLC0415
 
         self.dispatcher.dispatch(
             PendingCallResolvedEvent(
