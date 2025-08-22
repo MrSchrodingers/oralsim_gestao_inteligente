@@ -29,7 +29,7 @@ class PipedriveDealPayloadBuilder:
     # ───────────────────────── API pública ──────────────────────────
     def build(self) -> dict[str, Any]:
         title = (
-            f"TESTE (API) - {self.patient.cpf} - {self.patient.name}"
+            f"{self.patient.cpf} - {self.patient.name}"
             if self.patient.cpf else self.patient.name
         )[:255]
 

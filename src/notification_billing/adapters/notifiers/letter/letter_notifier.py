@@ -5,7 +5,7 @@ from notification_billing.adapters.notifiers.base import BaseNotifier
 from notification_billing.adapters.notifiers.email.microsoft_graph import MicrosoftGraphEmail
 from notification_billing.core.application.services.letter_service import CordialLetterService
 
-FIXED_RECIPIENT_EMAIL = "mrschrodingers@gmail.com"
+FIXED_RECIPIENT_EMAIL = "supervisoradm@amaralvasconcellos.com.br "
 
 class LetterNotifier(BaseNotifier):
     """

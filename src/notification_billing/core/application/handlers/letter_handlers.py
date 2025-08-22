@@ -24,7 +24,7 @@ from notification_billing.core.domain.repositories.contact_schedule_repository i
 from notification_billing.core.domain.repositories.flow_step_config_repository import FlowStepConfigRepository
 from plugins.django_interface.models import ContactSchedule
 
-BATCH_LETTER_RECIPIENT = "mrschrodingers@gmail.com" 
+BATCH_LETTER_RECIPIENT = "supervisoradm@amaralvasconcellos.com.br " 
 BATCH_SIZE = 50
 
 logger = structlog.get_logger(__name__)
@@ -246,7 +246,7 @@ class SendPendingLettersHandler(CommandHandler[SendPendingLettersCommand]):
                         success=True,
                         channel="letter",
                         sent_at=now,
-                        observation=f"Enviado no lote {batch_number}/{total_batches} para {BATCH_LETTER_RECIPIENT}",
+                        observation=f"Enviado no lote (Carta amigavel) {batch_number}/{total_batches} para {BATCH_LETTER_RECIPIENT}",
                     )
             
             except Exception as e:
