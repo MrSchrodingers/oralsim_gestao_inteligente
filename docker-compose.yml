@@ -21,7 +21,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - oralsin_network
+      - proxy-global
   
   # --------------------------------------------------------------------------
   # RabbitMQ
@@ -50,7 +50,7 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - oralsin_network
+      - proxy-global
 
   # --------------------------------------------------------------------------
   # Redis (cache, canais, Celery result backend)
@@ -70,7 +70,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - oralsin_network
+      - proxy-global
 
   # --------------------------------------------------------------------------
   # Django / Daphne + Uvicorn (API e métricas)
@@ -94,7 +94,7 @@ services:
       - "${APP_EXTERNAL_PORT:-8000}:8000"
     entrypoint: ./docker-entrypoint.sh
     networks:
-      - oralsin_network
+      - proxy-global
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/healthz/ || exit 1"]
       start_period: 60s
@@ -130,7 +130,7 @@ services:
       --concurrency=4
       --queues=default,email,sms,whatsapp,sync_notify,sync_process,payment_reminder,sync_process,oralsin_activities_processor,sync_notify
     networks:
-      - oralsin_network
+      - proxy-global
 
   # --------------------------------------------------------------------------
   # Celery Beat (scheduler via django-celery-beat)
@@ -161,7 +161,7 @@ services:
       --loglevel=INFO
       --scheduler django_celery_beat.schedulers:DatabaseScheduler
     networks:
-      - oralsin_network
+      - proxy-global
 
   # --------------------------------------------------------------------------
   # Celery Exporter (Prometheus)
@@ -181,7 +181,7 @@ services:
       rabbitmq:
         condition: service_healthy
     networks:
-      - oralsin_network
+      - proxy-global
 
   # --------------------------------------------------------------------------
   # Rabbit Consumer (Pika)
@@ -207,7 +207,7 @@ services:
     command: >
       python src/notification_billing/adapters/message_broker/scripts/rabbit_consumer_entrypoint.py
     networks:
-      - oralsin_network
+      - proxy-global
 
   registration-consumer:
     image: oralsim_core:latest              # mesma imagem local do serviço app
@@ -228,7 +228,7 @@ services:
       app:
         condition: service_healthy
     networks:
-      - oralsin_network
+      - proxy-global
 
   sync-consumer:
     image: oralsim_core:latest
@@ -249,12 +249,13 @@ services:
       app:
         condition: service_healthy
     networks:
-      - oralsin_network
+      - proxy-global
   
 volumes:
   postgres_data:
   rabbitmq_data:
 
 networks:
-  oralsin_network:
-    driver: bridge
+  proxy-global:
+    external: true
+    name: proxy-global
