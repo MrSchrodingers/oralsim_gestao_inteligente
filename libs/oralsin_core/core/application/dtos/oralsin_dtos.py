@@ -87,7 +87,7 @@ class OralsinContatoHistoricoEnvioDTO(BaseModel):
     # contatoTipo: str | None = None
     idContatoTipo: int | None = None
     # descricao: str | None = None
-    id_status_contato: int = Field(alias="idStatusContato", default=1) # 1 = Contato bem sucedido
+    id_status_contato: int = Field(alias="idStatusContato", default=1) 
     data_hora_retornar: datetime | None = Field(alias="dataHoraRetornar", default=None)
     versao_contrato: str | None = Field(alias="versaoContrato", default=None)
     id_contrato_parcela: int | None = Field(alias="idContratoParcela", default=None)

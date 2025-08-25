@@ -13,6 +13,16 @@ _CONTACT_TYPE_DESC: dict[ContactType, str] = {
 "email": "E-mail",
 "letter": "Carta Amigavel"
 }
+_ID_CONTACT: dict[str, int] = {
+    "email":            40, # "Envio de E-mail"
+    "phonecall":        47, # "Cobrança via Telefone"
+    "phonecall_fail":   48, # "Telefone Não Atende"
+    "fail_phone":       50, # "Telefone Inexistente"
+    "sms":              3,  # "Caixa Postal"
+    "whatsapp":         46, # "Cobrança via WhatsApp"
+    "letter":           57, # "Envio Carta Cobrança"
+}
+
 
 def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnvioDTO:
     """
@@ -29,6 +39,7 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
     contract = history.contract
     schedule = history.schedule
     observacao_descritiva = f"Mensagem enviada por {_CONTACT_TYPE_DESC.get(history.contact_type, history.contact_type)}"
+    id_contact = _ID_CONTACT.get(history.contact_type, 1)
     
     # --- 2. Extraia informações dos objetos relacionados de forma segura ---
     # message_desc = history.message.content if history.message else "Sem mensagem registrada"
@@ -45,7 +56,7 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
         observacao=observacao_descritiva or "",
         # contatoTipo=_CONTACT_TYPE_DESC.get(history.contact_type, history.contact_type),
         # descricao=message_desc,
-        idStatusContato=1,
+        idStatusContato=id_contact,
         
         # A data de retorno vem diretamente do agendamento ligado ao histórico
         dataHoraRetornar=schedule.scheduled_date if schedule else None,
