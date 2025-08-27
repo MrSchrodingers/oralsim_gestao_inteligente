@@ -452,8 +452,8 @@ NOTIFICATION_MESSAGES_DATA = [
     {
         "type": "whatsapp",
         "content": (
-            "Prezado(a) {{ nome }}, identificamos a existência de um débito em aberto em seu cadastro junto à clínica. Gostaríamos de informar que estamos à disposição para orientá-lo(a) sobre as formas de regularização e evitar maiores transtornos."
-            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
+            "Prezado(a) {{ nome }}, identificamos a existência de um débito em aberto em seu cadastro junto à clínica da Oralsin. Gostaríamos de informar que estamos à disposição para orientá-lo(a) sobre as formas de regularização e evitar maiores transtornos. Pedimos a gentileza de entrar em contato com a clínica para maiores detalhes."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 99
     }
