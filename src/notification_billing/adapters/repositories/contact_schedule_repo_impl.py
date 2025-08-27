@@ -1,5 +1,3 @@
-# notification_billing/adapters/repositories/contact_schedule_repo_impl.py
-
 from __future__ import annotations
 
 import itertools
@@ -18,8 +16,8 @@ from oralsin_core.core.domain.repositories.installment_repository import Install
 
 from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 from notification_billing.core.domain.repositories.contact_schedule_repository import ContactScheduleRepository
+from plugins.django_interface.models import ContactHistory, FlowStepConfig
 from plugins.django_interface.models import ContactSchedule as Schedule
-from plugins.django_interface.models import FlowStepConfig
 
 log = structlog.get_logger(__name__)
 
@@ -206,7 +204,22 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
             
             batch_schedules = Schedule.objects.filter(id__in=batch_ids)
             yield from batch_schedules
+    
+    def has_history_for_patient(self, patient_id: str) -> bool:
+        return ContactHistory.objects.filter(patient_id=patient_id).exists()
 
+    def has_any_contact_for_patient(self, patient_id: str) -> bool:
+        """True se já houve contato efetivo (history) OU há/agora houve schedule pendente que virou contato."""
+        return (
+            ContactHistory.objects.filter(patient_id=patient_id).exists()
+            or Schedule.objects.filter(patient_id=patient_id).exists()
+        )
+
+    def has_only_cancelled_schedules(self, patient_id: str) -> bool:
+        return Schedule.objects.filter(patient_id=patient_id).exists() and \
+               not Schedule.objects.filter(patient_id=patient_id, status=Schedule.Status.PENDING).exists() and \
+               not ContactHistory.objects.filter(patient_id=patient_id).exists()
+               
     def list(self, filtros: dict[str, Any] | None, page: int, page_size: int) -> PagedResult[ContactScheduleEntity]:
         """Retorna uma lista paginada de agendamentos com base em filtros."""
         qs = Schedule.objects.all()

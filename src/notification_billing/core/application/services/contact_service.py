@@ -36,8 +36,9 @@ class ContactSchedulingService:
         self.billing_settings_repo = billing_settings_repo
         self.dispatcher = dispatcher
 
+    def _is_overdue(self, inst) -> bool:
+        return (inst.due_date < timezone.localdate()) and (not inst.received)
     # ─────────────────────────  API pública  ────────────────────────── #
-
     def schedule_initial(self, patient_id: str, contract_id: str, clinic_id: str) -> ContactScheduleEntity | None:
         """
         Agenda o contato para a parcela *is_current*.
@@ -48,22 +49,31 @@ class ContactSchedulingService:
         if not inst or inst.received:
             return None
 
-        # Se não houver nenhum agendamento anterior para este paciente, é o primeiro contato.
-        is_first_contact = not self.schedule_repo.has_schedule_for_patient(patient_id)
+        # "Primeira vez" = não existe contato realizado (history).
+        # Se só houve schedules cancelados (sem history), ainda tratamos como primeira vez.
+        has_real_contact = self.schedule_repo.has_history_for_patient(patient_id)
+        only_cancelled = getattr(self.schedule_repo, "has_only_cancelled_schedules", lambda _pid: False)(patient_id)
+        is_first_contact = (not has_real_contact) and (only_cancelled or not self.schedule_repo.has_schedule_for_patient(patient_id))
 
-        if is_first_contact:
-            # Regra de negócio: primeiro contato é sempre no step 1.
-            step = 1
+        is_inadimplente = self._is_overdue(inst)
+
+        if is_first_contact and is_inadimplente:
+            step = 99
             when = timezone.now()
-        else:
-            # Já existe um agendamento pendente para este paciente?
-            if self.schedule_repo.has_pending_for_patient(patient_id):
-                # Se sim, não faz nada. O fluxo já está ativo e não deve ser interrompido.
-                return None 
+            return self._upsert_schedule(
+                patient_id=patient_id,
+                contract_id=contract_id,
+                clinic_id=clinic_id,
+                installment_id=inst.id,
+                step=step,
+                scheduled_dt=when,
+            )
 
-            # Se não há pendentes, aí sim calcula o step proporcional para (re)iniciar o fluxo.
-            step, when = self._calculate_proportional_step_and_date(inst)
+        # Já existe PENDING para o paciente? não reinicia.
+        if self.schedule_repo.has_pending_for_patient(patient_id):
+            return None
 
+        step, when = self._calculate_proportional_step_and_date(inst)
         return self._upsert_schedule(
             patient_id=patient_id,
             contract_id=contract_id,
@@ -171,6 +181,11 @@ class ContactSchedulingService:
                 scheduled_dt=scheduled_dt,
             )
 
+        if not sched:
+            # step não configurado/ativo
+            # (evita AttributeError e mantém idempotência)
+            return None
+        
         self.dispatcher.dispatch(
             NotificationScheduledEvent(
                 schedule_id=sched.id,

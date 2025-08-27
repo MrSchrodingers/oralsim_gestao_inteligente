@@ -20,6 +20,7 @@ FLOW_STEP_CONFIG = [
     { 'step_number': 12, 'channels': ['phonecall', 'whatsapp'], 'active': True,  'description': 'Semana 12: Ligação + WhatsApp',        'cooldown_days': 7 },
     { 'step_number': 13, 'channels': ['email', 'whatsapp'],     'active': True,  'description': 'Semana 13: Ligação + WhatsApp',        'cooldown_days': 7 },
     { 'step_number': 14, 'channels': ['whatsapp', 'email'],     'active': True,  'description': 'Cobrança Encerrada: WhatsApp + Email', 'cooldown_days': 7 },
+    { 'step_number': 99, 'channels': ['whatsapp'],              'active': True,  'description': 'Primeiro contato: WhatsApp'          , 'cooldown_days': 7 },
 ]
 
 class Command(BaseCommand):

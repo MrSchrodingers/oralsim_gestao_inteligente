@@ -36,7 +36,7 @@ NOTIFICATION_MESSAGES_DATA = [
     # Step 1 – 1º Aviso Pós-Vencimento (Tom Solícito)
     {
         "type": "sms",
-        "content": "Ola, {{ nome }}. Identificamos que a parcela de {{ valor }}, vencida em {{ vencimento }}, esta em aberto. Podemos ajudar? Contate-nos para regularizar.",
+        "content": "Ola, {{ nome }}. Identificamos que a parcela de {{ valor }}, vencida em {{ vencimento }}, esta em aberto. Podemos ajudar? Contate-nos para regularizar. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 1
     },
     {
@@ -47,6 +47,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Constatamos em nosso sistema que a sua parcela no valor de <strong>{{ valor }}</strong>, com vencimento em <strong>{{ vencimento }}</strong>, ainda não foi liquidada.</p>"
             "{% if total_parcelas_em_atraso > 1 %}<p>Notamos também que há um total de <strong>{{ total_parcelas_em_atraso }} parcelas</strong> pendentes em seu nome.</p>{% endif %}"
             "<p>Entendemos que imprevistos acontecem e estamos à disposição para ajudá-lo(a) a regularizar a situação. Por favor, entre em contato.</p>"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Atenciosamente,<br/>Equipe de Relacionamento</p>"
         ),
         "step": 1
@@ -59,13 +60,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "{% if total_parcelas_em_atraso > 1 %}No momento, existem *{{ total_parcelas_em_atraso }} parcelas* em aberto. {% endif %}"
             "Ocorreu algum problema?\n\n"
             "Estamos aqui para ajudar a resolver. Se precisar de uma 2ª via ou de outras informações, conte conosco! 👍"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 1
     },
     # Step 2 – 2º Aviso (Tom um pouco mais direto)
     {
         "type": "sms",
-        "content": "Prezado(a) {{ nome }}, sua parcela de {{ valor }} (venc. {{ vencimento }}) continua em aberto. Por favor, regularize sua pendencia.",
+        "content": "Prezado(a) {{ nome }}, sua parcela de {{ valor }} (venc. {{ vencimento }}) continua em aberto. Por favor, regularize sua pendencia. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 2
     },
     {
@@ -76,6 +78,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Escrevemos novamente para informar que a pendência referente à parcela de <strong>{{ valor }}</strong> (vencida em <strong>{{ vencimento }}</strong>) persiste.</p>"
             "<p>É importante regularizar sua situação para evitar o acúmulo de encargos. Se já realizou o pagamento, por favor, nos envie o comprovante.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Atenciosamente,<br/>Departamento Financeiro</p>"
         ),
         "step": 2
@@ -87,13 +90,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "Este é o nosso segundo aviso sobre a parcela de *{{ valor }}* vencida em *{{ vencimento }}*."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "Por favor, dê atenção a esta pendência."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 2
     },
     # Step 3 – 3º Aviso (Aumento da Formalidade)
     {
         "type": "sms",
-        "content": "AVISO: {{ nome }}, o debito de {{ valor }} (venc. {{ vencimento }}) permanece. Solicitamos contato para quitacao ou negociacao da divida.",
+        "content": "AVISO: {{ nome }}, o debito de {{ valor }} (venc. {{ vencimento }}) permanece. Solicitamos contato para quitacao ou negociacao da divida. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 3
     },
     {
@@ -104,6 +108,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Apesar dos contatos anteriores, a parcela de <strong>{{ valor }}</strong>, vencida em <strong>{{ vencimento }}</strong>, continua pendente.</p>"
             "<p>Solicitamos um contato de sua parte para a quitação do débito ou para discutirmos as opções de negociação disponíveis.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Cordialmente,<br/>Departamento de Cobrança</p>"
         ),
         "step": 3
@@ -115,13 +120,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "Seu débito de *{{ valor }}* (vencimento em *{{ vencimento }}*) ainda não foi regularizado. "
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "Solicitamos que entre em contato para darmos andamento à quitação ou negociação da dívida."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 3
     },
     # Step 4 – Tom mais Sério e Formal
     {
         "type": "sms",
-        "content": "NOTIFICACAO: {{ nome }}, a pendencia de {{ valor }} (venc. {{ vencimento }}) requer sua atencao imediata. Evite o avanco do processo de cobranca.",
+        "content": "NOTIFICACAO: {{ nome }}, a pendencia de {{ valor }} (venc. {{ vencimento }}) requer sua atencao imediata. Evite o avanco do processo de cobranca. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 4
     },
     {
@@ -132,6 +138,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Esta é uma notificação formal sobre a sua pendência financeira no valor de <strong>{{ valor }}</strong>, vencida em <strong>{{ vencimento }}</strong>.</p>"
             "<p>A ausência de pagamento até esta data nos preocupa. É fundamental que sua situação seja regularizada para evitar o avanço para as próximas etapas administrativas de cobrança.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Aguardamos seu contato.<br/>Gerência de Contas</p>"
         ),
         "step": 4
@@ -143,13 +150,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "{{ nome }}, sua dívida de *{{ valor }}*, vencida em *{{ vencimento }}*, requer sua atenção imediata. "
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "A regularização é necessária para evitar o avanço no processo de cobrança."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 4
     },
     # Step 5 – Aviso de Urgência
     {
         "type": "sms",
-        "content": "URGENTE: {{ nome }}, seu debito de {{ valor }} (venc. {{ vencimento }}) precisa ser regularizado com urgencia. Contate-nos para evitar maiores transtornos.",
+        "content": "URGENTE: {{ nome }}, seu debito de {{ valor }} (venc. {{ vencimento }}) precisa ser regularizado com urgencia. Contate-nos para evitar maiores transtornos. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 5
     },
     {
@@ -159,7 +167,8 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Prezado(a) {{ nome }},</p>"
             "<p>O seu débito de <strong>{{ valor }}</strong>, vencido em <strong>{{ vencimento }}</strong>, permanece sem solução. A regularização desta pendência é agora tratada como <strong>urgente</strong>.</p>"
             "<p>A falta de um acordo ou pagamento nos obrigará a adotar as medidas administrativas cabíveis. Entre em contato para evitar transtornos.</p>"
-           "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Atenciosamente,<br/>Setor de Recuperação de Crédito</p>"
         ),
         "step": 5
@@ -171,13 +180,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "{{ nome }}, a regularização do seu débito de *{{ valor }}* (vencido em *{{ vencimento }}*) é necessária com *urgência*. "
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "Entre em contato conosco para evitar maiores transtornos."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 5
     },
     # Step 6 – Tom Firme e Direto
     {
         "type": "sms",
-        "content": "NOTIFICACAO: {{ nome }}, o debito de {{ valor }} (venc. {{ vencimento }}) ainda consta em aberto. Sua regularizacao imediata e necessaria.",
+        "content": "NOTIFICACAO: {{ nome }}, o debito de {{ valor }} (venc. {{ vencimento }}) ainda consta em aberto. Sua regularizacao imediata e necessaria. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 6
     },
     {
@@ -187,7 +197,8 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Prezado(a) {{ nome }},</p>"
             "<p>Informamos que a pendência financeira de <strong>{{ valor }}</strong> (vencimento em <strong>{{ vencimento }}</strong>) ainda se encontra em aberto em nossos registros.</p>"
             "<p>Reforçamos a necessidade de regularização imediata do valor para que seu contrato não sofra maiores sanções.</p>"
-           "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Aguardamos seu retorno,<br/>Departamento de Cobrança</p>"
         ),
         "step": 6
@@ -199,13 +210,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "Seu débito no valor de *{{ valor }}* (venc. *{{ vencimento }}*) ainda consta em aberto. "
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
             "É necessária a regularização imediata da sua situação."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 6
     },
     # Step 7 – Débito Persistente
     {
         "type": "sms",
-        "content": "AVISO: {{ nome }}, a persistencia do debito de {{ valor }} (venc. {{ vencimento }}) e preocupante. Pedimos seu contato em ate 48h.",
+        "content": "AVISO: {{ nome }}, a persistencia do debito de {{ valor }} (venc. {{ vencimento }}) e preocupante. Pedimos seu contato em ate 48h. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 7
     },
     {
@@ -215,7 +227,8 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Prezado(a) {{ nome }},</p>"
             "<p>A persistência do débito de <strong>{{ valor }}</strong>, vencido em <strong>{{ vencimento }}</strong>, é motivo de grande preocupação e requer sua ação.</p>"
             "<p>Solicitamos que entre em contato conosco no prazo máximo de 48 horas para apresentar uma solução para esta pendência.</p>"
-           "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Atenciosamente,<br/>Gerência de Contas</p>"
         ),
         "step": 7
@@ -226,13 +239,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "Prezado(a) {{ nome }},\n\n"
             "A persistência do seu débito de *{{ valor }}* (vencido em *{{ vencimento }}*) nos preocupa. Pedimos, por favor, que nos contate em até 48 horas para resolvermos esta questão."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 7
     },
     # Step 8 – Reiteração de Pendência
     {
         "type": "sms",
-        "content": "REITERAMOS: {{ nome }}, sua pendencia de {{ valor }} (venc. {{ vencimento }}) nao foi resolvida. A regularizacao e imprescindivel.",
+        "content": "REITERAMOS: {{ nome }}, sua pendencia de {{ valor }} (venc. {{ vencimento }}) nao foi resolvida. A regularizacao e imprescindivel. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 8
     },
     {
@@ -243,6 +257,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Reiteramos que a pendência financeira de <strong>{{ valor }}</strong> (vencimento em <strong>{{ vencimento }}</strong>) ainda não foi resolvida.</p>"
             "<p>É imprescindível que o pagamento seja efetuado para que possamos manter a regularidade do seu contrato.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Atenciosamente,<br/>Setor de Recuperação de Crédito</p>"
         ),
         "step": 8
@@ -253,13 +268,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "REITERAMOS, {{ nome }}:\n"
             "Sua pendência de *{{ valor }}* (vencida em *{{ vencimento }}*) ainda não foi resolvida. A regularização é imprescindível."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 8
     },
     # Step 9 – Penúltimo Aviso Administrativo
     {
         "type": "sms",
-        "content": "PENULTIMO AVISO: {{ nome }}, debito de {{ valor }} (venc. {{ vencimento }}). O nao pagamento levara a medidas administrativas severas. Contato URGENTE.",
+        "content": "PENULTIMO AVISO: {{ nome }}, debito de {{ valor }} (venc. {{ vencimento }}). O nao pagamento levara a medidas administrativas severas. Contato URGENTE. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 9
     },
     {
@@ -270,6 +286,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Este é o penúltimo aviso administrativo referente ao débito de <strong>{{ valor }}</strong>, vencido em <strong>{{ vencimento }}</strong>.</p>"
             "<p>A ausência de uma resolução imediata nos levará a tomar as medidas administrativas mais severas previstas em contrato. Aguardamos seu contato em caráter de URGÊNCIA.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Setor de Cobrança Especial</p>"
         ),
         "step": 9
@@ -280,13 +297,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "🚨 *Penúltimo Aviso Administrativo* 🚨\n\n"
             "{{ nome }}, este é o penúltimo aviso sobre seu débito de *{{ valor }}* (vencido em *{{ vencimento }}*). O não pagamento resultará em medidas administrativas severas. Seu contato é *urgente*."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 9
     },
     # Step 10 – Último Aviso Administrativo
     {
         "type": "sms",
-        "content": "ULTIMO AVISO: {{ nome }}, debito de {{ valor }} (venc. {{ vencimento }}). O proximo passo sera o apontamento do seu nome em orgaos de credito. Contate-nos JA.",
+        "content": "ULTIMO AVISO: {{ nome }}, debito de {{ valor }} (venc. {{ vencimento }}). O proximo passo sera o apontamento do seu nome em orgaos de credito. Contate-nos JA. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 10
     },
     {
@@ -297,6 +315,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Este é o <strong>último aviso administrativo</strong> que receberá sobre a dívida de <strong>{{ valor }}</strong> (vencimento em <strong>{{ vencimento }}</strong>).</p>"
             "<p>Caso a pendência não seja sanada em 24 horas, seu CPF será encaminhado para inclusão nos cadastros de órgãos de proteção ao crédito (SPC/Serasa). </p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Aproveite esta última oportunidade para uma resolução amigável.</p>"
         ),
         "step": 10
@@ -307,13 +326,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "‼️ *ÚLTIMO AVISO ADMINISTRATIVO* ‼️\n\n"
             "{{ nome }}, débito de *{{ valor }}* (vencido em *{{ vencimento }}*). O próximo passo será o apontamento do seu nome em órgãos de proteção ao crédito. Contate-nos *imediatamente*."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 10
     },
     # Step 11 – Notificação Pré-Jurídica
     {
         "type": "sms",
-        "content": "NOTIFICACAO EXTRAJUDICIAL: {{ nome }}, debito de {{ valor }} (venc. {{ vencimento }}). Nao havendo acordo, o caso sera encaminhado ao depto juridico.",
+        "content": "NOTIFICACAO EXTRAJUDICIAL: {{ nome }}, debito de {{ valor }} (venc. {{ vencimento }}). Nao havendo acordo, o caso sera encaminhado ao depto juridico. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 11
     },
     {
@@ -325,6 +345,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Serve a presente para <strong>notificá-lo(a) extrajudicialmente</strong> sobre o débito vencido em <strong>{{ vencimento }}</strong>, no valor de <strong>{{ valor }}</strong>.</p>"
             "<p>Não havendo a quitação ou um acordo formalizado no prazo improrrogável de 48 horas, o caso será encaminhado ao nosso departamento jurídico para ajuizamento da competente ação de execução.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Setor Jurídico</p>"
         ),
         "step": 11
@@ -335,13 +356,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "⚖️ *Notificação Extrajudicial* ⚖️\n\n"
             "Prezado(a) {{ nome }}, seu débito de *{{ valor }}* (venc. *{{ vencimento }}*) não foi quitado. Não havendo acordo em 48h, o caso será encaminhado ao departamento jurídico para as devidas providências."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 11
     },
     # Step 12 – Aviso de Encaminhamento para Negativação
     {
         "type": "sms",
-        "content": "AVISO DE NEGATIVACAO: {{ nome }}, seu CPF foi encaminhado para inclusao nos orgaos de protecao ao credito devido ao debito de {{ valor }}.",
+        "content": "AVISO DE NEGATIVACAO: {{ nome }}, seu CPF foi encaminhado para inclusao nos orgaos de protecao ao credito devido ao debito de {{ valor }}. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 12
     },
     {
@@ -352,6 +374,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Em razão da não regularização do débito de <strong>{{ valor }}</strong>, vencido em <strong>{{ vencimento }}</strong>, informamos que seu CPF foi encaminhado para inclusão nos cadastros de inadimplentes dos órgãos de proteção ao crédito.</p>"  # noqa: E501
             "<p>A regularização do débito é a única medida que pode reverter esta ação.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Departamento de Cobrança</p>"
         ),
         "step": 12
@@ -362,13 +385,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "*AVISO DE NEGATIVAÇÃO*\n\n"
             "{{ nome }}, informamos que, devido ao não pagamento do débito de *{{ valor }}*, seu CPF foi encaminhado para inclusão nos órgãos de proteção ao crédito (SPC/Serasa)."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 12
     },
     # Step 13 – Última Oportunidade de Acordo
     {
         "type": "sms",
-        "content": "ULTIMA OPORTUNIDADE: {{ nome }}, antes do ajuizamento da acao, oferecemos uma ultima oportunidade de acordo para o debito de {{ valor }}. Contate-nos HOJE.",
+        "content": "ULTIMA OPORTUNIDADE: {{ nome }}, antes do ajuizamento da acao, oferecemos uma ultima oportunidade de acordo para o debito de {{ valor }}. Contate-nos HOJE. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 13
     },
     {
@@ -379,6 +403,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Antes de darmos início às medidas judiciais para a recuperação do crédito de <strong>{{ valor }}</strong>, oferecemos uma última oportunidade para um acordo amigável.</p>"
             "<p>Esta é a sua chance final de evitar custas processuais e outras complicações legais. Entre em contato conosco no dia de hoje.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Setor de Conciliação</p>"
         ),
         "step": 13
@@ -389,13 +414,14 @@ NOTIFICATION_MESSAGES_DATA = [
             "*ÚLTIMA OPORTUNIDADE*\n\n"
             "{{ nome }}, antes do ajuizamento da ação judicial para a cobrança do seu débito de *{{ valor }}*, estamos oferecendo uma última oportunidade de acordo. Entre em contato *hoje*."
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 13
     },
     # Step 14 – Comunicado Final de Encaminhamento Jurídico
     {
         "type": "sms",
-        "content": "COMUNICADO FINAL: {{ nome }}, seu debito de {{ valor }} foi encaminhado para o depto juridico. A cobranca sera feita exclusivamente por via judicial.",
+        "content": "COMUNICADO FINAL: {{ nome }}, seu debito de {{ valor }} foi encaminhado para o depto juridico. A cobranca sera feita exclusivamente por via judicial. Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.",
         "step": 14
     },
     {
@@ -407,6 +433,7 @@ NOTIFICATION_MESSAGES_DATA = [
             "<p>Esgotadas todas as tentativas de resolução amigável do débito de <strong>{{ valor }}</strong>, comunicamos oficialmente que o seu caso foi transferido ao nosso departamento jurídico.</p>"
             "<p>A partir desta data, a cobrança do referido valor será conduzida exclusivamente por via judicial. Quaisquer futuras comunicações sobre este assunto serão formais e legais.</p>"
             "{% if total_parcelas_em_atraso > 1 %} Lembramos que seu contrato possui um total de *{{ total_parcelas_em_atraso }} parcelas* em atraso.{% endif %}\n\n"
+            "<p>Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.</p>"
             "<p>Sem mais.</p>"
         ),
         "step": 14
@@ -416,9 +443,21 @@ NOTIFICATION_MESSAGES_DATA = [
         "content": (
             "📋 *Comunicado Final de Cobrança Administrativa*\n\n"
             "Prezado(a) {{ nome }}, informamos que o processo de cobrança amigável referente ao débito de *{{ valor }}* está encerrado. O caso foi encaminhado ao departamento jurídico para início das medidas judiciais."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
         ),
         "step": 14
+    },
+    # Step 99 – Se o paciente está inadimplente no momento da implementação do serviço na clínica, utilizar o step 99 como primeira mensagem.
+    # Se o paciente estiver adimplente, enviar apenas o lembrete quando estiver apto.
+    {
+        "type": "whatsapp",
+        "content": (
+            "Prezado(a) {{ nome }}, identificamos a existência de um débito em aberto em seu cadastro junto à clínica. Gostaríamos de informar que estamos à disposição para orientá-lo(a) sobre as formas de regularização e evitar maiores transtornos."
+            "Caso o pagamento já tenha sido realizado, por gentileza, desconsidere esta mensagem.\n\n"
+        ),
+        "step": 99
     }
+    
 ]
 
 class Command(BaseCommand):

@@ -7,6 +7,17 @@ from notification_billing.core.domain.entities.contact_schedule_entity import Co
 
 class ContactScheduleRepository(ABC):
     @abstractmethod
+    def has_history_for_patient(self, patient_id: str) -> bool:
+        ...
+    @abstractmethod
+    def has_any_contact_for_patient(self, patient_id: str) -> bool:
+        """True se já houve contato efetivo (history) OU há/agora houve schedule pendente que virou contato."""
+        ...
+    @abstractmethod
+    def has_only_cancelled_schedules(self, patient_id: str) -> bool:
+        ...
+            
+    @abstractmethod
     def has_schedule_for_patient(self, patient_id: str) -> bool:
         """
         Verifica de forma eficiente se já existe QUALQUER agendamento
