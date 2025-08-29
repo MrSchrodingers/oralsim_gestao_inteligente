@@ -133,27 +133,46 @@ class ContactSchedulingService:
             return next_sched
 
     # ─────────────────────────  Helpers  ────────────────────────── #
+    def _adjust_to_business_day_before(self, target_date, *, upper_due_date):
+        """
+        Se D-3 cair em fim de semana, aproxima para o ÚLTIMO dia útil anterior ao vencimento.
+        (Sábado -> sexta; Domingo -> sexta)
+        """
+        # Mon=0 ... Sun=6
+        if target_date.weekday() == 5:   # Sábado  # noqa: PLR2004
+            target_date = target_date - timedelta(days=1)
+        elif target_date.weekday() == 6: # Domingo  # noqa: PLR2004
+            target_date = target_date - timedelta(days=2)
+
+        # garantia defensiva: nunca pós-vencimento
+        if target_date >= upper_due_date:
+            target_date = upper_due_date - timedelta(days=1)
+        return target_date
 
     def _calculate_proportional_step_and_date(self, inst):
-        """Calcula o step e a data do agendamento com base no vencimento da parcela."""
+        """Calcula step e data alvo, isolando pré-vencimento (step 0) de pós-vencimento (>=1)."""
         today = timezone.localdate()
-        
-        # Assume-se que o cooldown é padrão (7 dias) para o cálculo do step.
-        # A configuração específica do step só é usada para o *próximo* agendamento.
-        cooldown_period = 7 
 
-        if inst.due_date > today:  # Pré-vencimento
-            step = 0 # Step 0 é para lembretes amigáveis pré-vencimento.
-            target_date = inst.due_date - timedelta(days=cooldown_period)
+        PRE_DUE_OFFSET_DAYS = 3      # D-3 obrigatório
+        OVERDUE_COOLDOWN_DAYS = 7    # ritmo semanal p/ steps de atraso
+
+        if inst.due_date > today:
+            # ------- PRÉ-VENCIMENTO -------
+            step = 0
+            target_date = inst.due_date - timedelta(days=PRE_DUE_OFFSET_DAYS)
+            target_date = self._adjust_to_business_day_before(
+                target_date, upper_due_date=inst.due_date
+            )
+            # Agenda para 00:00 do dia útil alvo (será processado às 09h pela task)
             when = timezone.make_aware(datetime.combine(target_date, time.min))
-        else:  # Pós-vencimento
-            days_overdue = (today - inst.due_date).days
-            # +1 para alinhar com os steps (semana 1, 2, etc.)
-            raw_step = (days_overdue // cooldown_period) + 1
-            max_step = self.flow_cfg_repo.max_active_step()
-            step = min(raw_step, max_step)
-            when = timezone.now()
+            return step, when
 
+        # ------- PÓS-VENCIMENTO (inadimplente) -------
+        days_overdue = (today - inst.due_date).days
+        raw_step = (days_overdue // OVERDUE_COOLDOWN_DAYS) + 1
+        max_step = self.flow_cfg_repo.max_active_step()
+        step = min(raw_step, max_step)
+        when = timezone.now()
         return step, when
 
     def _upsert_schedule(  # noqa: PLR0913

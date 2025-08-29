@@ -12,6 +12,7 @@ class ClinicPhoneEntity(EntityMixin):
     id: uuid.UUID
     clinic_id: uuid.UUID
     phone_number: str
+    contact_phone: str
     phone_type: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

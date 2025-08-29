@@ -6,4 +6,5 @@ class CreateRegistrationRequestDTO(BaseModel):
     password: str
     name: str
     clinic_name: str
+    contact_phone: str
     cordial_billing_config: int = 90

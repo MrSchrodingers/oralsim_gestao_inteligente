@@ -47,7 +47,7 @@ def _publish_sync_tasks(clinic_id: int) -> None:
     for rk in SYNC_ROUTING_KEYS:
         messaging_service.publish(sync_exchange, rk, {"oralsin_clinic_id": clinic_id})
 
-def _run_seed_and_sync(*, clinic_name: str, owner_name: str, min_days_billing: int, email: str, password: str) -> None:
+def _run_seed_and_sync(*, clinic_name: str, owner_name: str, min_days_billing: int, email: str, password: str, contact_phone:str) -> None:
     LOGGER.info("🛠 Seed para '%s' iniciado…", clinic_name)
     oralsin_clinic_id = None # Inicializa a variável
     try:
@@ -56,7 +56,7 @@ def _run_seed_and_sync(*, clinic_name: str, owner_name: str, min_days_billing: i
             call_command(
                 "seed_data", clinic_name=clinic_name, owner_name=owner_name,
                 min_days_billing=min_days_billing, skip_admin=True,
-                skip_full_sync=False, clinic_email=email, clinic_pass=password,
+                skip_full_sync=False, clinic_email=email, clinic_pass=password, contact_phone=contact_phone,
                 force=True, resync=False
             )
             # Após o comando rodar com sucesso, buscamos o ID para as próximas etapas
@@ -80,13 +80,14 @@ def on_message_received(body: dict, message: Message) -> None:
         clinic_name = body["clinic_name"]
         owner_name = body["name"]
         min_days_billing = body["cordial_billing_config"]
+        contact_phone = body["contact_phone"]
         email = body.get("email")
         password = body.get("password") or body.get("password_hash")
 
         EXECUTOR.submit(
             _run_seed_and_sync,
             clinic_name=clinic_name, owner_name=owner_name,
-            min_days_billing=min_days_billing, email=email, password=password
+            min_days_billing=min_days_billing, email=email, password=password, contact_phone=contact_phone
         )
         message.ack()
         LOGGER.info("ACK enviado e tarefa de seed para '%s' agendada.", clinic_name)

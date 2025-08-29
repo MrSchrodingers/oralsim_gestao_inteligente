@@ -535,6 +535,7 @@ class RunAutomatedNotificationsHandler(
                 clinic_id=cmd.clinic_id,
                 only_pending=cmd.only_pending,
                 chunk_size=cmd.batch_size,
+                mode=cmd.mode, 
             )):
                 # if i >= max_to_process:
                 #     break

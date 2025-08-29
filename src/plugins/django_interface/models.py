@@ -802,6 +802,7 @@ class RegistrationRequest(models.Model):
         help_text="Senha em texto-claro, cifrada com Fernet; será apagada após aprovação.",
     )
     clinic_name = models.CharField(max_length=255, help_text="The name of the clinic being registered")
+    contact_phone = models.CharField(max_length=20)
     cordial_billing_config = models.IntegerField(default=90, help_text="Dias mínimos para cobrança amigável")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)

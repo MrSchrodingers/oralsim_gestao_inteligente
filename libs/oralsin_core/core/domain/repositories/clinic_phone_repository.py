@@ -6,6 +6,11 @@ from oralsin_core.core.domain.entities.clinic_phone_entity import ClinicPhoneEnt
 
 class ClinicPhoneRepository(ABC):
     @abstractmethod
+    def save_contact_phone(self, phone: ClinicPhoneEntity, contact_phone: str) -> ClinicPhoneEntity:
+        """Cria ou atualiza telefone de contato da clinica."""
+        ...
+        
+    @abstractmethod
     def find_by_id(self, phone_id: str) -> ClinicPhoneEntity | None:
         """Recupera um telefone de clínica pelo ID."""
         ...

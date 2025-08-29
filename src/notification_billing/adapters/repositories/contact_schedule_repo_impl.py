@@ -7,7 +7,7 @@ from uuid import UUID
 
 import structlog
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from oralsin_core.core.application.cqrs import PagedResult
 from oralsin_core.core.domain.repositories.billing_settings_repository import BillingSettingsRepository
@@ -183,25 +183,44 @@ class ContactScheduleRepoImpl(ContactScheduleRepository):
         return [ContactScheduleEntity.from_model(m) for m in qs]
         
     # Método stream_pending para o processo em lote
-    def stream_pending(self, clinic_id, *, only_pending: bool = True, chunk_size: int = 100):
-        """Gera um representante de cada grupo de trabalho (paciente, contrato, etapa)."""
+    def stream_pending(
+        self,
+        clinic_id,
+        *,
+        only_pending: bool = True,
+        chunk_size: int = 100,
+        mode: str = "all",  # "all" | "pre_due" | "overdue"
+    ):
+        """
+        Gera 1 representante por (paciente, contrato, step), já filtrando:
+          - status pendente
+          - data agendada <= agora
+          - modo: pré-vencimento (step=0) ou inadimplente (step>=1 ou step==99)
+        """
         base = Schedule.objects.filter(clinic_id=clinic_id)
+
         if only_pending:
             base = base.filter(status=Schedule.Status.PENDING)
-            
-        representative_ids_query = base.order_by(
-            "patient_id", "contract_id", "current_step", "scheduled_date"
-        ).distinct(
-            "patient_id", "contract_id", "current_step"
-        ).values_list('id', flat=True)
+
+        # Só o que está “liberado” para envio
+        base = base.filter(scheduled_date__lte=timezone.now())
+
+        if mode == "pre_due":
+            base = base.filter(current_step=0)
+        elif mode == "overdue":
+            base = base.filter(Q(current_step__gte=1) | Q(current_step=99))
+
+        representative_ids_query = (
+            base.order_by("patient_id", "contract_id", "current_step", "scheduled_date")
+               .distinct("patient_id", "contract_id", "current_step")
+               .values_list('id', flat=True)
+        )
 
         ids_iterator = representative_ids_query.iterator(chunk_size=chunk_size)
-
         while True:
             batch_ids = list(itertools.islice(ids_iterator, chunk_size))
             if not batch_ids:
                 break
-            
             batch_schedules = Schedule.objects.filter(id__in=batch_ids)
             yield from batch_schedules
     

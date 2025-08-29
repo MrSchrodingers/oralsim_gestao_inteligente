@@ -189,12 +189,7 @@ def schedule_pipedrive_updates():
     base=BaseTaskWithDLQ, bind=True, max_retries=2, default_retry_delay=180,
     acks_late=True, queue=QUEUE_NOTIF_SERIAL, rate_limit=TASK_RATE_LIMIT
 )
-def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field: str = "--clinic-id"):
-    """
-    Executa um comando para UMA clínica, com:
-      - lock distribuído por clínica (evita concorrência do MESMO clinic_id)
-      - rate_limit (evita estouro em providers)
-    """
+def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field: str = "--clinic-id", extra_args: list[str] | None = None):
     lock_ns = f"cmd:{command_name}"
     with clinic_lock(clinic_id, lock_ns) as ok:
         if not ok:
@@ -202,13 +197,48 @@ def execute_command_for_clinic(self, command_name: str, clinic_id: str, id_field
             raise self.retry(countdown=BUSY_RETRY_SECONDS)
 
         try:
-            log.info("clinic.cmd.run", command=command_name, clinic_id=clinic_id, field=id_field)
-            call_command(command_name, id_field, clinic_id)
+            log.info("clinic.cmd.run", command=command_name, clinic_id=clinic_id, field=id_field, extra_args=extra_args or [])
+            call_command(command_name, id_field, clinic_id, *(extra_args or []))
             log.info("clinic.cmd.ok", command=command_name, clinic_id=clinic_id)
         except Exception as exc:
             log.error("clinic.cmd.error", command=command_name, clinic_id=clinic_id, error=str(exc))
             raise self.retry(exc=exc)  # noqa: B904
 
+@shared_task(queue=QUEUE_NOTIF_SERIAL)
+def schedule_pre_due_only_daily():
+    """
+    09:00 todos os dias — processa SOMENTE pré-vencimento (step 0).
+    """
+    clinics = list(iter_clinic_dicts())
+    total = 0
+    for c in clinics:
+        execute_command_for_clinic.si(
+            "run_automated_notifications",
+            str(c["oralsin_clinic_id"]),
+            "--clinic-id",
+            ["--mode", "pre_due"],
+        ).apply_async(queue=QUEUE_NOTIF_SERIAL)
+        total += 1
+    log.info("notifications.pre_due.enqueued", clinics=total)
+
+
+@shared_task(queue=QUEUE_NOTIF_SERIAL)
+def schedule_overdue_only_tuesday():
+    """
+    13:00 apenas TERÇA — processa SOMENTE inadimplentes (step >=1 e step 99).
+    """
+    clinics = list(iter_clinic_dicts())
+    total = 0
+    for c in clinics:
+        execute_command_for_clinic.si(
+            "run_automated_notifications",
+            str(c["oralsin_clinic_id"]),
+            "--clinic-id",
+            ["--mode", "overdue"],
+        ).apply_async(queue=QUEUE_NOTIF_SERIAL)
+        total += 1
+    log.info("notifications.overdue.enqueued", clinics=total)
+    
 @shared_task(queue=QUEUE_NOTIF_SERIAL)
 def schedule_daily_notifications():
     """
@@ -222,7 +252,6 @@ def schedule_daily_notifications():
     for c in clinics:
         # cadeia por clínica garante ordem (notif -> cartas)
         chain(
-            execute_command_for_clinic.si("run_automated_notifications", str(c["oralsin_clinic_id"]), "--clinic-id"),
             execute_command_for_clinic.si("send_pending_letters",       str(c["id"]),               "--clinic-id"),
         ).apply_async(queue=QUEUE_NOTIF_SERIAL)
         total += 1

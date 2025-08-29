@@ -50,6 +50,7 @@ class ApproveRegistrationRequestHandler(CommandHandler[ApproveRegistrationReques
             "clinic_name": request.clinic_name,
             "name": request.name,
             "email": request.email,
+            "contact_phone": request.contact_phone,
             "password": command.raw_password,
             "cordial_billing_config": request.cordial_billing_config,
         }

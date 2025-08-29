@@ -65,8 +65,9 @@ class Command(BaseCommand):
         container = setup_di_container_from_settings(None)
         cmd_bus = container.command_bus()
 
-        clinic_name = opt.get("clinic_name")
-        owner_name  = opt.get("owner_name")
+        clinic_name     = opt.get("clinic_name")
+        owner_name      = opt.get("owner_name")
+        contact_phone   = opt.get("contact_phone")
 
         if not clinic_name:
             if opt["skip_admin"]:
@@ -77,14 +78,14 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"🎉 super_admin id={admin_id}"))
             return
 
-        if not owner_name:
-            raise CommandError("--owner-name obrigatório quando --clinic-name é usado.")
+        if not owner_name and not contact_phone:
+            raise CommandError("--owner-name e --contact-phone obrigatório quando --clinic-name é usado.")
 
         self.stdout.write(self.style.NOTICE("🚀 Seed completo iniciado…"))
 
         # 1. Registrar cobertura da clínica (core)
         result = cmd_bus.dispatch(RegisterCoverageClinicCommand(
-            clinic_name=clinic_name, owner_name=owner_name
+            clinic_name=clinic_name, owner_name=owner_name, contact_phone=contact_phone
         ))
         self.stdout.write(self.style.SUCCESS(f"🏥 Clínica registrada no Core (id={result.clinic_id})"))
 

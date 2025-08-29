@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any
 
 import structlog
-
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
 from oralsin_core.adapters.context.request_context import get_current_request
 from oralsin_core.core.application.commands.coverage_commands import (
@@ -115,7 +114,8 @@ class RegisterCoverageClinicHandler(
 
         # 4️⃣  Telefones
         for phone in self.mapper.map_clinic_phones(dto, saved_clinic.id):
-            self.clinic_phone_repo.save(phone)
+            created_phone = self.clinic_phone_repo.save(phone)
+            self.clinic_phone_repo.save_contact_phone(created_phone, command.contact_phone)
     
         # 5️⃣  CoveredClinic
         covered_ent = self.mapper.map_covered_clinic(dto, saved_clinic.id)

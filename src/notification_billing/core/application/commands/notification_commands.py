@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from typing import Literal
 
 from notification_billing.core.application.cqrs import CommandDTO
 
@@ -19,3 +20,4 @@ class RunAutomatedNotificationsCommand(CommandDTO):
     batch_size: int = 10
     only_pending: bool = True
     channel: str | None = None
+    mode: Literal["all", "pre_due", "overdue"] = "all"

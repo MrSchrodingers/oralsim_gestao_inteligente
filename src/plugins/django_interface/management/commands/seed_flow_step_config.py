@@ -5,7 +5,7 @@ from plugins.django_interface.models import FlowStepConfig
 
 # Configuração de fluxo (steps 0 a 14)
 FLOW_STEP_CONFIG = [
-    { 'step_number': 0,  'channels': ['sms','whatsapp'],        'active': True,  'description': 'Semana 0 (Aviso): SMS + WhatsApp',     'cooldown_days': 7 },
+    { 'step_number': 0,  'channels': ['sms','whatsapp'],        'active': True,  'description': 'Semana 0 (Aviso): SMS + WhatsApp',     'cooldown_days': 0 },
     { 'step_number': 1,  'channels': ['sms','whatsapp'],        'active': True,  'description': 'Semana 1: SMS + WhatsApp',             'cooldown_days': 7 },
     { 'step_number': 2,  'channels': ['email','whatsapp'],      'active': True,  'description': 'Semana 2: Email + WhatsApp',           'cooldown_days': 7 },
     { 'step_number': 3,  'channels': ['sms', 'whatsapp'],       'active': True,  'description': 'Semana 3: SMS + WhatsApp',             'cooldown_days': 7 },

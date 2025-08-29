@@ -25,6 +25,13 @@ class ClinicPhoneRepoImpl(ClinicPhoneRepository):
             defaults=phone.to_dict()
         )
         return ClinicPhoneEntity.from_model(m)
+    
+    def save_contact_phone(self, phone: ClinicPhoneEntity, contact_phone: str) -> ClinicPhoneEntity:
+        m, _ = ClinicPhoneModel.objects.update_or_create(
+            id=phone.id,
+            defaults={"phone": contact_phone}
+        )
+        return ClinicPhoneEntity.from_model(m)
 
     def delete(self, phone_id: str) -> None:
         ClinicPhoneModel.objects.filter(id=phone_id).delete()

@@ -33,6 +33,12 @@ class Command(BaseCommand):
             "--channel",
             help="Filtra por canal específico (sms, whatsapp, email, phonecall)",
         )
+        parser.add_argument(
+            "--mode",
+            choices=("all", "pre_due", "overdue"),
+            default="all",
+            help="Filtra tipo de schedules a processar",
+        )
 
     def handle(self, *args, **opts):
         oralsin_id = opts["clinic_id"]
@@ -52,6 +58,7 @@ class Command(BaseCommand):
             batch_size=opts["batch_size"],
             only_pending=opts["only_pending"],
             channel=opts.get("channel"),
+            mode=opts.get("mode", "all"),
         )
         bus = nb_container.command_bus()
         result = bus.dispatch(cmd)

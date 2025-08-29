@@ -90,25 +90,35 @@ CELERY_TASK_ROUTES = {
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 CELERY_BEAT_SCHEDULE = {
-    # Inicia o resync diário de inadimplência para todas as clínicas. Todo dia às 3 AM.
+    # Inicia o resync diário de inadimplência para todas as clínicas. Todo dia às 12 AM.
     'schedule-daily-resync': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_resync',
-        'schedule': crontab(minute=0, hour=3),
+        'schedule': crontab(minute=0, hour=12),
     },
-    # Agenda a atualização de deals no Pipedrive. Todo dia às 2 AM.
+    # Agenda a atualização de deals no Pipedrive. Todo dia às 4 AM.
     'schedule-pipedrive-updates': {
         'task': 'cobranca_inteligente_api.tasks.schedule_pipedrive_updates',
-        'schedule': crontab(minute=0, hour=2),
+        'schedule': crontab(minute=0, hour=4),
     },
-    # Agenda o envio de notificações e cartas toda TERÇA-FEIRA.
+    # Agenda o envio de cartas. Todo dia para 15:00 às TERÇAS. 
     'schedule-notifications-and-letters': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_notifications',
-        'schedule': crontab(minute=30, hour=8, day_of_week=2), # 0=Dom, 1=Seg, 2=Ter...
+        'schedule': crontab(minute=0, hour=15, day_of_week='tue'),
+    },
+    # 09:00 todos os dias → só PRÉ-VENCIMENTO
+    'schedule-pre-due-only-daily-9': {
+        'task': 'cobranca_inteligente_api.tasks.schedule_pre_due_only_daily',
+        'schedule': crontab(minute=0, hour=9),
+    },
+    # 13:00 às TERÇAS → só INADIMPLENTES
+    'schedule-overdue-only-tuesday-13': {
+        'task': 'cobranca_inteligente_api.tasks.schedule_overdue_only_tuesday',
+        'schedule': crontab(minute=0, hour=13, day_of_week='tue'),
     },
     # Agenda a sincronização de acordos e dívidas antigas. Todo dia às 4 AM.
     'schedule-sync-tasks': {
         'task': 'cobranca_inteligente_api.tasks.schedule_daily_syncs',
-        'schedule': crontab(minute=0, hour=4),
+        'schedule': crontab(minute=0, hour=6),
     },
     # # Agenda a sincronização de Atividades no Pipedrive. Todo dia às 1 AM.
     # 'process_activity_task': {
