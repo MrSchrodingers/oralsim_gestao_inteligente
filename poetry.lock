@@ -1814,6 +1814,18 @@ files = [
 ]
 
 [[package]]
+name = "phonenumbers"
+version = "9.0.13"
+description = "Python version of Google's common library for parsing, formatting, storing and validating international phone numbers."
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "phonenumbers-9.0.13-py2.py3-none-any.whl", hash = "sha256:b97661e177773e7509c6d503e0f537cd0af22aa3746231654590876eb9430915"},
+    {file = "phonenumbers-9.0.13.tar.gz", hash = "sha256:eca06e01382412c45316868f86a44bb217c02f9ee7196589041556a2f54a7639"},
+]
+
+[[package]]
 name = "pika"
 version = "1.3.2"
 description = "Pika Python AMQP Client Library"
@@ -3166,4 +3178,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13.3"
-content-hash = "67db278896768dd983f3d1d5d6437c0962139c06700e6b3aa36a922d05ff5afc"
+content-hash = "3dd9f264006ce06f2c896e2a2bd56ec39d293c4fa731f987a275305d19369020"
