@@ -1,5 +1,7 @@
 from dependency_injector import containers, providers
 
+from oralsin_core.adapters.repositories.clinic_phone_repo_impl import ClinicPhoneRepoImpl
+
 container = None
 
 def setup_di_container_from_settings(settings):  # noqa: PLR0915
@@ -168,6 +170,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         pending_call_repo = providers.Singleton(PendingCallRepoImpl)
         clinic_repo = providers.Singleton(ClinicRepoImpl)
         clinic_data_repo = providers.Singleton(ClinicDataRepoImpl, address_repo=address_repo)
+        clinic_phone_repo = providers.Singleton(ClinicPhoneRepoImpl)
         
         # Serviços de negócio
         formatter_service = providers.Singleton(FormatterService, currency_symbol="R$")
@@ -176,6 +179,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             message_repo=message_repo,
             patient_repo=patient_repo,
             installment_repo=installment_repo,
+            clinic_phone_repo=clinic_phone_repo
         )
         contact_scheduling_service = providers.Singleton(
             ContactSchedulingService,
