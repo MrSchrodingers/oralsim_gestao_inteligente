@@ -90,8 +90,8 @@ class NotificationSenderService:
         overdue_count = self.installment_repo.count_overdue_by_contract(
             contract_id=inst.contract_id
         )
-        clinic_phone = self.clinic_phone_repo.list_by_clinic(patient.clinic_id)[0]
-        contact_phone = clinic_phone.contact_phone
+        phones = self.clinic_phone_repo.list_by_clinic(patient.clinic_id) or []
+        contact_phone = getattr(phones[0], "contact_phone", "") if phones else ""
         
         ctx = {
             "nome": patient.name,

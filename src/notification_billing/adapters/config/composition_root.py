@@ -179,7 +179,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             message_repo=message_repo,
             patient_repo=patient_repo,
             installment_repo=installment_repo,
-            clinic_phone_repo=clinic_phone_repo
+            clinic_phone_repo=clinic_phone_repo,
         )
         contact_scheduling_service = providers.Singleton(
             ContactSchedulingService,
