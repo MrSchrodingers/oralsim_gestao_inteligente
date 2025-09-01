@@ -106,8 +106,35 @@ class NotificationSenderService:
         cfg = FlowStepConfig.objects.get(step_number=schedule.current_step)
         return [c for c in cfg.channels if c not in ("letter", "pending_call")]
 
+    def _pick_phone(self, patient: PatientEntity) -> str:
+        """
+        Escolhe o melhor telefone do paciente:
+        1) Prioriza phone_type == 'mobile'
+        2) Caso não exista, usa o primeiro número válido de qualquer tipo
+        Lança MissingContactInfoError se não encontrar nenhum número utilizável.
+        """
+        if not getattr(patient, "phones", None):
+            raise MissingContactInfoError(f"Paciente {patient.id} não possui telefones cadastrados.")
+
+        # 1) tenta mobile
+        mobiles = [
+            p for p in patient.phones
+            if (getattr(p, "phone_type", None) or "").lower() == "mobile"
+               and (getattr(p, "phone_number", "") or "").strip()
+        ]
+        if mobiles:
+            return str(mobiles[0].phone_number).strip()
+
+        # 2) fallback: primeiro número não-vazio de qualquer tipo
+        for p in patient.phones:
+            num = (getattr(p, "phone_number", "") or "").strip()
+            if num:
+                return str(num)
+
+        # 3) nenhum número aproveitável
+        raise MissingContactInfoError(f"Paciente {patient.id} não possui número de telefone utilizável.")
     # ------------------------------------------------------------------ #
-    def send(self, msg, patient, inst) -> None:
+    def send(self, msg, patient: PatientEntity, inst: InstallmentEntity) -> None:
         content = self._render_content(msg, patient, inst)
         notifier = get_notifier(msg.type)
 
@@ -120,11 +147,11 @@ class NotificationSenderService:
                 )
             elif msg.type == "sms":
                 notifier.send(
-                    phones=[patient.phones[0].phone_number], message=content
+                    phones=[self._pick_phone(patient)], message=content
                 )
             elif msg.type == "whatsapp":
                 dto = WhatsappNotificationDTO(
-                    to=str(patient.phones[0].phone_number), message=content
+                    to=str(self._pick_phone(patient)), message=content
                 )
                 notifier.send(dto)
             else:
