@@ -10,52 +10,40 @@ class CordialLetterService:
     preenchendo placeholders com dados de um contexto.
     """
 
-    def __init__(self, template_path: str):
-        self.template_path = template_path
+    def __init__(self, default_template_path: str):
+        self.default_template_path = default_template_path
 
     def _replace_text_in_paragraph(self, paragraph: Paragraph, context: dict):
-        """
-        Substitui placeholders num parágrafo de forma segura, usando apenas a API pública.
-        """
-        if '{' not in paragraph.text:
+        if "{" not in paragraph.text:
             return
 
-        # Constrói o texto completo do parágrafo a partir de todos os seus 'runs'
         full_text = "".join(run.text for run in paragraph.runs)
-        
-        # Faz todas as substituições necessárias na variável de texto
         for key, value in context.items():
             full_text = full_text.replace(f"{{{key}}}", str(value))
-        
-        # Coloca o texto final no primeiro 'run'
-        # e limpa os restantes 'runs' do parágrafo.
+
         if paragraph.runs:
-            # Mantém a formatação original do primeiro 'run'
             original_run = paragraph.runs[0]
-            original_run.text = full_text # Coloca o texto completo aqui
-            
-            # Limpa o texto de todos os outros 'runs'
+            original_run.text = full_text
             for i in range(1, len(paragraph.runs)):
                 paragraph.runs[i].text = ""
 
-    def generate_letter(self, context: dict) -> io.BytesIO:
+    def generate_letter(self, context: dict, template_path: str | None = None) -> io.BytesIO:
         """
-        Carrega o template e substitui os placeholders em todas as partes do documento.
+        Carrega o template (padrão ou informado) e substitui os placeholders
+        em todas as partes do documento.
         """
-        document = Document(self.template_path)
+        docx_path = template_path or self.default_template_path
+        document = Document(docx_path)
 
-        # Itera sobre os parágrafos do corpo principal
         for p in document.paragraphs:
             self._replace_text_in_paragraph(p, context)
 
-        # Itera sobre as tabelas
         for table in document.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for p in cell.paragraphs:
                         self._replace_text_in_paragraph(p, context)
-        
-        # Itera sobre cabeçalhos e rodapés
+
         for section in document.sections:
             if section.header:
                 for p in section.header.paragraphs:
@@ -64,7 +52,6 @@ class CordialLetterService:
                 for p in section.footer.paragraphs:
                     self._replace_text_in_paragraph(p, context)
 
-        # Salva o documento modificado
         file_stream = io.BytesIO()
         document.save(file_stream)
         file_stream.seek(0)

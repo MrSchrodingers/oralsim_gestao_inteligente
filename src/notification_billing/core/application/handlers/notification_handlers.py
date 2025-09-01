@@ -4,6 +4,9 @@ from typing import Any
 import structlog
 from django.db import DatabaseError, transaction
 from django.utils import timezone
+from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
+from oralsin_core.core.domain.entities.patient_entity import PatientEntity
+from oralsin_core.core.domain.repositories.clinic_phone_repository import ClinicPhoneRepository
 from oralsin_core.core.domain.repositories.contract_repository import (
     ContractRepository,
 )
@@ -35,6 +38,7 @@ from notification_billing.core.application.dtos.whatsapp_notification_dto import
 from notification_billing.core.domain.entities.contact_schedule_entity import (
     ContactScheduleEntity,
 )
+from notification_billing.core.domain.entities.message_entity import MessageEntity
 from notification_billing.core.domain.events.events import NotificationSentEvent
 from notification_billing.core.domain.events.exceptions import (
     MissingContactInfoError,
@@ -74,22 +78,27 @@ class NotificationSenderService:
         message_repo: MessageRepository,
         patient_repo: PatientRepository,
         installment_repo: InstallmentRepository,
+        clinic_phone_repo: ClinicPhoneRepository
     ):
         self.message_repo = message_repo
         self.patient_repo = patient_repo
         self.installment_repo = installment_repo
+        self.clinic_phone_repo = clinic_phone_repo
 
     # ------------------------------------------------------------------ #
-    def _render_content(self, msg, patient, inst) -> str:
+    def _render_content(self, msg: MessageEntity, patient: PatientEntity, inst: InstallmentEntity) -> str:
         overdue_count = self.installment_repo.count_overdue_by_contract(
             contract_id=inst.contract_id
         )
+        clinic_phone = self.clinic_phone_repo.list_by_clinic(patient.clinic_id)[0]
+        contact_phone = clinic_phone.contact_phone
         
         ctx = {
             "nome": patient.name,
             "valor": f"R$ {inst.installment_amount:.2f}",
             "vencimento": inst.due_date.strftime("%d/%m/%Y"),
             "total_parcelas_em_atraso": overdue_count,
+            "contact_phone": contact_phone
         }
         return render_message(msg.content, ctx)
     

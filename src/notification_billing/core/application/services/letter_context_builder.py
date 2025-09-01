@@ -37,14 +37,14 @@ class LetterContextBuilder:
     @staticmethod
     def _clear_if_missing(val):
         return "" if not val or val.strip().lower() in ["sem informação", "sem informacao", "não informado", "nao informado"] else val
-      
+
     def build(self, *, patient_id: str, contract_id: str, clinic_id: str,
               installment_id: str | None = None, current_installment: bool = False) -> dict:
 
         patient   = self.patient_repo.find_by_id(patient_id)
         contract  = self.contract_repo.find_by_id(contract_id)
         inst = self.installment_repo.find_by_id(installment_id) if installment_id else self.installment_repo.get_current_installment(contract_id)
-
+        overdue_count = self.installment_repo.count_overdue_by_contract(contract_id)
         clinic        = self.clinic_repo.find_by_id(clinic_id)
         clinic_data   = self.clinic_data_repo.find_by_clinic(clinic_id)
         patient_addr  = ( self.address_repo.find_by_id(patient.address.id)
@@ -75,6 +75,8 @@ class LetterContextBuilder:
             "installment_number":  inst.installment_number if inst else "",
             "installment_amount":  f"{inst.installment_amount:.2f}".replace('.', ',') if inst else "0,00",
             "installment_due_date": inst.due_date.strftime('%d/%m/%Y') if inst else "",
+            "due_date_installments": overdue_count,
+            "total_parcelas_em_atraso": overdue_count,
 
             # — Clínica
             "clinic_name":  clinic.name if clinic else "",

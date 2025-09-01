@@ -197,7 +197,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
         )
         letter_service = providers.Factory(
             CordialLetterService,
-            template_path="ModeloCartaAmigavel.docx"
+            default_template_path="ModeloCartaAmigavel1.docx",  # agora "default_template_path"
         )
         contact_scheduling_service = providers.Factory(
             ContactSchedulingService,
@@ -254,6 +254,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             schedule_repo=contact_schedule_repo,
             context_builder=context_builder,
             letter_service=letter_service,
+            config_repo=flow_step_config_repo,
         )
         
         # Handlers de fluxo de contato/notificação
@@ -300,6 +301,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             letter_notifier=letter_notifier,
             clinic_repo=clinic_repo,
             command_bus=command_bus,
+            config_repo=flow_step_config_repo,
         )
 
         # Handlers de sync e chamadas pendentes
