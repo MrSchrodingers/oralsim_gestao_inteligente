@@ -26,6 +26,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser) -> None:
         parser.add_argument("--clinic-name", type=str, help="Nome exato da clínica para criar ou atualizar.")
         parser.add_argument("--owner-name",  type=str, help="Nome do proprietário/responsável.")
+        parser.add_argument("--contact-phone", type=str, help="Telefone de contato do responsável pela clínica (ex.: +55 14 99999-9999).")
         parser.add_argument(
             "--force",
             action="store_true",
@@ -78,8 +79,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"🎉 super_admin id={admin_id}"))
             return
 
-        if not owner_name and not contact_phone:
-            raise CommandError("--owner-name e --contact-phone obrigatório quando --clinic-name é usado.")
+        if (not owner_name) or (not contact_phone):
+            raise CommandError("--owner-name e --contact-phone são obrigatórios quando --clinic-name é usado.")
 
         self.stdout.write(self.style.NOTICE("🚀 Seed completo iniciado…"))
 
