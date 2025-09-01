@@ -8,6 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+from oralsin_core.adapters.utils.phone_utils import normalize_phone
 from oralsin_core.core.application.commands.sync_commands import SyncInadimplenciaCommand
 from oralsin_core.core.application.cqrs import CommandHandler
 from oralsin_core.core.application.dtos.oralsin_dtos import (
@@ -127,12 +128,38 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
         if not phone_entities:
             return
 
-        existing_phones = {p.phone_number: p for p in PatientPhoneModel.objects.filter(patient_id=patient_id)}
-        to_create = [
-            PatientPhoneModel(**ent.to_dict()) for ent in phone_entities
-            if ent.phone_number not in existing_phones
-        ]
+        # já existentes (normalizados) desse paciente
+        existing = set(
+            PatientPhoneModel.objects
+            .filter(patient_id=patient_id)
+            .values_list("phone_number", flat=True)
+        )
+
+        to_create = []
+        seen = set(existing)  # dedupe dentro do batch
+
+        for ent in phone_entities:
+            norm = normalize_phone(ent.phone_number, default_region="BR", digits_only=True, with_plus=False)
+            if not norm:
+                # logue se quiser rastrear
+                logger.debug("[PHONE_INVALID] patient=%s raw=%r", patient_id, ent.phone_number)
+                continue
+
+            if norm in seen:
+                continue  # já existe (ou repetido no payload)
+            seen.add(norm)
+
+            to_create.append(
+                PatientPhoneModel(
+                    id=ent.id,              # preserve o id do mapeador se existir
+                    patient_id=patient_id,
+                    phone_number=norm,      # sempre normalizado
+                    phone_type=ent.phone_type,
+                )
+            )
+
         if to_create:
+            # UniqueConstraint(patient, phone_number) + ignore_conflicts dá robustez extra
             PatientPhoneModel.objects.bulk_create(to_create, ignore_conflicts=True)
 
     def _persist_contract(self, dto: OralsinPacienteDTO, patient_id: uuid.UUID, clinic_id: uuid.UUID):
