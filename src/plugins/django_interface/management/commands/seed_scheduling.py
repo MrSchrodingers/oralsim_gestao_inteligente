@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 from oralsin_core.adapters.config.composition_root import (
     setup_di_container_from_settings as setup_core_container,
 )
@@ -43,28 +43,17 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # 1. Trava de Segurança
-        is_forced = options["force"]
-        from plugins.django_interface.models import ContactSchedule as ContactScheduleModel
-        if ContactScheduleModel.objects.exists() and not is_forced:
-            raise CommandError(
-                "Já existem agendamentos no sistema. "
-                "Para evitar agendamentos duplicados, este comando foi bloqueado. "
-                "Use a flag --force para executar mesmo assim."
-            )
-
+        clinic_id = options["clinic_id"]
+        min_days = options["min_days"]
+        
         core_container = setup_core_container(None)
         notification_container = setup_notification_container(None)
 
         covered_repo: CoveredClinicRepository = core_container.covered_clinic_repo()
         command_bus = notification_container.command_bus()
 
-        clinic_id = options["clinic_id"]
-        min_days = options["min_days"]
-
         clinics_to_process = (
             [covered_repo.find_by_api_id(clinic_id)]
-            if clinic_id
-            else covered_repo.list_all()
         )
 
         for clinic in clinics_to_process:
