@@ -9,6 +9,11 @@ class ClinicPhoneRepository(ABC):
     def save_contact_phone(self, phone: ClinicPhoneEntity, contact_phone: str) -> ClinicPhoneEntity:
         """Cria ou atualiza telefone de contato da clinica."""
         ...
+    
+    @abstractmethod
+    def find_contact_by_clinic_id(self, clinic_id: str) -> ClinicPhoneEntity | None:
+        """Busca telefone de contato a partir da clinica."""
+        ...
         
     @abstractmethod
     def find_by_id(self, phone_id: str) -> ClinicPhoneEntity | None:

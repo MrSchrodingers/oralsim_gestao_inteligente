@@ -24,6 +24,7 @@ from oralsin_core.core.application.queries.coverage_queries import (
     ListUserClinicsQuery,
 )
 from oralsin_core.core.domain.entities.clinic_entity import ClinicEntity
+from oralsin_core.core.domain.entities.clinic_phone_entity import ClinicPhoneEntity
 from oralsin_core.core.domain.entities.covered_clinics import CoveredClinicEntity
 from oralsin_core.core.domain.entities.user_clinic_entity import UserClinicEntity
 from oralsin_core.core.domain.events.events import (
@@ -116,6 +117,17 @@ class RegisterCoverageClinicHandler(
         # 4️⃣  Telefones
         for phone in self.mapper.map_clinic_phones(dto, saved_clinic.id):
             self.clinic_phone_repo.save(phone)
+        # 4.1️⃣  Telefone de contato vindo do comando (se houver)
+        if getattr(command, "contact_phone", None):
+            self.clinic_phone_repo.save_contact_phone(
+                ClinicPhoneEntity(
+                    id=uuid.uuid4(),
+                    clinic_id=saved_clinic.id,
+                    phone_number=command.contact_phone,
+                    phone_type="contact",
+                ),
+                contact_phone=command.contact_phone,
+            )
     
         # 5️⃣  CoveredClinic
         covered_ent = self.mapper.map_covered_clinic(dto, saved_clinic.id)

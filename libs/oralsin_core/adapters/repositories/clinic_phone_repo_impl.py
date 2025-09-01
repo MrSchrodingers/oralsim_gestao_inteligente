@@ -12,6 +12,13 @@ class ClinicPhoneRepoImpl(ClinicPhoneRepository):
         except ClinicPhoneModel.DoesNotExist:
             return None
 
+    def find_contact_by_clinic_id(self, clinic_id: str) -> ClinicPhoneEntity | None:
+        try:
+            m = ClinicPhoneModel.objects.get(id=clinic_id, phone_type="contact")
+            return ClinicPhoneEntity.from_model(m)
+        except ClinicPhoneModel.DoesNotExist:
+            return None
+        
     def _by_clinic(self, clinic_id: str) -> list[ClinicPhoneEntity]:
         qs = ClinicPhoneModel.objects.filter(clinic_id=clinic_id)
         return [ClinicPhoneEntity.from_model(m) for m in qs]
@@ -20,16 +27,22 @@ class ClinicPhoneRepoImpl(ClinicPhoneRepository):
         return self._by_clinic(clinic_id)
     
     def save(self, phone: ClinicPhoneEntity) -> ClinicPhoneEntity:
+        defaults = {
+            "clinic_id": phone.clinic_id,
+            "phone_number": phone.phone_number,
+            "phone_type": phone.phone_type,
+        }
         m, _ = ClinicPhoneModel.objects.update_or_create(
             id=phone.id,
-            defaults=phone.to_dict()
+            defaults=defaults,
         )
         return ClinicPhoneEntity.from_model(m)
     
     def save_contact_phone(self, phone: ClinicPhoneEntity, contact_phone: str) -> ClinicPhoneEntity:
         m, _ = ClinicPhoneModel.objects.update_or_create(
-            id=phone.id,
-            defaults={"phone": contact_phone}
+            clinic_id=phone.clinic_id,
+            phone_type="contact",
+            defaults={"phone_number": contact_phone},
         )
         return ClinicPhoneEntity.from_model(m)
 
