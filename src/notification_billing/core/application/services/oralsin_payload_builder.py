@@ -59,7 +59,7 @@ def build_oralsin_payload(history: ContactHistory) -> OralsinContatoHistoricoEnv
         idStatusContato=id_contact,
         
         # A data de retorno vem diretamente do agendamento ligado ao histórico
-        dataHoraRetornar=schedule.scheduled_date if schedule else None,
+        # dataHoraRetornar=schedule.scheduled_date if schedule else None,
         
         # A versão do contrato vem diretamente do contrato ligado ao histórico
         versaoContrato=getattr(contract, "contract_version", None),

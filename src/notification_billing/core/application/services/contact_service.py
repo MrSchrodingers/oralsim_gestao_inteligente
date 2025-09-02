@@ -132,12 +132,14 @@ class ContactSchedulingService:
             # Calcula o próximo step com base no atraso real.
             next_step, next_when = self._calculate_proportional_step_and_date(inst)
 
-            # Garante que não vamos repetir o mesmo step. Se o cálculo resultar no mesmo step, avança para o próximo.
-            if next_step <= current.current_step:
+            if current.current_step == 99:  # noqa: PLR2004
+                # Entra na “escada” normal de inadimplência (pelo proporcional, no mínimo 1)
+                next_step = max(1, next_step)
+            elif next_step <= current.current_step:
                 next_step = current.current_step + 1
 
             next_cfg = self.flow_cfg_repo.find_by_step(next_step)
-            if not next_cfg:  # Fluxo de notificação chegou ao fim.
+            if not next_cfg:
                 return current
 
             next_sched = self._upsert_schedule(
