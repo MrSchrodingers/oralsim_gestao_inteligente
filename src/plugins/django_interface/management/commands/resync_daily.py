@@ -27,8 +27,8 @@ class Command(BaseCommand):
         cmd_bus = container.command_bus()
 
         today = date.today()
-        initial = today - timedelta(days=200)
-        final = today + timedelta(days=730)
+        initial = today - timedelta(days=7200)
+        final = today + timedelta(days=3600)
 
         clinics = Clinic.objects.filter(coverage__active=True).values_list(
             "oralsin_clinic_id", flat=True

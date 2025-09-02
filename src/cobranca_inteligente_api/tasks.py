@@ -97,8 +97,8 @@ def execute_resync_for_clinic(self, clinic_oralsin_id: str):
     """
     try:
         today = date.today()
-        initial_date = today - timedelta(days=200)
-        final_date = today + timedelta(days=730)
+        initial_date = today - timedelta(days=7200)
+        final_date = today + timedelta(days=3600)
         log.info(
             "resync.start",
             clinic_oralsin_id=clinic_oralsin_id,

@@ -56,8 +56,8 @@ class Command(BaseCommand):
         is_resync = options["resync"]
         
         today = date.today()
-        start = today - timedelta(days=200)
-        end   = today + timedelta(days=730)
+        start = today - timedelta(days=7200)
+        end   = today + timedelta(days=3600)
         initial_date = options["data_inicio"] or start
         final_date = options["data_fim"] or end
 

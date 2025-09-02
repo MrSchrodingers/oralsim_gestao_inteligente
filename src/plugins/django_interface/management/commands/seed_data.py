@@ -160,8 +160,8 @@ class Command(BaseCommand):
                 end   = today + timedelta(days=window_days)
             self.stdout.write(self.style.NOTICE(f"⏳ Resync {start} → {end}"))
         else:
-            start = today - timedelta(days=200)
-            end   = today + timedelta(days=730)
+            start = today - timedelta(days=7200)
+            end   = today + timedelta(days=3600)
             self.stdout.write(self.style.NOTICE("⏳ Sync completo (datas padrão)…"))
 
         sync_service = container.oralsin_sync_service()
