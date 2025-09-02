@@ -14,7 +14,7 @@ class ClinicPhoneRepoImpl(ClinicPhoneRepository):
 
     def find_contact_by_clinic_id(self, clinic_id: str) -> ClinicPhoneEntity | None:
         try:
-            m = ClinicPhoneModel.objects.get(id=clinic_id, phone_type="contact")
+            m = ClinicPhoneModel.objects.get(clinic_id=clinic_id, phone_type="contact")
             return ClinicPhoneEntity.from_model(m)
         except ClinicPhoneModel.DoesNotExist:
             return None
