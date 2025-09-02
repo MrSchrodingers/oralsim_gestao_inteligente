@@ -38,6 +38,14 @@ class ContactSchedulingService:
 
     def _is_overdue(self, inst) -> bool:
         return (inst.due_date < timezone.localdate()) and (not inst.received)
+    
+    def _max_overdue_days(self, clinic_id: str) -> int:
+        """Retorna o limite de atraso em dias a partir do BillingSettings, com fallback para 90."""
+        try:
+            bs = self.billing_settings_repo.get(clinic_id)
+            return (bs.min_days_overdue or 90)
+        except Exception:
+            return 90
     # ─────────────────────────  API pública  ────────────────────────── #
     def schedule_initial(self, patient_id: str, contract_id: str, clinic_id: str) -> ContactScheduleEntity | None:
         """
@@ -48,6 +56,16 @@ class ContactSchedulingService:
         inst = self.installment_repo.get_current_installment(contract_id)
         if not inst or inst.received:
             return None
+        
+        today = timezone.localdate()
+        is_inadimplente = (inst.due_date < today) and (not inst.received)
+
+        # guarda de segurança por limite de dias de atraso
+        if is_inadimplente:
+            days_overdue = (today - inst.due_date).days
+            max_overdue = self._max_overdue_days(clinic_id)
+            if days_overdue > max_overdue:
+                return None  # não agenda nada no fluxo de notificações
 
         # "Primeira vez" = não existe contato realizado (history).
         # Se só houve schedules cancelados (sem history), ainda tratamos como primeira vez.
