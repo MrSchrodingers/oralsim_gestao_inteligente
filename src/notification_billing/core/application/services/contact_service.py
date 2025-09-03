@@ -155,7 +155,7 @@ class ContactSchedulingService:
     # ─────────────────────────  Helpers  ────────────────────────── #
     def _adjust_to_business_day_before(self, target_date, *, upper_due_date):
         """
-        Se D-3 cair em fim de semana, aproxima para o ÚLTIMO dia útil anterior ao vencimento.
+        Se D-2 cair em fim de semana, aproxima para o ÚLTIMO dia útil anterior ao vencimento.
         (Sábado -> sexta; Domingo -> sexta)
         """
         # Mon=0 ... Sun=6
@@ -173,7 +173,7 @@ class ContactSchedulingService:
         """Calcula step e data alvo, isolando pré-vencimento (step 0) de pós-vencimento (>=1)."""
         today = timezone.localdate()
 
-        PRE_DUE_OFFSET_DAYS = 3      # D-3 obrigatório
+        PRE_DUE_OFFSET_DAYS = 2      # D-2 obrigatório
         OVERDUE_COOLDOWN_DAYS = 7    # ritmo semanal p/ steps de atraso
 
         if inst.due_date > today:
