@@ -124,9 +124,6 @@ class ContactSchedulingService:
             if days_overdue > min_days_overdue:
                 contract = self.contract_repo.find_by_id(current.contract_id)
                 if contract and not contract.do_billings:
-                    # Altera a flag do contrato e encerra o fluxo de notificação
-                    contract.do_billings = True
-                    self.contract_repo.update(contract)
                     return current  # Retorna o schedule concluído, sem agendar um próximo.
 
             # Calcula o próximo step com base no atraso real.
