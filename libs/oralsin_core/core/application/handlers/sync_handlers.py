@@ -106,7 +106,7 @@ class SyncInadimplenciaHandler(CommandHandler[SyncInadimplenciaCommand]):
 
                 # 2. Persiste Contrato e lida com flags de cobrança
                 contract_entity = self._persist_contract(dto, patient_id, clinic_id)
-                self._handle_billing_flags(contract_entity.id, dto.contrato.realizarCobranca)
+                self._handle_billing_flags(contract_entity.id, dto.contrato.realizarGestaoRecebiveis)
 
                 # 3. Persiste Parcelas e define a 'is_current'
                 self._persist_and_set_current_installment(dto, contract_entity.id)

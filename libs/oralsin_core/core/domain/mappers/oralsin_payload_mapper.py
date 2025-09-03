@@ -228,7 +228,7 @@ class OralsinPayloadMapper:
                 negotiation_notes=dto.obsNegociacao or "",
                 payment_method=pm,
                 final_contract_value=float(dto.valorContratoFinal or 0),
-                do_notifications=dto.realizarCobranca,
+                do_notifications=dto.realizarGestaoRecebiveis,
                 do_billings=dto.realizarCobrancaAmigavel,
             )
         except Exception as exc:  # pragma: no cover

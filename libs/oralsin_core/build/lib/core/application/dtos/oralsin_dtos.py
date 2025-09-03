@@ -54,7 +54,7 @@ class OralsinContratoDTO(BaseModel):
     primeiroFaturamento: datetime | None = None
     obsNegociacao: str | None = None
     nomeFormaPagamento: str | None = None
-    realizarCobranca: bool
+    realizarGestaoRecebiveis: bool
     realizarCobrancaAmigavel: bool
 
 
