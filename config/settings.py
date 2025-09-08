@@ -118,6 +118,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "cobranca_inteligente_api.tasks.schedule_overdue_only_tuesday",
         "schedule": crontab(minute=0, hour=13, day_of_week="tue"),
     },
+    # Pré-agenda (D-2) e re-agenda diariamente
+    "schedule-daily-preschedule-contacts": {
+        "task": "cobranca_inteligente_api.tasks.schedule_daily_preschedule",
+        "schedule": crontab(minute=0, hour=6),
+    },
     # Agenda a sincronização de acordos e dívidas antigas. Todo dia às 4 AM.
     "schedule-sync-tasks": {
         "task": "cobranca_inteligente_api.tasks.schedule_daily_syncs",
