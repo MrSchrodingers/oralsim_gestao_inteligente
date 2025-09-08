@@ -16,6 +16,7 @@ class RegistrationRequestEntity(EntityMixin):
     password_enc: str                     # AES/Fernet etc.
     name: str
     clinic_name: str
+    contact_phone: str
     cordial_billing_config: int
     status: Literal['pending', 'approved', 'rejected'] = 'pending'
     created_at: datetime | None = None

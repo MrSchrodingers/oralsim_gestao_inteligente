@@ -9,6 +9,7 @@ from oralsin_core.core.application.cqrs import CommandDTO
 class RegisterCoverageClinicCommand(CommandDTO):
     clinic_name: str
     owner_name: str
+    contact_phone: str
 
 @dataclass(frozen=True)
 class LinkUserClinicCommand(CommandDTO):

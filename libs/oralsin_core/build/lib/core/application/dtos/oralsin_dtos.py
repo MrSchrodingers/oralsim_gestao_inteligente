@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ───────────────────────────────────────────────
 # DTOs para integração com API Oralsin
@@ -78,6 +78,27 @@ class OralsinContatoHistoricoDTO(BaseModel):
     idContatoTipo: int | None = None
     descricao: str | None = None
 
+    @field_validator("dataHoraRetornar", "dataHoraInseriu", mode="before")
+    @classmethod
+    def _sanitize_datetime(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            # 1) placeholders comuns inválidos vindos da API
+            if s.startswith("-") or s.startswith("0000") or s in {
+                "0000-00-00", "0000-00-00T00:00:00Z",
+            }:
+                return None
+            # 2) normaliza 'Z' para offset aceito pelo fromisoformat
+            s = s.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(s)
+            except Exception:
+                # Falhou? trate como ausente
+                return None
+        return v
+
 class OralsinContatoHistoricoEnvioDTO(BaseModel):
     # idClinica: int
     idPaciente: int
@@ -87,7 +108,7 @@ class OralsinContatoHistoricoEnvioDTO(BaseModel):
     # contatoTipo: str | None = None
     idContatoTipo: int | None = None
     # descricao: str | None = None
-    id_status_contato: int = Field(alias="idStatusContato", default=1) # 1 = Contato bem sucedido
+    id_status_contato: int = Field(alias="idStatusContato", default=1) 
     data_hora_retornar: datetime | None = Field(alias="dataHoraRetornar", default=None)
     versao_contrato: str | None = Field(alias="versaoContrato", default=None)
     id_contrato_parcela: int | None = Field(alias="idContratoParcela", default=None)
