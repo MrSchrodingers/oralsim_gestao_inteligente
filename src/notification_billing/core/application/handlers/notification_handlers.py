@@ -1,4 +1,5 @@
 import atexit
+import time
 from typing import Any
 
 import structlog
@@ -70,8 +71,8 @@ blocking_channels = {'sms', 'whatsapp', 'email'}
 # ──────────────────────────────────────────────────────────────────────────
 class NotificationSenderService:
     """
-    Renderiza e envia notificações. Contém a lógica central para determinar o
-    destinatário correto (paciente ou pagante).
+    Renderiza e envia notificações. Contém a lógica central para determinar os
+    destinatários corretos (paciente e/ou pagante).
     """
 
     def __init__(
@@ -87,42 +88,48 @@ class NotificationSenderService:
         self.contract_repo = contract_repo
         self.installment_repo = installment_repo
         self.clinic_phone_repo = clinic_phone_repo
-        
-    # --- MUDANÇA: Lógica centralizada para obter o alvo do contato ---
-    def _get_notification_target(self, inst: InstallmentEntity, patient: PatientEntity) -> ContactInfoDTO:
+        self.SEND_DELAY_SECONDS = 2
+
+    def _get_notification_targets(self, inst: InstallmentEntity, patient: PatientEntity) -> list[ContactInfoDTO]:
         """
         Única fonte de verdade para determinar os dados de contato.
-        Se a parcela tem um pagador terceiro, usa seus dados.
-        Caso contrário, usa os dados do paciente.
-        """
-        target = inst.payer
+        Retorna uma lista de alvos para a notificação.
 
-        # Se não há pagador ou o pagador É o paciente, use os dados do paciente.
-        if not target or target.is_patient_the_payer:
-            return ContactInfoDTO(
-                name=patient.name,
-                email=patient.email,
-                phones=[
-                    ContactPhoneDTO(phone.phone_number, phone.phone_type)
-                    for phone in (patient.phones or [])
-                ]
-            )
-        
-        # Se há um pagador terceiro, use os dados dele.
-        return ContactInfoDTO(
-            name=target.name,
-            email=target.email,
+        - O paciente é SEMPRE um alvo.
+        - Se a parcela tem um pagador terceiro, ele também é incluído na lista.
+        """
+        targets = []
+
+        # 1. Adiciona o paciente como alvo principal.
+        patient_contact_info = ContactInfoDTO(
+            name=patient.name,
+            email=patient.email,
             phones=[
                 ContactPhoneDTO(phone.phone_number, phone.phone_type)
-                for phone in target.phones.all()
+                for phone in (patient.phones or [])
             ]
         )
+        targets.append(patient_contact_info)
+
+        # 2. Se há um pagador e ele não é o próprio paciente, adiciona-o também.
+        payer = inst.payer
+        if payer and not payer.is_patient_the_payer:
+            payer_contact_info = ContactInfoDTO(
+                name=payer.name,
+                email=payer.email,
+                phones=[
+                    ContactPhoneDTO(phone.phone_number, phone.phone_type)
+                    for phone in payer.phones.all()
+                ]
+            )
+            targets.append(payer_contact_info)
+
+        return targets
 
     def _render_content(self, msg: MessageEntity, contact_info: ContactInfoDTO, inst: InstallmentEntity) -> str:
         overdue_count = self.installment_repo.count_overdue_by_contract(
             contract_id=inst.contract_id
         )
-        # Busca o telefone da clínica pelo ID do contrato da parcela, que é mais seguro
         contract_entity = self.contract_repo.find_by_id(inst.contract_id)
         if not contract_entity:
             raise ValueError(f"Contrato com ID {inst.contract_id} não encontrado.")
@@ -163,42 +170,61 @@ class NotificationSenderService:
         raise MissingContactInfoError(f"O contato '{contact_info.name}' não possui número de telefone utilizável.")
     
     def send(self, msg: MessageEntity, patient: PatientEntity, inst: InstallmentEntity) -> None:
-        # 1. Determina o alvo correto da notificação
-        contact_info = self._get_notification_target(inst, patient)
-        
-        # 2. Renderiza o conteúdo com os dados do alvo
-        content = self._render_content(msg, contact_info, inst)
-        notifier = get_notifier(msg.type)
+        """
+        Envia a notificação para todos os alvos (paciente e/ou pagante).
+        Aplica um delay entre os envios se houver mais de um alvo.
+        """
+        # 1. Determina a lista de alvos da notificação usando o novo método.
+        targets = self._get_notification_targets(inst, patient)
 
-        try:
-            if msg.type == "email":
-                if not contact_info.email:
-                    raise MissingContactInfoError(f"Destinatário '{contact_info.name}' não possui e-mail.")
-                notifier.send(
-                    recipients=[contact_info.email],
-                    subject="Notificação de Atraso de Parcelas.",
-                    html=content,
-                )
-            elif msg.type in ("sms", "whatsapp"):
-                phone_number = self._pick_phone(contact_info)
-                if msg.type == "sms":
-                    notifier.send(phones=[phone_number], message=content)
-                else:  # whatsapp
-                    dto = WhatsappNotificationDTO(to=str(phone_number), message=content)
-                    notifier.send(dto)
-            else:
-                raise NotImplementedError(f"Canal não suportado: {msg.type}")
-        except HTTPError as http_err:
-            status_code = http_err.response.status_code
-            if 400 <= status_code < 500:
-                raise PermanentNotificationError(f"Erro permanente do cliente (HTTP {status_code}): {http_err}") from http_err
-            elif 500 <= status_code < 600:
-                raise TemporaryNotificationError(f"Erro temporário no servidor (HTTP {status_code}): {http_err}") from http_err
-            else:
-                raise TemporaryNotificationError(f"Erro HTTP inesperado: {http_err}") from http_err
-        
-        except Exception as e:
-            raise NotificationError(f"Erro inesperado durante o envio: {e}") from e
+        # 2. Itera sobre a lista de alvos para enviar a notificação para cada um.
+        for i, contact_info in enumerate(targets):
+            # 3. Adiciona um delay se houver mais de um destinatário e não for o primeiro.
+            if i > 0:
+                logger.info("notification.delaying_send", delay=self.SEND_DELAY_SECONDS)
+                time.sleep(self.SEND_DELAY_SECONDS)
+
+            content = self._render_content(msg, contact_info, inst)
+            notifier = get_notifier(msg.type)
+
+            try:
+                if msg.type == "email":
+                    if not contact_info.email:
+                        raise MissingContactInfoError(f"Destinatário '{contact_info.name}' não possui e-mail.")
+                    notifier.send(
+                        recipients=[contact_info.email],
+                        subject="Notificação de Atraso de Parcelas.",
+                        html=content,
+                    )
+                elif msg.type in ("sms", "whatsapp"):
+                    phone_number = self._pick_phone(contact_info)
+                    if msg.type == "sms":
+                        notifier.send(phones=[phone_number], message=content)
+                    else:  # whatsapp
+                        dto = WhatsappNotificationDTO(to=str(phone_number), message=content)
+                        notifier.send(dto)
+                else:
+                    raise NotImplementedError(f"Canal não suportado: {msg.type}")
+                
+                logger.info("notification.sent_to_target", target_name=contact_info.name, channel=msg.type)
+
+            except MissingContactInfoError as e:
+                logger.error("notification.target_skipped", reason=str(e), target_name=contact_info.name, channel=msg.type)
+                continue
+            except (PermanentNotificationError, TemporaryNotificationError) as e:
+                logger.error("notification.send_failed", error=str(e), target_name=contact_info.name, channel=msg.type)
+                raise e
+            except HTTPError as http_err:
+                status_code = http_err.response.status_code
+                if 400 <= status_code < 500:
+                    raise PermanentNotificationError(f"Erro permanente do cliente (HTTP {status_code}): {http_err}") from http_err
+                elif 500 <= status_code < 600:
+                    raise TemporaryNotificationError(f"Erro temporário no servidor (HTTP {status_code}): {http_err}") from http_err
+                else:
+                    raise TemporaryNotificationError(f"Erro HTTP inesperado: {http_err}") from http_err
+            except Exception as e:
+                logger.error("notification.unexpected_error", error=str(e), target_name=contact_info.name, channel=msg.type)
+                raise NotificationError(f"Erro inesperado durante o envio para {contact_info.name}: {e}") from e
 
 # ──────────────────────────────────────────────────────────────────────────
 # Handler – disparo manual
