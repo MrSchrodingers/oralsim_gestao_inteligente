@@ -153,9 +153,9 @@ class PatientRepoImpl(PatientRepository):
         # 1) filtro por flow_type
         flow = filtros.pop("flow_type", None)
         if flow == "notification_billing":
-            qs = qs.filter(schedules__isnull=False).exclude(collectioncase__isnull=False)
+            qs = qs.filter(schedules__isnull=False).exclude(collection_cases__isnull=False)
         elif flow == "cordial_billing":
-            qs = qs.filter(collectioncase__isnull=False)
+            qs = qs.filter(collection_cases__isnull=False)
 
         # 2) filtros simples diretos
         search = filtros.pop("search", "").strip()

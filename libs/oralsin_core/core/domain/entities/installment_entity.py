@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from oralsin_core.core.domain.entities._base import EntityMixin
+from oralsin_core.core.domain.entities.payer_entity import PayerEntity
 from oralsin_core.core.domain.entities.payment_method_entity import PaymentMethodEntity
 
 
@@ -19,6 +20,7 @@ class InstallmentEntity(EntityMixin):
     received: bool
     schedule: bool | None 
     oralsin_installment_id: int | None 
+    payer: PayerEntity | None = None 
     installment_status: str | None = None
     payment_method: PaymentMethodEntity | None = None
     is_current: bool = False

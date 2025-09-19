@@ -290,13 +290,13 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
         summary = {
                 "with_receivable": qs
                     .filter(schedules__isnull=False)
-                    .exclude(collectioncase__isnull=False)
+                    .exclude(collection_cases__isnull=False)
                     .values("id")
                     .distinct()
                     .count(),
 
                 "with_collection": qs
-                    .filter(collectioncase__isnull=False)
+                    .filter(collection_cases__isnull=False)
                     .exclude(schedules__isnull=False)
                     .values("id")
                     .distinct()
@@ -310,9 +310,9 @@ class PatientViewSet(PaginationFilterMixin, viewsets.ViewSet):
                 Q(email__icontains=search)
             )
         if flow_type == "notification_billing":
-            qs = qs.filter(schedules__isnull=False).exclude(collectioncase__isnull=False)
+            qs = qs.filter(schedules__isnull=False).exclude(collection_cases__isnull=False)
         elif flow_type == "cordial_billing":
-            qs = qs.filter(collectioncase__isnull=False)
+            qs = qs.filter(collection_cases__isnull=False)
 
         # ────────── 2) página paginada pelo CQRS ────────────────────
         filtros_for_query = {

@@ -178,6 +178,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             NotificationSenderService,
             message_repo=message_repo,
             patient_repo=patient_repo,
+            contract_repo=contract_repo,
             installment_repo=installment_repo,
             clinic_phone_repo=clinic_phone_repo,
         )

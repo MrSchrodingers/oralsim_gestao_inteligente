@@ -7,23 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 # ───────────────────────────────────────────────
 # DTOs para integração com API Oralsin
 # ───────────────────────────────────────────────
-
-# class OralsinParcelaAtualDetalheDTO(BaseModel):
-#     idContrato: int
-#     versaoContrato: int
-#     idContratoParcela: int
-#     dataVencimento: datetime
-#     diasAtraso: int
-#     valorOriginal: str
-#     valorFinal: str
-#     valorMulta: float
-#     valorJuros: float
-#     idStatusParcela: int
-#     statusParcela: str
-#     idStatusFinanceiro: int
-#     statusFinanceiro: str
-#     observacao: str | None
-#     dataHoraObs: datetime | None
     
 class OralsinEnderecoDTO(BaseModel):
     logradouro: str
@@ -33,7 +16,6 @@ class OralsinEnderecoDTO(BaseModel):
     cidade: str
     estado: str
     cep: str
-
 
 class OralsinTelefoneDTO(BaseModel):
     telefoneResidencial: str | None = Field(None, alias='telefoneResidencial')
@@ -69,7 +51,31 @@ class OralsinParcelaDTO(BaseModel):
     parcelaUnica: bool
     nomeInstituicao: str | None = None
     nomeStatus: str | None = None
+    pagante: OralsinPaganteDTO | None = None
+    
 
+class OralsinPaganteContatoDTO(BaseModel):
+    telefoneResidencial: str | None = None
+    telefoneCelular: str | None = None
+    telefoneComercial: str | None = None
+    email: str | None = None
+
+class OralsinPaganteEnderecoDTO(BaseModel):
+    logradouro: str | None = None
+    numero: str | None = None
+    complemento: str | None = None
+    cep: str | None = None
+    bairro: str | None = None
+    cidade: str | None = None
+    estado: str | None = None
+
+class OralsinPaganteDTO(BaseModel):
+    nomePagante: str
+    contato: OralsinPaganteContatoDTO
+    endereco: OralsinPaganteEnderecoDTO
+    documentoPagante: str | None = None
+    tipoDocumento: str | None = None
+    grauParentesco: str | None = None
 
 class OralsinContatoHistoricoDTO(BaseModel):
     dataHoraInseriu: datetime

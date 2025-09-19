@@ -20,6 +20,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
 
     # API client, mappers e infra de mensageria...
     from oralsin_core.adapters.api_clients.oralsin_api_client import OralsinAPIClient
+    from oralsin_core.adapters.repositories.payer_repo_impl import PayerRepoImpl
     from oralsin_core.adapters.message_broker.rabbitmq import MessagingService
     from oralsin_core.adapters.repositories.address_repo_impl import AddressRepoImpl
     from oralsin_core.adapters.repositories.billing_settings_repo_impl import BillingSettingsRepoImpl
@@ -236,6 +237,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             PatientRepoImpl,
             address_repo=address_repo,
         )
+        payer_repo         = providers.Singleton(PayerRepoImpl)
         installment_repo    = providers.Singleton(
             InstallmentRepoImpl,
             mapper=oralsin_mapper,
@@ -362,6 +364,7 @@ def setup_di_container_from_settings(settings):  # noqa: PLR0915
             phone_repo=patient_phone_repo,
             contract_repo=contract_repo,
             installment_repo=installment_repo,
+            payer_repo=payer_repo,
             mapper=oralsin_mapper,
             dispatcher=event_dispatcher,
         )

@@ -243,7 +243,7 @@ class Patient(models.Model):
     @property
     def flow_type(self) -> str | None:
         """Return patient's billing flow based on related records."""
-        if self.collectioncase_set.exists():
+        if self.collection_cases.exists():
             return "cordial_billing"
         if self.schedules.exists():
             return "notification_billing"
@@ -338,6 +338,76 @@ class Contract(models.Model):
         return f"Contrato {self.oralsin_contract_id or self.id}"
 
 
+class Payer(models.Model):
+    """
+    Armazena os dados do pagador, que pode ser o próprio paciente ou um terceiro.
+    Sempre vinculado a um paciente.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    patient = models.ForeignKey(
+        Patient, on_delete=models.CASCADE, related_name="payers"
+    )
+    name = models.CharField(max_length=200)
+    document = models.CharField(max_length=20, blank=True, null=True)
+    document_type = models.CharField(max_length=20, blank=True, null=True)
+    relationship = models.CharField(max_length=50, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True, db_index=True)
+    address = models.ForeignKey(
+        Address,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="payers",
+    )
+    is_patient_the_payer = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Flag que indica se os dados deste pagador são um espelho do paciente."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = "payers"
+        unique_together = [("patient", "name", "document")]
+        indexes = [
+            models.Index(fields=["patient", "is_patient_the_payer"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (Pagador de: {self.patient.name})"
+
+
+class PayerPhone(models.Model):
+    """Telefones associados a um pagador."""
+    class Type(models.TextChoices):
+        HOME = "home", "Residencial"
+        MOBILE = "mobile", "Celular"
+        COMMERCIAL = "commercial", "Comercial"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    payer = models.ForeignKey(
+        Payer, on_delete=models.CASCADE, related_name="phones"
+    )
+    phone_number = models.CharField(max_length=20)
+    phone_type = models.CharField(
+        max_length=12, choices=Type.choices, blank=True, null=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "payer_phones"
+        indexes = [models.Index(fields=["payer"])]
+        
+    def get_phone_type_display(self) -> str:
+        if self.phone_type:
+            return self.Type(self.phone_type).label
+        return "Desconhecido"
+
+    def __str__(self) -> str:
+        return f"{self.phone_number} ({self.get_phone_type_display()})"
+
 class Installment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     contract = models.ForeignKey(
@@ -350,6 +420,13 @@ class Installment(models.Model):
     installment_number = models.PositiveIntegerField()
     oralsin_installment_id = models.IntegerField(unique=True, null=True, db_index=True)
     due_date = models.DateField(db_index=True)
+    payer = models.ForeignKey(
+        Payer,
+        on_delete=models.PROTECT, 
+        related_name="installments",
+        null=True,
+        blank=True
+    )
     installment_amount = models.DecimalField(max_digits=14, decimal_places=2)
     received = models.BooleanField(default=False, db_index=True)
     installment_status = models.CharField(max_length=50, blank=True, null=True, db_index=True)
@@ -673,9 +750,6 @@ class PendingSync(models.Model):
     def __str__(self) -> str:
         return f"[{self.status}] {self.object_type}:{self.object_api_id}"
 
-# ╭──────────────────────────────────────────────╮
-# │ 7. Caso de Coleta                            │
-# ╰──────────────────────────────────────────────╯
 class CollectionCase(models.Model):
     class DealSyncStatus(models.TextChoices):
         PENDING = "pending", "Pendente"
@@ -688,7 +762,9 @@ class CollectionCase(models.Model):
         CLOSED = "closed", "Fechado"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
+    patient = models.ForeignKey(
+        Patient, on_delete=models.CASCADE, related_name="collection_cases"
+    )
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE)
     installment = models.ForeignKey(Installment, on_delete=models.CASCADE)
     clinic = models.ForeignKey(Clinic, on_delete=models.CASCADE)
@@ -830,3 +906,4 @@ class PaymentStatus(models.Model):
     class Meta:
         db_table = "payment_statuses"
         indexes  = [models.Index(fields=["normalized"])]
+

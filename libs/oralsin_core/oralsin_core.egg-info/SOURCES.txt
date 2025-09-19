@@ -114,6 +114,7 @@ core/domain/entities/covered_clinics.py
 core/domain/entities/installment_entity.py
 core/domain/entities/patient_entity.py
 core/domain/entities/patient_phone_entity.py
+core/domain/entities/payer_entity.py
 core/domain/entities/payment_method_entity.py
 core/domain/entities/pending_sync_entity.py
 core/domain/entities/registration_request_entity.py

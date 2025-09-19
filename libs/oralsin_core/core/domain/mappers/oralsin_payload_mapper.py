@@ -4,6 +4,7 @@ import re
 import uuid
 from datetime import date
 
+from oralsin_core.core.domain.entities.payer_entity import PayerEntity, PayerPhoneEntity
 import structlog
 
 from oralsin_core.core.application.dtos.oralsin_dtos import (
@@ -12,6 +13,7 @@ from oralsin_core.core.application.dtos.oralsin_dtos import (
     OralsinContratoDTO,
     OralsinEnderecoDTO,
     OralsinPacienteDTO,
+    OralsinPaganteDTO,
     OralsinParcelaDTO,
     OralsinTelefoneDTO,
 )
@@ -243,6 +245,70 @@ class OralsinPayloadMapper:
         A regra agora foca exclusivamente nos status 'Compensado' ou 'Caixa Clinica'.
         """
         return is_paid_status(dto.nomeStatusFinanceiro)
+    
+    @classmethod
+    def map_payer_and_phones(
+        cls,
+        pagante_dto: OralsinPaganteDTO | None,
+        patient_entity: PatientEntity,
+    ) -> PayerEntity:
+        """
+        Mapeia o DTO do pagante para uma PayerEntity.
+        Se o DTO for nulo, cria um pagador com base nos dados do paciente.
+        """
+        # Caso 1: Pagante é o próprio paciente
+        if not pagante_dto or not pagante_dto.nomePagante:
+            return PayerEntity.from_patient(patient_entity)
+
+        # Caso 2: Pagante é um terceiro
+        payer_id = cls._uuid()
+        
+        # Mapeia endereço do pagante
+        address_entity = None
+        if pagante_dto.endereco and pagante_dto.endereco.logradouro:
+            address_entity = cls.map_address(
+                OralsinEnderecoDTO(
+                    logradouro=pagante_dto.endereco.logradouro,
+                    numero=pagante_dto.endereco.numero or "",
+                    complemento=pagante_dto.endereco.complemento,
+                    bairro=pagante_dto.endereco.bairro or "",
+                    cidade=pagante_dto.endereco.cidade or "",
+                    estado=pagante_dto.endereco.estado or "",
+                    cep=pagante_dto.endereco.cep or "",
+                )
+            )
+
+        # Mapeia telefones do pagante
+        phones = []
+        if pagante_dto.contato:
+            for type, number in [
+                ("home", pagante_dto.contato.telefoneResidencial),
+                ("mobile", pagante_dto.contato.telefoneCelular),
+                ("commercial", pagante_dto.contato.telefoneComercial),
+            ]:
+                if number:
+                    phones.append(
+                        PayerPhoneEntity(
+                            id=cls._uuid(),
+                            payer_id=payer_id,
+                            phone_number=number,
+                            phone_type=type,
+                        )
+                    )
+
+        payer_entity = PayerEntity(
+            id=payer_id,
+            patient_id=patient_entity.id,
+            name=pagante_dto.nomePagante,
+            document=pagante_dto.documentoPagante,
+            document_type=pagante_dto.tipoDocumento,
+            relationship=pagante_dto.grauParentesco,
+            is_patient_the_payer=False,
+            address=address_entity,
+            email=pagante_dto.contato.email if pagante_dto.contato else None,
+            phones=phones,
+        )
+        return payer_entity
 
     @classmethod
     def map_installments(
@@ -250,6 +316,7 @@ class OralsinPayloadMapper:
         parcelas: list[OralsinParcelaDTO],
         contrato_version: int,
         contract_id: uuid.UUID,
+        patient_entity: PatientEntity,
     ) -> list[InstallmentEntity]:
         """
         Mapeia DTOs de parcela para Entidades com lógica de pagamento robustecida.
@@ -295,12 +362,15 @@ class OralsinPayloadMapper:
                 )
 
             is_scheduled = normalized_lifecycle_status == 'agendado'
+            
+            payer = cls.map_payer_and_phones(p.pagante, patient_entity)
 
             out.append(
                 InstallmentEntity(
                     id=cls._uuid(),
                     contract_id=contract_id,
-                    contract_version=version,
+                    contract_version=int(version),
+                    payer=payer, 
                     installment_number=p.numeroParcela,
                     oralsin_installment_id=p.idContratoParcela,
                     due_date=p.dataVencimento.date(),
