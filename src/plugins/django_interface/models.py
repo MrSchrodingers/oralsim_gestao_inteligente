@@ -226,6 +226,7 @@ class Patient(models.Model):
         Clinic, on_delete=models.CASCADE, related_name="patients"
     )
     name = models.CharField(max_length=200)
+    date_of_birth = models.DateField(blank=True, null=True, db_index=True)
     contact_name = models.CharField(max_length=200, blank=True, null=True)
     cpf = models.CharField(max_length=14, blank=True, null=True)
     email = models.EmailField(blank=True, null=True, db_index=True)
@@ -347,6 +348,7 @@ class Payer(models.Model):
     patient = models.ForeignKey(
         Patient, on_delete=models.CASCADE, related_name="payers"
     )
+    date_of_birth = models.DateField(blank=True, null=True, db_index=True)
     name = models.CharField(max_length=200)
     document = models.CharField(max_length=20, blank=True, null=True)
     document_type = models.CharField(max_length=20, blank=True, null=True)

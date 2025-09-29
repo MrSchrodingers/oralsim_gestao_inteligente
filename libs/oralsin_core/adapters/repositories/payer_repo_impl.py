@@ -19,6 +19,7 @@ class PayerRepoImpl(PayerRepository):
             "relationship": payer_entity.relationship,
             "email": payer_entity.email,
             "is_patient_the_payer": payer_entity.is_patient_the_payer,
+            "date_of_birth": payer_entity.date_of_birth, 
         }
 
         # Salva ou atualiza o endereço se existir

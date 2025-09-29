@@ -51,6 +51,15 @@ class OralsinPayloadMapper:
         m = re.match(r"^(.*?),\s*([\w\-]+)$", logradouro.strip())
         return (m.group(1), m.group(2)) if m else (logradouro, "")
 
+    @staticmethod
+    def _parse_iso_date(value: str | None) -> date | None:
+        if not value:
+            return None
+        try:
+            # aceita "YYYY-MM-DD" e "YYYY-MM-DD HH:MM:SS"
+            return date.fromisoformat(value.split(" ")[0])
+        except Exception:
+            return None
     # ───────────────────────── clínicas ─────────────────────────
     @classmethod
     def map_clinic_by_patient(cls, dto: OralsinClinicByPatientDTO) -> ClinicEntity:
@@ -168,6 +177,7 @@ class OralsinPayloadMapper:
                 address=address,
                 contact_name=dto.telefones.nomeContato or "",
                 email=dto.telefones.email or "",
+                date_of_birth=dto.dataNascimento, 
             )
         except Exception as exc:  # pragma: no cover
             logger.error("map_patient", error=str(exc), dto=dto.dict())
@@ -307,6 +317,7 @@ class OralsinPayloadMapper:
             address=address_entity,
             email=pagante_dto.contato.email if pagante_dto.contato else None,
             phones=phones,
+            date_of_birth=pagante_dto.dataNascimento,
         )
         return payer_entity
 

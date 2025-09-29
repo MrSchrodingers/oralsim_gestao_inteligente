@@ -90,6 +90,7 @@ class PatientRepoImpl(PatientRepository):
             "cpf": patient.cpf,
             "email": patient.email,
             "address_id": address_id,
+            "date_of_birth": patient.date_of_birth,
             "updated_at": timezone.now(),
         }
 

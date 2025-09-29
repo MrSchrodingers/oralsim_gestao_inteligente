@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 from oralsin_core.core.domain.entities._base import EntityMixin
 from oralsin_core.core.domain.entities.address_entity import AddressEntity
@@ -19,6 +19,7 @@ class PatientEntity(EntityMixin):
     address: AddressEntity | None = None
     contact_name: str | None = None
     email: str | None = None
+    date_of_birth: date | None = None
     flow_type: str | None = None
     phones: list[PatientPhoneEntity] = field(default_factory=list)
     created_at: datetime | None = None
@@ -39,6 +40,8 @@ class PatientEntity(EntityMixin):
             "contact_name": self.contact_name,
             "email": self.email,
         }
+        if self.date_of_birth:
+            data["date_of_birth"] = self.date_of_birth
         if self.address:
             data["address"] = {
                 "id": str(self.address.id),

@@ -73,9 +73,26 @@ class OralsinPaganteDTO(BaseModel):
     nomePagante: str
     contato: OralsinPaganteContatoDTO
     endereco: OralsinPaganteEnderecoDTO
+    dataNascimento: date | None = None
     documentoPagante: str | None = None
     tipoDocumento: str | None = None
     grauParentesco: str | None = None
+    
+    @field_validator("dataNascimento", mode="before")
+    @classmethod
+    def _sanitize_payer_birthdate(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if not s or s.startswith("-") or s.startswith("0000"):
+                return None
+            s = s.replace("Z", "+00:00")
+            try:
+                return date.fromisoformat(s.split("T")[0].split(" ")[0])
+            except Exception:
+                return None
+        return v
 
 class OralsinContatoHistoricoDTO(BaseModel):
     dataHoraInseriu: datetime
@@ -143,7 +160,22 @@ class OralsinPacienteDTO(BaseModel):
     contrato: OralsinContratoDTO
     telefones: OralsinTelefoneDTO
     parcelas: list[OralsinParcelaDTO]
+    dataNascimento: date | None = None
     contatoHistorico: list[OralsinContatoHistoricoDTO] | None = None
+    
+    @field_validator("dataNascimento", mode="before")
+    @classmethod
+    def _sanitize_patient_birthdate(cls, v):
+        if v is None: return None
+        if isinstance(v, str):
+            s = v.strip().replace("Z", "+00:00")
+            if not s or s.startswith("-") or s.startswith("0000"):
+                return None
+            try:
+                return date.fromisoformat(s.split("T")[0].split(" ")[0])
+            except Exception:
+                return None
+        return v
     
 class OralsinClinicDTO(BaseModel):
     idClinica: int

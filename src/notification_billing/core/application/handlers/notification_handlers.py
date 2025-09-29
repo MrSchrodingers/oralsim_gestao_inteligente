@@ -1,4 +1,5 @@
 import atexit
+from datetime import date
 import time
 from typing import Any
 
@@ -8,38 +9,24 @@ from django.utils import timezone
 from oralsin_core.core.application.dtos.contact_dtos import ContactInfoDTO, ContactPhoneDTO
 from oralsin_core.core.domain.entities.installment_entity import InstallmentEntity
 from oralsin_core.core.domain.entities.patient_entity import PatientEntity
+from oralsin_core.core.domain.entities.payer_entity import normalize_phones
 from oralsin_core.core.domain.repositories.clinic_phone_repository import ClinicPhoneRepository
-from oralsin_core.core.domain.repositories.contract_repository import (
-    ContractRepository,
-)
-from oralsin_core.core.domain.repositories.installment_repository import (
-    InstallmentRepository,
-)
-from oralsin_core.core.domain.repositories.patient_repository import (
-    PatientRepository,
-)
+from oralsin_core.core.domain.repositories.contract_repository import ContractRepository
+from oralsin_core.core.domain.repositories.installment_repository import InstallmentRepository
+from oralsin_core.core.domain.repositories.patient_repository import PatientRepository
 from requests.exceptions import HTTPError
 
 from notification_billing.adapters.message_broker.rabbitmq import publish
 from notification_billing.adapters.notifiers.registry import get_notifier
 from notification_billing.adapters.notifiers.sms.assertiva import AssertivaSMS
-from notification_billing.core.application.commands.contact_commands import (
-    AdvanceContactStepCommand,
-)
+from notification_billing.core.application.commands.contact_commands import AdvanceContactStepCommand
 from notification_billing.core.application.commands.notification_commands import (
     RunAutomatedNotificationsCommand,
     SendManualNotificationCommand,
 )
-from notification_billing.core.application.cqrs import (
-    CommandBus,
-    CommandHandler,
-)
-from notification_billing.core.application.dtos.whatsapp_notification_dto import (
-    WhatsappNotificationDTO,
-)
-from notification_billing.core.domain.entities.contact_schedule_entity import (
-    ContactScheduleEntity,
-)
+from notification_billing.core.application.cqrs import CommandBus, CommandHandler
+from notification_billing.core.application.dtos.whatsapp_notification_dto import WhatsappNotificationDTO
+from notification_billing.core.domain.entities.contact_schedule_entity import ContactScheduleEntity
 from notification_billing.core.domain.entities.message_entity import MessageEntity
 from notification_billing.core.domain.events.events import NotificationSentEvent
 from notification_billing.core.domain.events.exceptions import (
@@ -54,25 +41,22 @@ from notification_billing.core.domain.repositories import (
     FlowStepConfigRepository,
     MessageRepository,
 )
-from notification_billing.core.domain.repositories.pending_call_repository import (
-    PendingCallRepository,
-)
-from notification_billing.core.domain.services.event_dispatcher import (
-    EventDispatcher,
-)
+from notification_billing.core.domain.repositories.pending_call_repository import PendingCallRepository
+from notification_billing.core.domain.services.event_dispatcher import EventDispatcher
 from notification_billing.core.utils.template_utils import render_message
 from plugins.django_interface.models import ContactHistory, ContactSchedule, FlowStepConfig
 
 logger = structlog.get_logger(__name__)
-blocking_channels = {'sms', 'whatsapp', 'email'}
+blocking_channels = {"sms", "whatsapp", "email"}
+
 
 # ──────────────────────────────────────────────────────────────────────────
-# Service de envio (somente canais “automáticos”)
+# Service de envio (canais automáticos)
 # ──────────────────────────────────────────────────────────────────────────
 class NotificationSenderService:
     """
     Renderiza e envia notificações. Contém a lógica central para determinar os
-    destinatários corretos (paciente e/ou pagante).
+    destinatários corretos (paciente e/ou pagante) e aplica a regra de menoridade.
     """
 
     def __init__(
@@ -81,7 +65,7 @@ class NotificationSenderService:
         patient_repo: PatientRepository,
         contract_repo: ContractRepository,
         installment_repo: InstallmentRepository,
-        clinic_phone_repo: ClinicPhoneRepository
+        clinic_phone_repo: ClinicPhoneRepository,
     ):
         self.message_repo = message_repo
         self.patient_repo = patient_repo
@@ -98,31 +82,31 @@ class NotificationSenderService:
         - O paciente é SEMPRE um alvo.
         - Se a parcela tem um pagador terceiro, ele também é incluído na lista.
         """
-        targets = []
+        targets: list[ContactInfoDTO] = []
 
-        # 1. Adiciona o paciente como alvo principal.
-        patient_contact_info = ContactInfoDTO(
-            name=patient.name,
-            email=patient.email,
-            phones=[
-                ContactPhoneDTO(phone.phone_number, phone.phone_type)
-                for phone in (patient.phones or [])
-            ]
+        # 1. Paciente
+        targets.append(
+            ContactInfoDTO(
+                name=patient.name,
+                email=patient.email,
+                date_of_birth=patient.date_of_birth,  # campo novo
+                phones=[ContactPhoneDTO(ph.phone_number, ph.phone_type)
+                       for ph in normalize_phones(getattr(patient, "phones", None))],
+            )
         )
-        targets.append(patient_contact_info)
 
-        # 2. Se há um pagador e ele não é o próprio paciente, adiciona-o também.
+        # 2. Pagador terceiro (se houver)
         payer = inst.payer
         if payer and not payer.is_patient_the_payer:
-            payer_contact_info = ContactInfoDTO(
-                name=payer.name,
-                email=payer.email,
-                phones=[
-                    ContactPhoneDTO(phone.phone_number, phone.phone_type)
-                    for phone in payer.phones.all()
-                ]
+            targets.append(
+                ContactInfoDTO(
+                    name=payer.name,
+                    email=payer.email,
+                    date_of_birth=payer.date_of_birth,  # campo novo
+                    phones=[ContactPhoneDTO(ph.phone_number, ph.phone_type)
+                          for ph in normalize_phones(getattr(payer, "phones", None))],
+                )
             )
-            targets.append(payer_contact_info)
 
         return targets
 
@@ -138,18 +122,28 @@ class NotificationSenderService:
         contact_phone = ""
         if phone_entity and getattr(phone_entity, "phone_number", None):
             contact_phone = str(phone_entity.phone_number).strip()
-        
+
         ctx = {
-            "nome": contact_info.name, 
+            "nome": contact_info.name,
             "valor": f"R$ {inst.installment_amount:.2f}",
             "vencimento": inst.due_date.strftime("%d/%m/%Y"),
             "total_parcelas_em_atraso": overdue_count,
-            "contact_phone": contact_phone
+            "contact_phone": contact_phone,
         }
         return render_message(msg.content, ctx)
-    
+
+    @staticmethod
+    def _is_minor(dob: date | None) -> bool:
+        """Retorna True se a data de nascimento indicar idade < 18."""
+        if not dob:
+            return False
+        today = timezone.now().date()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        return age < 18
+
     def _channels_for_step(self, schedule: ContactSchedule) -> list[str]:
         cfg = FlowStepConfig.objects.get(step_number=schedule.current_step)
+        # Filtra canais não automáticos
         return [c for c in cfg.channels if c not in ("letter", "pending_call")]
 
     def _pick_phone(self, contact_info: ContactInfoDTO) -> str:
@@ -168,22 +162,35 @@ class NotificationSenderService:
                 return phone.phone_number
 
         raise MissingContactInfoError(f"O contato '{contact_info.name}' não possui número de telefone utilizável.")
-    
-    def send(self, msg: MessageEntity, patient: PatientEntity, inst: InstallmentEntity) -> None:
+
+    def send(self, msg: MessageEntity, patient: PatientEntity, inst: InstallmentEntity) -> tuple[bool, str | None]:
         """
-        Envia a notificação para todos os alvos (paciente e/ou pagante).
-        Aplica um delay entre os envios se houver mais de um alvo.
+        Envia a notificação para todos os alvos aplicando a regra de menoridade.
+        Retorna (enviou_para_algum_alvo, nota). A nota pode conter "skipped minors: ...".
         """
-        # 1. Determina a lista de alvos da notificação usando o novo método.
         targets = self._get_notification_targets(inst, patient)
 
-        # 2. Itera sobre a lista de alvos para enviar a notificação para cada um.
+        sent_any = False
+        skipped_minors: list[str] = []
+
         for i, contact_info in enumerate(targets):
-            # 3. Adiciona um delay se houver mais de um destinatário e não for o primeiro.
+            # 0) Regra de menor de idade
+            if self._is_minor(contact_info.date_of_birth):
+                skipped_minors.append(contact_info.name)
+                logger.info(
+                    "notification.skipped_minor",
+                    target_name=contact_info.name,
+                    channel=msg.type,
+                    dob=str(contact_info.date_of_birth),
+                )
+                continue
+
+            # 1) Delay entre múltiplos destinatários
             if i > 0:
                 logger.info("notification.delaying_send", delay=self.SEND_DELAY_SECONDS)
                 time.sleep(self.SEND_DELAY_SECONDS)
 
+            # 2) Renderiza e envia
             content = self._render_content(msg, contact_info, inst)
             notifier = get_notifier(msg.type)
 
@@ -200,16 +207,22 @@ class NotificationSenderService:
                     phone_number = self._pick_phone(contact_info)
                     if msg.type == "sms":
                         notifier.send(phones=[phone_number], message=content)
-                    else:  # whatsapp
+                    else:
                         dto = WhatsappNotificationDTO(to=str(phone_number), message=content)
                         notifier.send(dto)
                 else:
                     raise NotImplementedError(f"Canal não suportado: {msg.type}")
-                
+
                 logger.info("notification.sent_to_target", target_name=contact_info.name, channel=msg.type)
+                sent_any = True
 
             except MissingContactInfoError as e:
-                logger.error("notification.target_skipped", reason=str(e), target_name=contact_info.name, channel=msg.type)
+                logger.error(
+                    "notification.target_skipped",
+                    reason=str(e),
+                    target_name=contact_info.name,
+                    channel=msg.type,
+                )
                 continue
             except (PermanentNotificationError, TemporaryNotificationError) as e:
                 logger.error("notification.send_failed", error=str(e), target_name=contact_info.name, channel=msg.type)
@@ -217,21 +230,27 @@ class NotificationSenderService:
             except HTTPError as http_err:
                 status_code = http_err.response.status_code
                 if 400 <= status_code < 500:
-                    raise PermanentNotificationError(f"Erro permanente do cliente (HTTP {status_code}): {http_err}") from http_err
+                    raise PermanentNotificationError(
+                        f"Erro permanente do cliente (HTTP {status_code}): {http_err}"
+                    ) from http_err
                 elif 500 <= status_code < 600:
-                    raise TemporaryNotificationError(f"Erro temporário no servidor (HTTP {status_code}): {http_err}") from http_err
+                    raise TemporaryNotificationError(
+                        f"Erro temporário no servidor (HTTP {status_code}): {http_err}"
+                    ) from http_err
                 else:
                     raise TemporaryNotificationError(f"Erro HTTP inesperado: {http_err}") from http_err
             except Exception as e:
                 logger.error("notification.unexpected_error", error=str(e), target_name=contact_info.name, channel=msg.type)
                 raise NotificationError(f"Erro inesperado durante o envio para {contact_info.name}: {e}") from e
 
+        note = f"skipped minors: {', '.join(skipped_minors)}" if skipped_minors else None
+        return sent_any, note
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Handler – disparo manual
 # ──────────────────────────────────────────────────────────────────────────
-class SendManualNotificationHandler(
-    CommandHandler[SendManualNotificationCommand]
-):
+class SendManualNotificationHandler(CommandHandler[SendManualNotificationCommand]):
     def __init__(  # noqa: PLR0913
         self,
         schedule_repo: ContactScheduleRepository,
@@ -251,24 +270,14 @@ class SendManualNotificationHandler(
     @publish(exchange="notifications", routing_key="manual")
     def handle(self, cmd: SendManualNotificationCommand) -> dict[str, Any]:
         try:
-            sched = self.schedule_repo.get_by_patient_contract(
-                cmd.patient_id, cmd.contract_id
-            )
+            sched = self.schedule_repo.get_by_patient_contract(cmd.patient_id, cmd.contract_id)
             contract = self.contract_repo.find_by_id(sched.contract_id)
             if not contract or not contract.do_notifications:
-                raise ValueError(
-                    f"Paciente sem permissão para notificação {contract.patient_id}"
-                )
+                raise ValueError(f"Paciente sem permissão para notificação {contract.patient_id}")
 
-            inst = (
-                self.notification_service.installment_repo.get_current_installment(
-                    sched.contract_id
-                )
-            )
+            inst = self.notification_service.installment_repo.get_current_installment(sched.contract_id)
             if not inst:
-                raise ValueError(
-                    f"Parcela atual não encontrada para contrato {sched.contract_id}"
-                )
+                raise ValueError(f"Parcela atual não encontrada para contrato {sched.contract_id}")
 
             if cmd.channel == "phonecall":
                 self.pending_call_repo.create(
@@ -280,53 +289,54 @@ class SendManualNotificationHandler(
                     scheduled_at=sched.scheduled_date or timezone.now(),
                 )
                 sent_hist = None
+                ok = True
+                note = None
             else:
                 msg = self.notification_service.message_repo.get_message(
                     cmd.channel, sched.current_step, sched.clinic_id
                 )
-                patient = self.notification_service.patient_repo.find_by_id(
-                    str(sched.patient_id)
-                )
-                # A chamada ao `send` não muda, pois a lógica está encapsulada nele.
-                self.notification_service.send(msg, patient, inst)
+                patient = self.notification_service.patient_repo.find_by_id(str(sched.patient_id))
+
+                ok, note = self.notification_service.send(msg, patient, inst)
 
                 sent_hist = self.history_repo.save_from_schedule(
                     schedule=sched,
                     sent_at=timezone.now(),
-                    success=True,
+                    success=ok,
                     channel=cmd.channel,
                     feedback=None,
-                    observation="manual send",
+                    observation=note or "manual send",
                     message=msg,
                 )
-                self.dispatcher.dispatch(
-                    NotificationSentEvent(
-                        schedule_id=sched.id,
-                        message_id=msg.id,
-                        sent_at=sent_hist.sent_at,
-                        channel=cmd.channel,
+
+                if ok:
+                    self.dispatcher.dispatch(
+                        NotificationSentEvent(
+                            schedule_id=sched.id,
+                            message_id=msg.id,
+                            sent_at=sent_hist.sent_at,
+                            channel=cmd.channel,
+                        )
                     )
-                )
 
             return {
                 "patient_id": cmd.patient_id,
                 "contract_id": cmd.contract_id,
                 "channel": cmd.channel,
                 "message_id": getattr(sent_hist, "message_id", None),
-                "sent_at": getattr(sent_hist, "sent_at", None)
-                and sent_hist.sent_at.isoformat(),
+                "sent_at": getattr(sent_hist, "sent_at", None) and sent_hist.sent_at.isoformat(),
+                "success": ok,
+                "note": note,
             }
         except Exception:
-            _success = False
+            logger.exception("send_manual.unhandled_error", patient_id=cmd.patient_id, contract_id=cmd.contract_id)
             raise
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # Handler – disparo automático (batch)
 # ──────────────────────────────────────────────────────────────────────────
-class RunAutomatedNotificationsHandler(
-    CommandHandler[RunAutomatedNotificationsCommand]
-):
+class RunAutomatedNotificationsHandler(CommandHandler[RunAutomatedNotificationsCommand]):
     def __init__(  # noqa: PLR0913
         self,
         schedule_repo: ContactScheduleRepository,
@@ -344,164 +354,16 @@ class RunAutomatedNotificationsHandler(
         self.schedule_repo = schedule_repo
         self.history_repo = history_repo
         self.config_repo = config_repo
-        self.patient_repo = patient_repo
-        self.message_repo = message_repo
         self.notification_service = notification_service
         self.pending_call_repo = pending_call_repo
+        self.patient_repo = patient_repo
+        self.message_repo = message_repo
         self.contract_repo = contract_repo
         self.dispatcher = dispatcher
         self.query_bus = query_bus
         self.command_bus = command_bus
 
-    # ... (os métodos _process_schedule, _handle_phonecall, etc. que você tem podem ser mantidos)
-    # A mudança principal está no método que efetivamente envia a notificação.
-    
-    def _process_schedule(self, schedule: ContactSchedule) -> dict[str, Any] | None:
-        """
-        Executa **1** agendamento inteiro (todos os canais),
-        garantindo idempotência e tratamento de falhas.
-        """
-        try:
-            with transaction.atomic():
-                # 1) marca como PROCESSING e obtém lock pessimista
-                locked = (
-                    ContactSchedule.objects
-                    .select_for_update(skip_locked=True)
-                    .get(id=schedule.id, status=ContactSchedule.Status.PENDING)
-                )
-                locked.status = ContactSchedule.Status.PROCESSING
-                locked.save(update_fields=["status", "updated_at"])
-
-            # 2) fora da transação, faz os envios (pode demorar)
-            results: dict[str, bool] = {}
-            for channel in self.notification_service._channels_for_step(locked):
-                if channel == "phonecall":
-                    self.pending_call_repo.create(
-                        patient_id=locked.patient_id,
-                        contract_id=locked.contract_id,
-                        clinic_id=locked.clinic_id,
-                        schedule_id=locked.id,
-                        current_step=locked.current_step,
-                        scheduled_at=locked.scheduled_date or timezone.now(),
-                    )
-                    results[channel] = True
-                    continue
-                ok = self._send_through_notifier(locked, channel)
-                results[channel] = ok
-
-            msg = self.notification_service.message_repo.get_message(
-                        locked.channel, locked.current_step, locked.clinic
-                    )
-            # 3) grava histórico e dá DONE numa nova transação
-            with transaction.atomic():
-                # idempotente – UNIQUE no ContactHistory garante
-                for channel, ok in results.items():
-                    ContactHistory.objects.get_or_create(
-                        schedule=locked,
-                        contact_type=channel,
-                        advance_flow=locked.advance_flow,
-                        defaults=dict(
-                            patient=locked.patient,
-                            contract=locked.contract,
-                            clinic=locked.clinic,
-                            message_id=msg.id if msg else None,
-                            sent_at=timezone.now(),
-                            success=ok,
-                        ),
-                    )
-
-                locked.status = (
-                    ContactSchedule.Status.REJECTED
-                    if not all(results.values())
-                    else ContactSchedule.Status.APPROVED
-                )
-                locked.save(update_fields=["status", "updated_at"])
-                
-            return {"schedule_id": str(schedule.id), "results": results}
-
-        except DatabaseError:
-            logger.warning("schedule.lock_failed", id=schedule.id)
-            return None
-        except Exception:
-            logger.exception("schedule.unhandled_error", id=schedule.id)
-            return None
-
-    def _handle_phonecall(
-        self, sched: ContactScheduleEntity, now: timezone
-    ) -> dict[str, Any]:
-        """Cria uma pendência de chamada telefônica."""
-        self.pending_call_repo.create(
-            patient_id=sched.patient_id,
-            contract_id=sched.contract_id,
-            clinic_id=sched.clinic_id,
-            schedule_id=sched.id,
-            current_step=sched.current_step,
-            scheduled_at=sched.scheduled_date or now,
-        )
-        return self._build_result(sched, success=True, pending_calls=True)
-
-    def _handle_notification(
-        self, sched: ContactScheduleEntity, patient, inst, now: timezone
-    ) -> dict[str, Any]:
-        """Envia uma notificação (email, sms, whatsapp)."""
-        msg = self.message_repo.get_message(
-            sched.channel, sched.current_step, sched.clinic_id
-        )
-        if not msg:
-            return self._build_result(sched, success=False, error="Mensagem não encontrada")
-
-        try:
-            self.notification_service.send(msg, patient, inst)
-            send_ok = True
-            error_msg = None
-        except Exception as err:
-            send_ok = False
-            error_msg = str(err)
-
-        self._record_history(sched, msg, now, send_ok, error_msg)
-        if send_ok:
-            self._dispatch_event(sched, msg, now)
-            self._advance_step(sched)
-
-        return self._build_result(sched, success=send_ok, error=error_msg)
-
-    def _record_history(
-        self, sched: ContactScheduleEntity, msg, now, success, error_msg=None
-    ):
-        """Salva o histórico de contato."""
-        observation = (
-            "automated send"
-            if success
-            else f"error: {error_msg}"
-        )
-        self.history_repo.save_from_schedule(
-            schedule=sched,
-            sent_at=now,
-            success=success,
-            channel=sched.channel,
-            feedback=None,
-            observation=observation,
-            message=msg,
-        )
-
-    def _dispatch_event(self, sched: ContactScheduleEntity, msg, now: timezone):
-        """Dispara o evento de notificação enviada."""
-        self.dispatcher.dispatch(
-            NotificationSentEvent(
-                schedule_id=sched.id,
-                message_id=msg.id,
-                sent_at=now,
-                channel=sched.channel,
-            )
-        )
-
-    def _advance_step(self, sched: ContactScheduleEntity):
-        """Avança para a próxima etapa do fluxo."""
-        self.command_bus.dispatch(
-            AdvanceContactStepCommand(schedule_id=str(sched.id))
-        )
-
-    def _build_result(self, sched, success, error=None, pending_calls=False):
+    def _build_result(self, sched, success, error=None, pending_calls=False) -> dict[str, Any]:
         """Constrói o dicionário de resultado para um agendamento."""
         return {
             "patient_id": str(sched.patient_id),
@@ -514,11 +376,16 @@ class RunAutomatedNotificationsHandler(
         }
 
     def _process_schedule_group(self, representative_schedule: ContactSchedule) -> dict[str, Any] | None:
+        """
+        Processa em grupo todos os agendamentos do mesmo paciente/contrato/step,
+        garantindo lock pessimista e idempotência.
+        """
         patient_id = representative_schedule.patient.id
         contract_id = representative_schedule.contract.id
         current_step = representative_schedule.current_step
-        
+
         try:
+            # 1) Lock pessimista do grupo
             with transaction.atomic():
                 schedules_in_group = list(
                     ContactSchedule.objects.select_for_update(skip_locked=True).filter(
@@ -530,21 +397,27 @@ class RunAutomatedNotificationsHandler(
                 )
 
                 if not schedules_in_group:
-                    logger.info("schedule_group.already_locked_or_processed", patient_id=str(patient_id), contract_id=str(contract_id))
+                    logger.info(
+                        "schedule_group.already_locked_or_processed",
+                        patient_id=str(patient_id),
+                        contract_id=str(contract_id),
+                    )
                     return None
 
                 schedule_ids = [s.id for s in schedules_in_group]
                 ContactSchedule.objects.filter(id__in=schedule_ids).update(
                     status=ContactSchedule.Status.PROCESSING,
-                    updated_at=timezone.now()
+                    updated_at=timezone.now(),
                 )
 
-            results: dict[str, bool] = {}
+            # 2) Envio (fora da transação)
+            results: dict[str, tuple[bool, str | None]] = {}
             for schedule in schedules_in_group:
                 channel = schedule.channel
                 if channel == "letter":
+                    # Carta não é canal automático aqui
                     continue
-                
+
                 if channel == "phonecall":
                     self.pending_call_repo.create(
                         patient_id=schedule.patient.id,
@@ -554,53 +427,66 @@ class RunAutomatedNotificationsHandler(
                         current_step=schedule.current_step,
                         scheduled_at=schedule.scheduled_date or timezone.now(),
                     )
-                    results[channel] = True
+                    results[channel] = (True, None)
                     continue
-                
-                ok = self._send_through_notifier(schedule, channel)
-                results[channel] = ok
+
+                ok, note = self._send_through_notifier(schedule, channel)
+                results[channel] = (ok, note)
 
             step_should_advance = any(
-                success for channel, success in results.items() if channel in blocking_channels
+                success for channel, (success, _note) in results.items() if channel in blocking_channels
             )
-            
+
+            # 3) Grava histórico e finaliza status
             with transaction.atomic():
                 for schedule in schedules_in_group:
-                    success = results.get(schedule.channel, False)
                     if schedule.channel not in results:
+                        # Não processado (e.g., letter)
                         continue
 
+                    success, note = results[schedule.channel]
                     final_status = ContactSchedule.Status.APPROVED if success else ContactSchedule.Status.REJECTED
                     schedule.status = final_status
                     schedule.updated_at = timezone.now()
                     schedule.save(update_fields=["status", "updated_at"])
+
                     msg = self.notification_service.message_repo.get_message(
                         schedule.channel, schedule.current_step, schedule.clinic_id
                     )
                     observation = "automated send" if success else f"error sending via {schedule.channel}"
+                    if note:
+                        observation = f"{observation}; {note}"
+
                     self.history_repo.save_from_schedule(
                         schedule=schedule,
                         sent_at=timezone.now(),
                         success=success,
                         channel=schedule.channel,
                         observation=observation,
-                        message=msg
+                        message=msg,
                     )
 
             if step_should_advance:
                 self._advance_step(ContactScheduleEntity.from_model(representative_schedule))
 
-            return {"patient_id": str(patient_id), "step": current_step, "results": results, "advanced_step": step_should_advance}
+            return {
+                "patient_id": str(patient_id),
+                "step": current_step,
+                "results": results,
+                "advanced_step": step_should_advance,
+            }
 
         except Exception:
-            logger.exception("schedule_group.unhandled_error", patient_id=str(patient_id), contract_id=str(contract_id))
+            logger.exception(
+                "schedule_group.unhandled_error",
+                patient_id=str(patient_id),
+                contract_id=str(contract_id),
+            )
             return None
-        
+
     def _advance_step(self, sched: ContactScheduleEntity):
         """Avança para a próxima etapa do fluxo."""
-        self.command_bus.dispatch(
-            AdvanceContactStepCommand(schedule_id=str(sched.id))
-        )
+        self.command_bus.dispatch(AdvanceContactStepCommand(schedule_id=str(sched.id)))
 
     @publish(exchange="notifications", routing_key="automated")
     def handle(self, cmd: RunAutomatedNotificationsCommand) -> dict[str, Any]:
@@ -611,71 +497,86 @@ class RunAutomatedNotificationsHandler(
             clinic_id=cmd.clinic_id,
             only_pending=cmd.only_pending,
             chunk_size=cmd.batch_size,
-            mode=cmd.mode, 
+            mode=cmd.mode,
         ):
             result = self._process_schedule_group(representative_schedule)
             if result is not None:
                 results.append(result)
             processed += 1
-        
+
         payload = {"clinic_id": cmd.clinic_id, "processed": processed, "results": results}
         try:
             total, sample = AssertivaSMS.flush_offline_buffer("[SMS OFFLINE][RUN]")
             logger.info("sms.offline_flush_forced", total=total, sample_path=sample)
         except Exception:
             logger.exception("sms.offline_flush_failed")
-        
+
         return payload if processed > 0 else {"clinic_id": cmd.clinic_id, "processed": 0, "results": []}
 
-    def _send_through_notifier(self, schedule: ContactSchedule, channel: str) -> bool:
+    def _send_through_notifier(self, schedule: ContactSchedule, channel: str) -> tuple[bool, str | None]:
         """
-        Valida e envia a notificação, tratando a ausência de contatos do alvo correto.
+        Valida pré-condições, envia via NotificationSenderService e retorna (success, note).
         """
         inst = self.notification_service.installment_repo.get_current_installment(schedule.contract)
         if not inst:
-            logger.error("send_notifier.precondition_failed", reason="current_installment_not_found", schedule_id=schedule.id)
-            return False
-        
+            logger.error(
+                "send_notifier.precondition_failed",
+                reason="current_installment_not_found",
+                schedule_id=schedule.id,
+            )
+            return False, "precondition failed: current installment not found"
+
         patient = self.notification_service.patient_repo.find_by_id(str(schedule.patient.id))
         msg = self.message_repo.get_message(channel, schedule.current_step, schedule.clinic)
-        
         if not (patient and msg):
-            logger.error("send_notifier.precondition_failed", reason="patient_or_msg_missing", schedule_id=schedule.id)
-            return False
+            logger.error(
+                "send_notifier.precondition_failed",
+                reason="patient_or_msg_missing",
+                schedule_id=schedule.id,
+            )
+            return False, "precondition failed: patient or message missing"
 
         try:
-            self.notification_service.send(msg, patient, inst)
-            logger.info("send_notifier.success", schedule_id=schedule.id, channel=channel)
-            return True
-        
+            ok, note = self.notification_service.send(msg, patient, inst)
+            logger.info(
+                "send_notifier.success" if ok else "send_notifier.no_recipient",
+                schedule_id=schedule.id,
+                channel=channel,
+                note=note,
+            )
+            return ok, note
+
         except (PermanentNotificationError, MissingContactInfoError) as e:
             logger.error(
                 "send_notifier.permanent_failure",
-                reason="Dados de contato inválidos ou ausentes para o destinatário.",
-                schedule_id=schedule.id, channel=channel, error_details=str(e)
+                schedule_id=schedule.id,
+                channel=channel,
+                error_details=str(e),
             )
-            return False
-            
+            return False, f"error: {e}"
+
         except TemporaryNotificationError as e:
             logger.warning(
                 "send_notifier.temporary_failure",
-                reason="Serviço do provedor falhou. Pode ser tentado novamente.",
-                schedule_id=schedule.id, channel=channel, error_details=str(e)
+                schedule_id=schedule.id,
+                channel=channel,
+                error_details=str(e),
             )
-            return False
+            return False, f"temp error: {e}"
 
-        except Exception:
-            logger.exception(
-                "send_notifier.unhandled_error",
-                reason="Falha inesperada no fluxo de envio.",
-                schedule_id=schedule.id, channel=channel
-            )
-            return False
-        
+        except Exception as e:
+            logger.exception("send_notifier.unhandled_error", schedule_id=schedule.id, channel=channel)
+            return False, f"unhandled error: {e}"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Flush do buffer de SMS offline ao encerrar o processo
+# ──────────────────────────────────────────────────────────────────────────
 def _flush_sms_offline_on_exit():
     try:
         AssertivaSMS.flush_offline_buffer("[SMS OFFLINE][EXIT]")
     except Exception:
         logger.exception("sms.offline_exit_flush_failed")
+
 
 atexit.register(_flush_sms_offline_on_exit)

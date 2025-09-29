@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from datetime import date
 from typing import List, Optional
 
 @dataclass(frozen=True)
@@ -17,3 +18,4 @@ class ContactInfoDTO:
     name: str
     email: Optional[str]
     phones: List[ContactPhoneDTO]
+    date_of_birth: date | None = None
