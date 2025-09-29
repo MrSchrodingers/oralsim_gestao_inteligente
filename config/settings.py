@@ -43,8 +43,8 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # -------------------------------
 CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=False, cast=bool)
 CORS_ALLOW_CREDENTIALS = config("CORS_ALLOW_CREDENTIALS", default=True, cast=bool)
-CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="http://localhost:3005", cast=Csv())
-CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3005", cast=Csv())
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="https://oralsin.debt.com.br", cast=Csv())
+CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="https://oralsin.debt.com.br", cast=Csv())
 CORS_ALLOW_METHODS = config("CORS_ALLOW_METHODS", default="GET,POST,PUT,PATCH,DELETE,OPTIONS", cast=Csv())
 CORS_ALLOW_HEADERS = config("CORS_ALLOW_HEADERS", default="Authorization,Content-Type,X-CSRFToken", cast=Csv())
 

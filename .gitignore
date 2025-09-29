@@ -9,7 +9,8 @@
 rabbitmq-definitions.json
 grafana/
 dist/
-
+*.dump
+ 
 # Ignorar variáveis de ambiente
 .env
 
